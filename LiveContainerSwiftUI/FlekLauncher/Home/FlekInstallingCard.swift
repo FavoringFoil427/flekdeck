@@ -37,20 +37,31 @@ struct FlekInstallIcon: View {
                     .tint(.white)
                     .scaleEffect(size > 60 ? 1.4 : 1.0)
             } else {
-                VStack(spacing: 5) {
-                    Text("\(Int((state.fraction * 100).rounded()))%")
-                        .font(.system(size: size > 60 ? 18 : 13, weight: .bold))
-                        .foregroundStyle(.white)
-                    if size > 60 {
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.5)).frame(width: 55, height: 8)
-                            Capsule().fill(flekBlue).frame(width: max(2, 55 * state.fraction), height: 8)
-                        }
-                    }
-                }
+                // Centered percentage (Figma: bold 18, white, centered on the icon)
+                Text("\(Int((state.fraction * 100).rounded()))%")
+                    .font(.system(size: size > 60 ? 18 : 13, weight: .bold))
+                    .foregroundStyle(.white)
             }
         }
         .frame(width: size, height: size)
+        .overlay(alignment: .bottom) {
+            // Progress pill near the bottom of the icon (only on the large grid icon)
+            if !state.indeterminate && size > 60 {
+                let trackW = size * 0.78          // ≈ 58 on a 74pt icon
+                let trackH: CGFloat = 18
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color.white.opacity(0.5)))
+                        .frame(width: trackW, height: trackH)
+                    Capsule()
+                        .fill(flekBlue)
+                        .frame(width: max(trackH - 4, (trackW - 4) * state.fraction), height: trackH - 4)
+                        .padding(.leading, 2)
+                }
+                .padding(.bottom, 6)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 }

@@ -408,7 +408,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 installUrlInput.close(result: nil)
             }
         )
-        .downloadAlert(helper: downloadHelper)
+        // Download progress is shown on the home app icon (and Installer row),
+        // not as a blocking popup.
         .sheet(isPresented: $jitAlert.show, onDismiss: {
             jitAlert.close(result: false)
         }) {
