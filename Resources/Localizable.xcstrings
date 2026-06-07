@@ -28400,6 +28400,72 @@
           }
         }
       }
+    },
+    "lc.flek.cat.launch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Launch Behavior"
+          }
+        }
+      }
+    },
+    "lc.flek.cat.multitask": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multitask Mode"
+          }
+        }
+      }
+    },
+    "lc.flek.cat.jit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JIT & JIT-Less"
+          }
+        }
+      }
+    },
+    "lc.flek.cat.content": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content Restrictions"
+          }
+        }
+      }
+    },
+    "lc.flek.cat.signing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing & Installation"
+          }
+        }
+      }
+    },
+    "lc.flek.appIcons": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Icons"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

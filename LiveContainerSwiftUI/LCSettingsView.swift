@@ -137,13 +137,6 @@ struct LCSettingsView: View {
         NavigationView {
             Form {
                 Section {
-                    NavigationLink {
-                        FlekPersonalizationView()
-                    } label: {
-                        Label("lc.flek.personalization".loc, systemImage: "paintbrush")
-                    }
-                }
-                Section(header: Text("User information")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("UDID")
@@ -251,256 +244,32 @@ struct LCSettingsView: View {
                     }
                     .padding(.vertical, 6)
                 }
-                if sharedModel.multiLCStatus != 2 {
-                    Section{
-                        if !certificateDataFound {
-                            Section {
-                                Button("Import Flekstore certificate") {
-                                    Task { await importEmbeddedCertificate() }
-                                }
-                                
-                                Button("lc.settings.importCertificate".loc) {
-                                    Task { await importCertificate() }
-                                }
-                            }
-                        } else {
-                            Section {
-                                Button("lc.settings.removeCertificate".loc) {
-                                    Task { await removeCertificate() }
-                                }
-                            }
-                        }
-                        //                        if store == .AltStore || store == .SideStore {
-                        //                            Button {
-                        //                                Task{ await importCertificateFromSideStore() }
-                        //                            } label: {
-                        //                                if certificateDataFound {
-                        //                                    Text("lc.settings.refreshCertificateFromStore %@".localizeWithFormat(storeName))
-                        //                                } else {
-                        //                                    Text("lc.settings.importCertificateFromStore %@".localizeWithFormat(storeName))
-                        //                                }
-                        //                            }
-                        //                        }
-                        
-                        NavigationLink {
-                            LCJITLessDiagnoseView()
-                        } label: {
-                            Text("lc.settings.jitlessDiagnose".loc)
-                        }
-                        
-                    } header: {
-                        Text("lc.settings.jitLess".loc)
-                    } footer: {
-                        Text("lc.settings.jitLessDesc".loc)
-                    }
-                }
-                if (store != .Unknown && store != .ADP) || LCUtils.isAppGroupAltStoreLike() {
-                    Section{
-                        NavigationLink {
-                            LCMultiLCManagementView()
-                        } label: {
-                            if sharedModel.multiLCStatus == 0 {
-                                Text("lc.settings.multiLCInstall".loc)
-                            } else if sharedModel.multiLCStatus == 2 {
-                                Text("lc.settings.multiLCIsSecond".loc)
-                            }
-                            
-                        }
-                        .disabled(sharedModel.multiLCStatus == 2)
-                        
-                        if(sharedModel.multiLCStatus == 2) {
-                            NavigationLink {
-                                LCJITLessDiagnoseView()
-                            } label: {
-                                Text("lc.settings.jitlessDiagnose".loc)
-                            }
-                        }
-                    } header: {
-                        Text("lc.settings.multiLC".loc)
-                    } footer: {
-                        Text("lc.settings.multiLCDesc".loc)
-                    }
-                }
+                // MARK: - Categories
                 Section {
-                    if JITEnabler == .SideJITServer || JITEnabler == .JITStreamerEBLegacy {
-                        HStack {
-                            Text("lc.settings.JitAddress".loc)
-                            Spacer()
-                            TextField(JITEnabler == .SideJITServer ? "http://x.x.x.x:8080" : "http://[fd00::]:9172", text: $sideJITServerAddress)
-                                .multilineTextAlignment(.trailing)
+                    NavigationLink { FlekPersonalizationView() } label: {
+                        categoryRow("lc.flek.personalization".loc, "paintbrush.fill", .pink)
+                    }
+                    NavigationLink { launchBehaviorPage } label: {
+                        categoryRow("lc.flek.cat.launch".loc, "arrow.up.forward.app.fill", .blue)
+                    }
+                    if #available(iOS 16.1, *) {
+                        NavigationLink { multitaskPage } label: {
+                            categoryRow("lc.flek.cat.multitask".loc, "rectangle.on.rectangle.fill", .indigo)
                         }
                     }
-                    if JITEnabler == .SideJITServer {
-                        HStack {
-                            Text("lc.settings.JitUDID".loc)
-                            Spacer()
-                            TextField("", text: $deviceUDID)
-                                .multilineTextAlignment(.trailing)
-                        }
+                    NavigationLink { jitPage } label: {
+                        categoryRow("lc.flek.cat.jit".loc, "bolt.fill", .orange)
                     }
-                    Picker(selection: $JITEnabler) {
-                        Text("SideJITServer/JITStreamer 2.0").tag(JITEnablerType.SideJITServer)
-                        Text("StikDebug").tag(JITEnablerType.StkiJIT)
-                        Text("StikDebug (Another LiveContainer)").tag(JITEnablerType.StikJITLC)
-                        Text("SideStore").tag(JITEnablerType.SideStore)
-                        Text("JitStreamer-EB (Relaunch)").tag(JITEnablerType.JITStreamerEBLegacy)
-                    } label: {
-                        Text("lc.settings.jitEnabler".loc)
+                    NavigationLink { contentRestrictionsPage } label: {
+                        categoryRow("lc.flek.cat.content".loc, "hand.raised.fill", .red)
                     }
-                    
-                } header: {
-                    Text("JIT")
-                } footer: {
-                    Text("lc.settings.JitDesc".loc)
-                }
-                
-                
-                Section{
-                    AgeConfirmationView()
-                } header: {
-                    Text("Sensitive Content")
-                } footer: {
-                    Text("Enabling this option will grant access to applications with strict age restrictions and the \"Adult\" category.")
-                }
-                
-                Section{
-                    NavigationLink {
-                        LCTweaksView(tweakFolders: $tweakFolderNames)
-                    } label: {
-                        Label("Tweaks", systemImage: "wrench.and.screwdriver")
+                    NavigationLink { signingPage } label: {
+                        categoryRow("lc.flek.cat.signing".loc, "signature", .green)
                     }
-                } header: {
-                    Text("Tweaks")
-                } 
-                
-                Section{
-                    Toggle(isOn: $dynamicColors) {
-                        Text("lc.settings.dynamicColors".loc)
-                    }
-                    if #available(iOS 18.0, *) {
-                        Toggle(isOn: $darkModeIcon) {
-                            Text("lc.settings.darkModeIcon".loc)
-                        }
-                    }
-                    
-                } header: {
-                    Text("lc.settings.interface".loc)
-                } footer: {
-                    Text("lc.settings.dynamicColors.desc".loc)
-                }
-                Section{
-                    Toggle(isOn: $frameShortIcon) {
-                        Text("lc.settings.FrameIcon".loc)
-                    }
-                } header: {
-                    Text("lc.common.miscellaneous".loc)
-                } footer: {
-                    Text("lc.settings.FrameIconDesc".loc)
-                }
-                
-                Section {
-                    Toggle(isOn: $silentSwitchApp) {
-                        Text("lc.settings.silentSwitchApp".loc)
-                    }
-                } footer: {
-                    Text("lc.settings.silentSwitchAppDesc".loc)
-                }
-                
-                Section {
-                    Toggle(isOn: $silentOpenWebPage) {
-                        Text("lc.settings.silentOpenWebPage".loc)
-                    }
-                } footer: {
-                    Text("lc.settings.silentOpenWebPageDesc".loc)
-                }
-                
-                if sharedModel.isHiddenAppUnlocked {
-                    Section {
-                        Toggle(isOn: $strictHiding) {
-                            Text("lc.settings.strictHiding".loc)
-                        }
-                    } footer: {
-                        Text("lc.settings.strictHidingDesc".loc)
+                    NavigationLink { LCTweaksView(tweakFolders: $tweakFolderNames) } label: {
+                        categoryRow("Tweaks", "wrench.and.screwdriver.fill", Color(red: 1, green: 0.58, blue: 0))
                     }
                 }
-                
-                if #available(iOS 16.1, *) {
-                    Section {
-                        if(UIApplication.shared.supportsMultipleScenes) {
-                            Picker(selection: $multitaskMode) {
-                                Text("lc.settings.multitaskMode.virtualWindow".loc).tag(MultitaskMode.virtualWindow)
-                                Text("lc.settings.multitaskMode.nativeWindow".loc).tag(MultitaskMode.nativeWindow)
-                            } label: {
-                                Text("lc.settings.multitaskMode".loc)
-                            }
-                        }
-                        Toggle(isOn: $launchInMultitaskMode) {
-                            Text("lc.settings.autoLaunchInMultitaskMode".loc)
-                        }
-                        
-                        if multitaskMode == .virtualWindow {
-                            Toggle(isOn: $launchMultitaskMaximized) {
-                                Text("lc.settings.launchMultitaskMaximized".loc)
-                            }
-                            if launchMultitaskMaximized {
-                                Toggle(isOn: $onlyOneAppOnStage) {
-                                    Text("lc.settings.onlyOneAppOnStage".loc)
-                                }
-                            }
-                            Toggle(isOn: $autoEndPiP) {
-                                Text("lc.settings.autoEndPiP".loc)
-                            }
-                            Toggle(isOn: $skipTerminatedScreen) {
-                                Text("lc.settings.skipTerminatedScreen".loc)
-                            }
-                            if skipTerminatedScreen {
-                                Toggle(isOn: $restartTerminatedApp) {
-                                    Text("lc.settings.restartTerminatedApp".loc)
-                                }
-                            }
-                            Toggle(isOn: $bottomWindowBar) {
-                                Text("lc.settings.bottomWindowBar".loc)
-                            }
-                            Toggle(isOn: $redirectURLToHost) {
-                                Text("lc.settings.redirectURLToHost".loc)
-                            }
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("lc.settings.dockWidth".loc)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(Int(dockWidth))px")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                }
-                                Slider(value: $dockWidth, in: 60...110) {
-                                    Text("lc.settings.dockWidth".loc)
-                                }
-                                .tint(.accentColor)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    } footer: {
-                        Text("lc.settings.multitaskDesc".loc)
-                    }
-                }
-                
-                Section {
-                    Toggle(isOn: $dontSignApp) {
-                        Text("lc.settings.dontSign".loc)
-                    }
-                } footer: {
-                    Text("lc.settings.dontSignDesc".loc)
-                }
-                
-                Section {
-                    NavigationLink {
-                        LCDataManagementView(appDataFolderNames: $appDataFolderNames)
-                    } label: {
-                        Text("lc.settings.dataManagement".loc)
-                    }
-                }
-                
                 Section {
                     HStack {
                         Image("GitHub")
@@ -715,6 +484,265 @@ struct LCSettingsView: View {
             handleURL(url: link)
         }
     }
+
+    @ViewBuilder
+    private func categoryRow(_ title: String, _ systemImage: String, _ color: Color) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 29, height: 29)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(color))
+        }
+    }
+
+    @ViewBuilder private var launchBehaviorPage: some View {
+        Form {
+                Section {
+                    Toggle(isOn: $silentSwitchApp) {
+                        Text("lc.settings.silentSwitchApp".loc)
+                    }
+                } footer: {
+                    Text("lc.settings.silentSwitchAppDesc".loc)
+                }
+                
+                Section {
+                    Toggle(isOn: $silentOpenWebPage) {
+                        Text("lc.settings.silentOpenWebPage".loc)
+                    }
+                } footer: {
+                    Text("lc.settings.silentOpenWebPageDesc".loc)
+                }
+                
+        }
+        .navigationTitle("lc.flek.cat.launch".loc)
+    }
+
+    @ViewBuilder private var multitaskPage: some View {
+        Form {
+                if #available(iOS 16.1, *) {
+                    Section {
+                        if(UIApplication.shared.supportsMultipleScenes) {
+                            Picker(selection: $multitaskMode) {
+                                Text("lc.settings.multitaskMode.virtualWindow".loc).tag(MultitaskMode.virtualWindow)
+                                Text("lc.settings.multitaskMode.nativeWindow".loc).tag(MultitaskMode.nativeWindow)
+                            } label: {
+                                Text("lc.settings.multitaskMode".loc)
+                            }
+                        }
+                        Toggle(isOn: $launchInMultitaskMode) {
+                            Text("lc.settings.autoLaunchInMultitaskMode".loc)
+                        }
+                        
+                        if multitaskMode == .virtualWindow {
+                            Toggle(isOn: $launchMultitaskMaximized) {
+                                Text("lc.settings.launchMultitaskMaximized".loc)
+                            }
+                            if launchMultitaskMaximized {
+                                Toggle(isOn: $onlyOneAppOnStage) {
+                                    Text("lc.settings.onlyOneAppOnStage".loc)
+                                }
+                            }
+                            Toggle(isOn: $autoEndPiP) {
+                                Text("lc.settings.autoEndPiP".loc)
+                            }
+                            Toggle(isOn: $skipTerminatedScreen) {
+                                Text("lc.settings.skipTerminatedScreen".loc)
+                            }
+                            if skipTerminatedScreen {
+                                Toggle(isOn: $restartTerminatedApp) {
+                                    Text("lc.settings.restartTerminatedApp".loc)
+                                }
+                            }
+                            Toggle(isOn: $bottomWindowBar) {
+                                Text("lc.settings.bottomWindowBar".loc)
+                            }
+                            Toggle(isOn: $redirectURLToHost) {
+                                Text("lc.settings.redirectURLToHost".loc)
+                            }
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text("lc.settings.dockWidth".loc)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Text("\(Int(dockWidth))px")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                                Slider(value: $dockWidth, in: 60...110) {
+                                    Text("lc.settings.dockWidth".loc)
+                                }
+                                .tint(.accentColor)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } footer: {
+                        Text("lc.settings.multitaskDesc".loc)
+                    }
+                }
+                
+        }
+        .navigationTitle("lc.flek.cat.multitask".loc)
+    }
+
+    @ViewBuilder private var jitPage: some View {
+        Form {
+                if sharedModel.multiLCStatus != 2 {
+                    Section{
+                        if !certificateDataFound {
+                            Section {
+                                Button("Import Flekstore certificate") {
+                                    Task { await importEmbeddedCertificate() }
+                                }
+                                
+                                Button("lc.settings.importCertificate".loc) {
+                                    Task { await importCertificate() }
+                                }
+                            }
+                        } else {
+                            Section {
+                                Button("lc.settings.removeCertificate".loc) {
+                                    Task { await removeCertificate() }
+                                }
+                            }
+                        }
+                        //                        if store == .AltStore || store == .SideStore {
+                        //                            Button {
+                        //                                Task{ await importCertificateFromSideStore() }
+                        //                            } label: {
+                        //                                if certificateDataFound {
+                        //                                    Text("lc.settings.refreshCertificateFromStore %@".localizeWithFormat(storeName))
+                        //                                } else {
+                        //                                    Text("lc.settings.importCertificateFromStore %@".localizeWithFormat(storeName))
+                        //                                }
+                        //                            }
+                        //                        }
+                        
+                        NavigationLink {
+                            LCJITLessDiagnoseView()
+                        } label: {
+                            Text("lc.settings.jitlessDiagnose".loc)
+                        }
+                        
+                    } header: {
+                        Text("lc.settings.jitLess".loc)
+                    } footer: {
+                        Text("lc.settings.jitLessDesc".loc)
+                    }
+                }
+                Section {
+                    if JITEnabler == .SideJITServer || JITEnabler == .JITStreamerEBLegacy {
+                        HStack {
+                            Text("lc.settings.JitAddress".loc)
+                            Spacer()
+                            TextField(JITEnabler == .SideJITServer ? "http://x.x.x.x:8080" : "http://[fd00::]:9172", text: $sideJITServerAddress)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                    if JITEnabler == .SideJITServer {
+                        HStack {
+                            Text("lc.settings.JitUDID".loc)
+                            Spacer()
+                            TextField("", text: $deviceUDID)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                    Picker(selection: $JITEnabler) {
+                        Text("SideJITServer/JITStreamer 2.0").tag(JITEnablerType.SideJITServer)
+                        Text("StikDebug").tag(JITEnablerType.StkiJIT)
+                        Text("StikDebug (Another LiveContainer)").tag(JITEnablerType.StikJITLC)
+                        Text("SideStore").tag(JITEnablerType.SideStore)
+                        Text("JitStreamer-EB (Relaunch)").tag(JITEnablerType.JITStreamerEBLegacy)
+                    } label: {
+                        Text("lc.settings.jitEnabler".loc)
+                    }
+                    
+                } header: {
+                    Text("JIT")
+                } footer: {
+                    Text("lc.settings.JitDesc".loc)
+                }
+                
+                
+        }
+        .navigationTitle("lc.flek.cat.jit".loc)
+    }
+
+    @ViewBuilder private var contentRestrictionsPage: some View {
+        Form {
+                Section{
+                    AgeConfirmationView()
+                } header: {
+                    Text("Sensitive Content")
+                } footer: {
+                    Text("Enabling this option will grant access to applications with strict age restrictions and the \"Adult\" category.")
+                }
+                
+                if sharedModel.isHiddenAppUnlocked {
+                    Section {
+                        Toggle(isOn: $strictHiding) {
+                            Text("lc.settings.strictHiding".loc)
+                        }
+                    } footer: {
+                        Text("lc.settings.strictHidingDesc".loc)
+                    }
+                }
+                
+        }
+        .navigationTitle("lc.flek.cat.content".loc)
+    }
+
+    @ViewBuilder private var signingPage: some View {
+        Form {
+                Section {
+                    Toggle(isOn: $dontSignApp) {
+                        Text("lc.settings.dontSign".loc)
+                    }
+                } footer: {
+                    Text("lc.settings.dontSignDesc".loc)
+                }
+                
+                Section {
+                    NavigationLink {
+                        LCDataManagementView(appDataFolderNames: $appDataFolderNames)
+                    } label: {
+                        Text("lc.settings.dataManagement".loc)
+                    }
+                }
+                
+                if (store != .Unknown && store != .ADP) || LCUtils.isAppGroupAltStoreLike() {
+                    Section{
+                        NavigationLink {
+                            LCMultiLCManagementView()
+                        } label: {
+                            if sharedModel.multiLCStatus == 0 {
+                                Text("lc.settings.multiLCInstall".loc)
+                            } else if sharedModel.multiLCStatus == 2 {
+                                Text("lc.settings.multiLCIsSecond".loc)
+                            }
+                            
+                        }
+                        .disabled(sharedModel.multiLCStatus == 2)
+                        
+                        if(sharedModel.multiLCStatus == 2) {
+                            NavigationLink {
+                                LCJITLessDiagnoseView()
+                            } label: {
+                                Text("lc.settings.jitlessDiagnose".loc)
+                            }
+                        }
+                    } header: {
+                        Text("lc.settings.multiLC".loc)
+                    } footer: {
+                        Text("lc.settings.multiLCDesc".loc)
+                    }
+                }
+        }
+        .navigationTitle("lc.flek.cat.signing".loc)
+    }
+
     
     func openGitHub() {
         UIApplication.shared.open(URL(string: "https://github.com/LiveContainer/LiveContainer")!)

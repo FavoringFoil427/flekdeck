@@ -18,6 +18,10 @@ struct FlekPersonalizationView: View {
     @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault)
     private var homeLayout: String = FlekHomeLayout.grid.rawValue
 
+    @AppStorage("dynamicColors", store: LCUtils.appGroupUserDefault) private var dynamicColors = true
+    @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
+    @AppStorage("LCFrameShortcutIcons", store: LCUtils.appGroupUserDefault) private var frameShortIcon = false
+
     @State private var showCollection = false
     @State private var showPhotoPicker = false
 
@@ -53,6 +57,24 @@ struct FlekPersonalizationView: View {
                         layoutOption(.list, title: "lc.flek.layoutList".loc)
                     }
                     .padding(16)
+                    .background(card)
+                }
+
+                // MARK: App Icons
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("lc.flek.appIcons".loc)
+                    VStack(spacing: 0) {
+                        Toggle("lc.settings.dynamicColors".loc, isOn: $dynamicColors)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                        if #available(iOS 18.0, *) {
+                            Divider().padding(.leading, 16)
+                            Toggle("lc.settings.darkModeIcon".loc, isOn: $darkModeIcon)
+                                .padding(.horizontal, 16).padding(.vertical, 12)
+                        }
+                        Divider().padding(.leading, 16)
+                        Toggle("lc.settings.FrameIcon".loc, isOn: $frameShortIcon)
+                            .padding(.horizontal, 16).padding(.vertical, 12)
+                    }
                     .background(card)
                 }
             }

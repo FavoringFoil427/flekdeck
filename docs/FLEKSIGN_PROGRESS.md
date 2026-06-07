@@ -36,7 +36,7 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       RUN) switched on by Personalization → List. Shares context menu / tap /
       delete with the grid. (Row drag-reorder pending with grid reorder.)
 - [x] **Phase 6 — Installer rework.** New FlekInstallerView: source carousel + manage-sources popup (add/select/delete with confirm, FlekSt0re protected), category switcher, redesigned app rows with download, bottom Import-IPA menu + search + back-to-home chevron. Reuses FlekstoreAppsListViewModel + saved-repositories store; installs via sharedModel.urlToInstall.
-- [ ] Phase 7 — Categorized Settings + UDID/Premium card.
+- [x] **Phase 7 — Categorized Settings.** LCSettingsView reworked into the design: UDID + Premium card, a category group (Personalization, Launch Behavior, Multitask Mode, JIT & JIT-Less, Content Restrictions, Signing & Installation, Tweaks) each drilling into a focused page, and a links/about group. Icon-appearance toggles moved to the Personalization page. All existing controls/logic/alerts reused.
 - [x] **Phase 8 — Personalization page + wallpapers popup + grid/list toggle.**
       New Personalization page (reachable from Settings): current-wallpaper
       preview, Choose from Collection (bundled default + gradient presets),
