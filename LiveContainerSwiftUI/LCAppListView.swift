@@ -179,6 +179,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         onDelete: { item in
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
+                        onMove: { dragged, target in moveHomeItem(dragged, target) },
                         contextMenu: { item in homeContextMenu(for: item) }
                     )
                 }
@@ -502,6 +503,21 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Task { await launchHomeApp(app, parallel: mode == .parallel) }
             }
         }
+    }
+
+    func moveHomeItem(_ dragged: FlekHomeItem, _ target: FlekHomeItem) {
+        guard case .installed(let dApp) = dragged, case .installed(let tApp) = target,
+              let dId = sharedAppSortManager.getUniqueIdentifier(for: dApp),
+              let tId = sharedAppSortManager.getUniqueIdentifier(for: tApp) else { return }
+        var order = sortedApps.compactMap { sharedAppSortManager.getUniqueIdentifier(for: $0) }
+        guard let from = order.firstIndex(of: dId), order.contains(tId), from != order.firstIndex(of: tId) else { return }
+        order.remove(at: from)
+        let insertAt = order.firstIndex(of: tId) ?? order.count
+        order.insert(dId, at: insertAt)
+        if sharedAppSortManager.appSortType != .custom {
+            sharedAppSortManager.appSortType = .custom
+        }
+        sharedAppSortManager.customSortOrder = order
     }
 
     func isGame(_ app: LCAppModel) -> Bool {

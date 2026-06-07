@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FlekSpringboardView<Menu: View>: View {
     let items: [FlekHomeItem]
@@ -17,9 +18,11 @@ struct FlekSpringboardView<Menu: View>: View {
     var isSingleMode: (LCAppModel) -> Bool
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
+    var onMove: (FlekHomeItem, FlekHomeItem) -> Void = { _, _ in }
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var currentPage = 0
+    @State private var dragging: FlekHomeItem?
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: FlekTheme.gridSpacing),
@@ -76,6 +79,17 @@ struct FlekSpringboardView<Menu: View>: View {
         }
         .buttonStyle(.plain)
         .contextMenu { contextMenu(item) }
+        .apply { v in
+            if isEditing, case .installed = item {
+                v.onDrag {
+                    dragging = item
+                    return NSItemProvider(object: item.id as NSString)
+                }
+                .onDrop(of: [UTType.text], delegate: FlekReorderDropDelegate(item: item, dragging: $dragging, onMove: onMove))
+            } else {
+                v
+            }
+        }
     }
 
     @ViewBuilder
@@ -120,6 +134,23 @@ struct FlekSpringboardView<Menu: View>: View {
         return stride(from: 0, to: array.count, by: size).map {
             Array(array[$0 ..< min($0 + size, array.count)])
         }
+    }
+}
+
+/// Reorders installed app cards live as one is dragged over another.
+struct FlekReorderDropDelegate: DropDelegate {
+    let item: FlekHomeItem
+    @Binding var dragging: FlekHomeItem?
+    let onMove: (FlekHomeItem, FlekHomeItem) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging.id != item.id else { return }
+        if case .installed = item { onMove(dragging, item) }
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
     }
 }
 
