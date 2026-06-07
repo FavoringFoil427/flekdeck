@@ -78,7 +78,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var helpPresent = false
     
     @State private var customSortViewPresent = false
-    
+
+    // FlekLauncher springboard state
+    @State private var isEditing = false
+    @State private var showSettingsCover = false
+    @State private var showInstallerCover = false
+    @State private var installerPreselectFlekstore = false
+    @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
+
     @EnvironmentObject private var sharedModel : SharedModel
     @EnvironmentObject private var sharedAppSortManager : LCAppSortManager
     
@@ -130,184 +137,64 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                NavigationLink(
-                    destination: navigateTo,
-                    isActive: $isNavigationActive,
-                    label: {
-                        EmptyView()
-                    })
-                .hidden()
-                
-                LazyVStack {
-                    ForEach(filteredApps, id: \.self) { app in
-                        LCAppBanner(appModel: app, delegate: self, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)
-                    }
-                    .transition(.scale)
+        ZStack {
+            FlekWallpaperView()
+
+            FlekSpringboardView(
+                items: homeItems,
+                darkModeIcon: darkModeIcon,
+                isEditing: $isEditing,
+                isNew: { FlekLaunchTracker.shared.isNew($0) },
+                isSingleMode: { _ in false },
+                onTap: { handleHomeTap($0) },
+                onDelete: { _ in },
+                contextMenu: { _ in EmptyView() }
+            )
+            .padding(.top, 8)
+            .padding(.bottom, 84)
+
+            VStack {
+                Spacer()
+                FlekGlassCircleButton(systemImage: "magnifyingglass",
+                                      size: FlekTheme.searchPillSize, iconScale: 0.5) {
+                    // Springboard search overlay is implemented in a later phase.
                 }
-                .padding()
-                .animation(searchContext.isTyping ? nil : .easeInOut, value: filteredApps)
-                
+                .padding(.bottom, 10)
+            }
+
+            if installprogressVisible {
                 VStack {
-                    if LCUtils.appGroupUserDefault.bool(forKey: "LCStrictHiding") {
-                        if sharedModel.isHiddenAppUnlocked {
-                            LazyVStack {
-                                HStack {
-                                    Text("lc.appList.hiddenApps".loc)
-                                        .font(.system(.title2).bold())
-                                    Spacer()
-                                }
-                                
-                                ForEach(filteredHiddenApps, id: \.self) { app in
-                                    LCAppBanner(appModel: app, delegate: self, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)
-                                }
-                                .transition(.scale)
-                                
-                            }
-                            .padding()
-                            .transition(.opacity)
-                            .animation(searchContext.isTyping ? nil : .easeInOut, value: filteredHiddenApps)
-                            
-                            if sharedModel.hiddenApps.count == 0 {
-                                Text("lc.appList.hideAppTip".loc)
-                                    .foregroundStyle(.gray)
-                            }
-                        }
-                    } else if sharedModel.hiddenApps.count > 0 {
-                        LazyVStack {
-                            HStack {
-                                Text("lc.appList.hiddenApps".loc)
-                                    .font(.system(.title2).bold())
-                                Spacer()
-                            }
-                            ForEach(filteredHiddenApps, id: \.self) { app in
-                                if sharedModel.isHiddenAppUnlocked {
-                                    LCAppBanner(appModel: app, delegate: self, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)
-                                } else {
-                                    LCAppSkeletonBanner()
-                                }
-                            }
-                            .animation(.easeInOut, value: sharedModel.isHiddenAppUnlocked)
-                            .onTapGesture {
-                                Task { await authenticateUser() }
-                            }
-                        }
-                        .padding()
-                        .animation(searchContext.isTyping ? nil : .easeInOut, value: filteredHiddenApps)
-                    }
-                    
-                    let appCount = sharedModel.isHiddenAppUnlocked ? filteredApps.count + filteredHiddenApps.count : filteredApps.count
-                    Text(appCount > 0 || searchContext.debouncedQuery != "" ? "lc.appList.appCounter %lld".localizeWithFormat(appCount) : (sharedModel.multiLCStatus == 2 ? "lc.appList.convertToSharedToShowInLC2".loc : "lc.appList.installTip".loc))
-                        .padding(.horizontal)
-                        .foregroundStyle(.gray)
-                        .animation(searchContext.isTyping ? nil : .easeInOut, value: appCount)
-                        .onTapGesture(count: 3) {
-                            Task { await authenticateUser() }
-                        }
-                }.animation(searchContext.isTyping ? nil : .easeInOut, value: LCUtils.appGroupUserDefault.bool(forKey: "LCStrictHiding"))
-                
-                if sharedModel.multiLCStatus == 2 {
-                    Text("lc.appList.manageInPrimaryTip".loc).foregroundStyle(.gray).padding()
-                }
-                
-            }
-            .navigationBarProgressBar(show:$installprogressVisible, progress: $installProgressPercentage)
-            .coordinateSpace(name: "scroll")
-            .onAppear {
-                if !didAppear { onAppear() }
-                //print("Current url is \(flekstoreSharedModel.appInstallURL)")
-                if flekstoreSharedModel.appInstallURL != "" {
-                    Task {
-                        await installFromUrl(urlStr: flekstoreSharedModel.appInstallURL)
-                        await MainActor.run { flekstoreSharedModel.appInstallURL = "" }
-                    }
-                }
-            }
-            .navigationTitle("lc.appList.myApps".loc)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if sharedModel.multiLCStatus != 2 {
-                        if !installprogressVisible {
-                            Menu {
-                                
-                                Button("lc.appList.installFromIpa".loc, systemImage: "doc.badge.plus", action: {
-                                    choosingIPA = true
-                                })
-                                Button("lc.appList.installFromUrl".loc, systemImage: "link.badge.plus", action: {
-                                    Task{ await startInstallFromUrl() }
-                                })
-                            } label: {
-                                Label("add", systemImage: "plus")
-                            }
-                            
-                        } else {
-                            ProgressView().progressViewStyle(.circular).padding(.horizontal, 8)
-                        }
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    if(UserDefaults.sideStoreExist()) {
-                        Button {
-                            LCUtils.openSideStore(delegate: self)
-                        } label: {
-                            Image("SideStoreBadge")
-                                .resizable()
-                                .renderingMode(.template)
-                                .foregroundColor({
-                                    if SharedModel.isLiquidGlassEnabled {
-                                        return Color.primary
-                                    } else {
-                                        return Color.accentColor
-                                    }
-                                }())
-                                .frame(width: UIFont.preferredFont(forTextStyle: .body).lineHeight, height: UIFont.preferredFont(forTextStyle: .body).lineHeight)
-                            
-                        }
-                    } else {
-                        Button("Help", systemImage: "questionmark") {
-                            helpPresent = true
-                        }
-                    }
-                    
-                    
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("lc.appList.openLink".loc, systemImage: "link", action: {
-                        Task { await onOpenWebViewTapped() }
-                    })
-                }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Sort by", selection: $sharedAppSortManager.appSortType) {
-                            ForEach(AppSortType.allCases, id: \.self) { sortType in
-                                Label(sortType.displayName, systemImage: sortType.systemImage)
-                                    .tag(sortType)
-                            }
-                        }
-                        .onChange(of: sharedAppSortManager.appSortType) { newValue in
-                            if sharedAppSortManager.appSortType == .custom {
-                                customSortViewPresent = true
-                            }
-                        }
-                        if sharedAppSortManager.appSortType == .custom {
-                            Divider()
-                            
-                            Button {
-                                customSortViewPresent = true
-                            } label: {
-                                Label("lc.appList.sort.customManage".loc, systemImage: "slider.horizontal.3")
-                            }
-                        }
-                    } label: {
-                        Label("lc.appList.sort".loc, systemImage: "line.3.horizontal.decrease.circle")
-                    }
+                    ProgressView(value: installProgressPercentage)
+                        .progressViewStyle(.linear)
+                        .tint(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 60)
+                    Spacer()
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .onAppear {
+            if !didAppear { onAppear() }
+            if flekstoreSharedModel.appInstallURL != "" {
+                Task {
+                    await installFromUrl(urlStr: flekstoreSharedModel.appInstallURL)
+                    await MainActor.run { flekstoreSharedModel.appInstallURL = "" }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showSettingsCover) {
+            FlekInternalPage(isPresented: $showSettingsCover) {
+                LCSettingsView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
+            }
+        }
+        .fullScreenCover(isPresented: $showInstallerCover) {
+            FlekInternalPage(isPresented: $showInstallerCover) {
+                FlekstoreAppsListView(selectedTab: $sharedModel.selectedTab)
+            }
+        }
+        .sheet(isPresented: $isNavigationActive) {
+            if let navigateTo { navigateTo }
+        }
         .task(id: sharedModel.urlToInstall) {
             if let installURL = sharedModel.urlToInstall {
                 await installFromUrl(urlStr: installURL)
@@ -447,16 +334,61 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Task { await installFromUrl(urlStr: installUrl.absoluteString) }
             }
         }
-        .apply {
-            if #available(iOS 19.0, *), SharedModel.isLiquidGlassSearchEnabled {
-                $0
-            } else {
-                $0.searchable(text: $searchContext.query)
+    }
+
+    // MARK: - FlekLauncher springboard
+
+    var homeItems: [FlekHomeItem] {
+        var items: [FlekHomeItem] = [
+            .defaultApp(.flekstore),
+            .defaultApp(.settings),
+            .defaultApp(.installer)
+        ]
+        items.append(contentsOf: sortedApps.map { .installed($0) })
+        return items
+    }
+
+    func handleHomeTap(_ item: FlekHomeItem) {
+        switch item {
+        case .defaultApp(let kind):
+            switch kind {
+            case .settings:
+                showSettingsCover = true
+            case .installer:
+                installerPreselectFlekstore = false
+                showInstallerCover = true
+            case .flekstore:
+                installerPreselectFlekstore = true
+                showInstallerCover = true
+            }
+        case .installed(let app):
+            FlekLaunchTracker.shared.markLaunched(app)
+            Task { await launchHomeApp(app) }
+        }
+    }
+
+    func launchHomeApp(_ app: LCAppModel) async {
+        if app.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
+            do {
+                if !(try await LCUtils.authenticateUser()) { return }
+            } catch {
+                errorInfo = error.localizedDescription
+                errorShow = true
+                return
             }
         }
-        
+        do {
+            if #available(iOS 16.0, *), sharedModel.multiLCStatus != 2, launchInMultitaskMode {
+                try await app.runApp(multitask: true)
+            } else {
+                try await app.runApp(multitask: false)
+            }
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
     }
-    
+
     var JITEnablingModal : some View {
         NavigationView {
             ScrollViewReader { proxy in

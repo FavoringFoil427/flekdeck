@@ -49,32 +49,10 @@ struct LCTabView: View {
             } else if isBlocked {
                 AccessBlockedView(reason: blockedReason, message: blockedMessage)
             } else {
-                //let sourcesView = LCSourcesView()
-                TabView(selection: $sharedModel.selectedTab) {
-//                    if DataManager.shared.model.multiLCStatus != 2 {
-//                        sourcesView
-//                            .tabItem {
-//                                Label("lc.tabView.sources".loc, systemImage: "books.vertical")
-//                            }
-//                            .tag(LCTabIdentifier.sources)
-//                    }
-                    LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
-                        .tabItem {
-                            Label("lc.tabView.apps".loc, systemImage: "square.stack.3d.up.fill")
-                        }
-                        .tag(LCTabIdentifier.apps)
-                    FlekstoreAppsListView(selectedTab: $sharedModel.selectedTab)
-                        .tabItem {
-                            Label("lc.tabView.browse".loc, systemImage: "globe")
-                        }
-                        .tag(LCTabIdentifier.browse)
-                    
-                    LCSettingsView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
-                        .tabItem {
-                            Label("lc.tabView.settings".loc, systemImage: "gearshape.fill")
-                        }
-                        .tag(LCTabIdentifier.settings)
-                }
+                // FlekLauncher: the springboard home screen replaces the old tab bar.
+                // Settings and the Installer are now opened as full-screen pages from
+                // the home screen instead of being separate tabs.
+                LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
             }
         }
         .alert("lc.common.error".loc, isPresented: $errorShow) {
@@ -91,12 +69,7 @@ struct LCTabView: View {
                 return
             }
 
-            if !UserDefaults.standard.bool(forKey: "DidOpenSettingsOnce") {
-                sharedModel.selectedTab = .settings // programmatically open Settings tab
-                UserDefaults.standard.set(true, forKey: "DidOpenSettingsOnce")
-            } else {
-                sharedModel.selectedTab = .apps
-            }
+            sharedModel.selectedTab = .apps
             closeDuplicatedWindow()
             checkLastLaunchError()
             checkTeamId()
