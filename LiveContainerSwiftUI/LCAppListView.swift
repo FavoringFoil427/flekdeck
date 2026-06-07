@@ -166,6 +166,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         onDelete: { item in
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
+                        installState: homeInstallState,
+                        onCancelInstall: { cancelHomeInstall() },
                         contextMenu: { item in homeContextMenu(for: item) }
                     )
                 } else {
@@ -180,6 +182,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
                         onMove: { dragged, target in moveHomeItem(dragged, target) },
+                        installState: homeInstallState,
+                        onCancelInstall: { cancelHomeInstall() },
                         contextMenu: { item in homeContextMenu(for: item) }
                     )
                 }
@@ -221,43 +225,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             }
 
-            if installprogressVisible {
-                VStack {
-                    HStack(spacing: 12) {
-                        Group {
-                            if let iconURL = sharedModel.installingIconURL, let url = URL(string: iconURL) {
-                                AsyncImage(url: url) { img in img.resizable().scaledToFill() } placeholder: {
-                                    Image(systemName: "arrow.down.circle").font(.system(size: 26)).foregroundStyle(.secondary)
-                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                }
-                            } else {
-                                Image(systemName: "arrow.down.circle").font(.system(size: 26)).foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            }
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(sharedModel.installingName ?? "lc.flek.installing".loc)
-                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.black).lineLimit(1)
-                            ProgressView(value: installProgressPercentage)
-                                .tint(Color(red: 0, green: 117/255, blue: 1))
-                        }
-                        Button {
-                            downloadHelper.cancel()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").font(.system(size: 24)).foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(12)
-                    .flekGlassCard(cornerRadius: 18)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 56)
-                    Spacer()
-                }
-            }
 
             if showSearch {
                 FlekSearchView(
@@ -309,6 +276,21 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if !visible {
                 sharedModel.installingName = nil
                 sharedModel.installingIconURL = nil
+                sharedModel.installingURL = nil
+                sharedModel.installFraction = 0
+                sharedModel.installIndeterminate = true
+            }
+        }
+        .onReceive(downloadHelper.$downloadProgress) { p in
+            sharedModel.installFraction = Double(p)
+        }
+        .onReceive(downloadHelper.$isDownloading) { downloading in
+            sharedModel.installIndeterminate = !downloading
+        }
+        .onChange(of: sharedModel.cancelInstallRequested) { req in
+            if req {
+                cancelHomeInstall()
+                sharedModel.cancelInstallRequested = false
             }
         }
         .fileExporter(
@@ -482,8 +464,27 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             .defaultApp(.settings),
             .defaultApp(.installer)
         ]
+        if installprogressVisible {
+            items.append(.installing)
+        }
         items.append(contentsOf: sortedApps.map { .installed($0) })
         return items
+    }
+
+    var homeInstallState: FlekInstallState {
+        FlekInstallState(
+            name: sharedModel.installingName,
+            iconURL: sharedModel.installingIconURL,
+            fraction: Double(downloadHelper.downloadProgress),
+            indeterminate: !downloadHelper.isDownloading
+        )
+    }
+
+    func cancelHomeInstall() {
+        downloadHelper.cancel()
+        installprogressVisible = false
+        sharedModel.installingName = nil
+        sharedModel.installingIconURL = nil
     }
 
     func handleHomeTap(_ item: FlekHomeItem) {
@@ -507,6 +508,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             } else {
                 Task { await launchHomeApp(app, parallel: mode == .parallel) }
             }
+        case .installing:
+            break
         }
     }
 
@@ -569,6 +572,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installed(let app):
             installedContextMenu(app)
+        case .installing:
+            EmptyView()
         }
     }
 

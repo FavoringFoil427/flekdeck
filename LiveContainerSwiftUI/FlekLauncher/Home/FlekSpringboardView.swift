@@ -19,6 +19,8 @@ struct FlekSpringboardView<Menu: View>: View {
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onMove: (FlekHomeItem, FlekHomeItem) -> Void = { _, _ in }
+    var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
+    var onCancelInstall: () -> Void = {}
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var currentPage = 0
@@ -61,33 +63,44 @@ struct FlekSpringboardView<Menu: View>: View {
 
     @ViewBuilder
     private func cardButton(for item: FlekHomeItem) -> some View {
-        let card = FlekAppCard(
-            title: title(for: item),
-            isNew: newDot(for: item),
-            showsSingleModeBadge: singleBadge(for: item),
-            isEditing: isEditing,
-            canDelete: canDelete(item),
-            onDelete: { onDelete(item) },
-            icon: { iconView(for: item) }
-        )
-
-        Button {
-            if isEditing { return }
-            onTap(item)
-        } label: {
-            card
-        }
-        .buttonStyle(.plain)
-        .contextMenu { contextMenu(item) }
-        .apply { v in
-            if isEditing, case .installed = item {
-                v.onDrag {
-                    dragging = item
-                    return NSItemProvider(object: item.id as NSString)
+        if case .installing = item {
+            FlekInstallingCard(state: installState)
+                .contextMenu {
+                    Button(role: .destructive) {
+                        onCancelInstall()
+                    } label: {
+                        Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
+                    }
                 }
-                .onDrop(of: [UTType.text], delegate: FlekReorderDropDelegate(item: item, dragging: $dragging, onMove: onMove))
-            } else {
-                v
+        } else {
+            let card = FlekAppCard(
+                title: title(for: item),
+                isNew: newDot(for: item),
+                showsSingleModeBadge: singleBadge(for: item),
+                isEditing: isEditing,
+                canDelete: canDelete(item),
+                onDelete: { onDelete(item) },
+                icon: { iconView(for: item) }
+            )
+
+            Button {
+                if isEditing { return }
+                onTap(item)
+            } label: {
+                card
+            }
+            .buttonStyle(.plain)
+            .contextMenu { contextMenu(item) }
+            .apply { v in
+                if isEditing, case .installed = item {
+                    v.onDrag {
+                        dragging = item
+                        return NSItemProvider(object: item.id as NSString)
+                    }
+                    .onDrop(of: [UTType.text], delegate: FlekReorderDropDelegate(item: item, dragging: $dragging, onMove: onMove))
+                } else {
+                    v
+                }
             }
         }
     }
@@ -103,6 +116,8 @@ struct FlekSpringboardView<Menu: View>: View {
             Image(uiImage: app.appInfo.iconIsDarkIcon(darkModeIcon))
                 .resizable()
                 .scaledToFill()
+        case .installing:
+            Color.clear
         }
     }
 
@@ -110,6 +125,7 @@ struct FlekSpringboardView<Menu: View>: View {
         switch item {
         case .defaultApp(let kind): return kind.title
         case .installed(let app): return app.appInfo.displayName() ?? "?"
+        case .installing: return installState.name ?? ""
         }
     }
 

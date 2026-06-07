@@ -48,17 +48,28 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
     }
 }
 
-/// One tile on the springboard: either a built-in app or an installed guest app.
+/// One tile on the springboard: a built-in app, an installed guest app, or the
+/// app currently being installed (download/sign in progress).
 enum FlekHomeItem: Identifiable {
     case defaultApp(FlekDefaultAppKind)
     case installed(LCAppModel)
+    case installing
 
     var id: String {
         switch self {
         case .defaultApp(let kind): return "default.\(kind.rawValue)"
         case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? UUID().uuidString)"
+        case .installing: return "installing"
         }
     }
+}
+
+/// Snapshot of the in-progress install, used to render the install card/row.
+struct FlekInstallState {
+    var name: String?
+    var iconURL: String?
+    var fraction: Double      // 0...1, only meaningful while downloading
+    var indeterminate: Bool   // true during prepare / decompress / signing
 }
 
 /// Per-app launch mode chosen from the home screen context menu. "Single"

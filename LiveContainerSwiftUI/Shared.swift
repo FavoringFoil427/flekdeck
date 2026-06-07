@@ -76,9 +76,14 @@ class SharedModel: ObservableObject {
     
     @Published var pidCallback : ((NSNumber, Error?) -> Void)? = nil
     @Published var urlToInstall: String?
-    // Display info for the in-progress install shown on the home screen.
+    // Display info for the in-progress install shown on the home screen and
+    // mirrored in the Installer row (single install at a time).
     @Published var installingName: String?
     @Published var installingIconURL: String?
+    @Published var installingURL: String?
+    @Published var installFraction: Double = 0
+    @Published var installIndeterminate: Bool = true
+    @Published var cancelInstallRequested = false
     
     static let isPhone: Bool = {
         UIDevice.current.userInterfaceIdiom == .phone

@@ -28532,6 +28532,17 @@
           }
         }
       }
+    },
+    "lc.flek.cancelInstall": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Installation"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -192,9 +192,17 @@ struct FlekInstallerView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(viewModel.visibleApps) { app in
-                        FlekInstallerRow(app: app, accent: Self.flekBlue) {
-                            install(app)
-                        }
+                        FlekInstallerRow(
+                            app: app,
+                            accent: Self.flekBlue,
+                            installState: sharedModel.installingURL == app.install_url
+                                ? FlekInstallState(name: app.app_name, iconURL: app.app_icon,
+                                                   fraction: sharedModel.installFraction,
+                                                   indeterminate: sharedModel.installIndeterminate)
+                                : nil,
+                            onInstall: { install(app) },
+                            onCancel: { sharedModel.cancelInstallRequested = true }
+                        )
                         .onAppear {
                             if app.id == viewModel.visibleApps.last?.id {
                                 Task { await viewModel.fetchApps() }
@@ -291,6 +299,7 @@ struct FlekInstallerView: View {
         }
         sharedModel.installingName = app.app_name
         sharedModel.installingIconURL = app.app_icon
+        sharedModel.installingURL = app.install_url
         sharedModel.urlToInstall = app.install_url
     }
 
@@ -321,10 +330,14 @@ struct FlekInstallerView: View {
 }
 
 /// App row in the installer: icon, name, version·bundle, description, download.
+/// While this app is installing, the download button is replaced by a circular
+/// progress indicator (tap to cancel) — mirroring the home screen install state.
 struct FlekInstallerRow: View {
     let app: FSAppModel
     let accent: Color
+    var installState: FlekInstallState? = nil
     var onInstall: () -> Void
+    var onCancel: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 8) {
@@ -337,15 +350,45 @@ struct FlekInstallerRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Button(action: onInstall) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(accent)
+            if let installState {
+                Button(action: onCancel) {
+                    FlekRowProgress(state: installState, accent: accent)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button(action: onInstall) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(accent)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white))
+    }
+}
+
+/// Circular install progress shown in an installer row (determinate ring while
+/// downloading, spinner during prepare/sign). Tapping it cancels.
+struct FlekRowProgress: View {
+    let state: FlekInstallState
+    let accent: Color
+
+    var body: some View {
+        ZStack {
+            if state.indeterminate {
+                ProgressView().progressViewStyle(.circular)
+            } else {
+                Circle().stroke(accent.opacity(0.25), lineWidth: 3)
+                Circle()
+                    .trim(from: 0, to: max(0.02, state.fraction))
+                    .stroke(accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(accent)
+            }
+        }
+        .frame(width: 30, height: 30)
     }
 }
 
