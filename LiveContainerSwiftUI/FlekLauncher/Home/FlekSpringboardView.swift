@@ -34,7 +34,11 @@ struct FlekSpringboardView<Menu: View>: View {
     var body: some View {
         GeometryReader { geo in
             let rowHeight = FlekTheme.cardHeight + FlekTheme.gridSpacing
-            let rowsPerPage = max(1, Int((geo.size.height + FlekTheme.gridSpacing) / rowHeight))
+            // Reserve room for the page indicator + VStack spacing so the last
+            // row never gets clipped when there are multiple pages.
+            let reserve: CGFloat = 34
+            let available = max(rowHeight, geo.size.height - reserve)
+            let rowsPerPage = max(1, Int((available + FlekTheme.gridSpacing) / rowHeight))
             let perPage = max(1, rowsPerPage * FlekTheme.gridColumns)
             let pages = chunk(items, size: perPage)
 
