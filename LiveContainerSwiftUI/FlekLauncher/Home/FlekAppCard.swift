@@ -18,21 +18,25 @@ struct FlekAppCard<Icon: View>: View {
     var isEditing: Bool = false
     /// Shows the delete (–) button in edit mode (hidden for default apps).
     var canDelete: Bool = true
+    /// Height the card should occupy; the contents scale to fit it.
+    var cardHeight: CGFloat = FlekTheme.cardHeight
     var onDelete: (() -> Void)? = nil
     @ViewBuilder var icon: () -> Icon
 
     @State private var wigglePhase = false
 
+    private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }
+
     var body: some View {
-        VStack(spacing: FlekTheme.cardInnerSpacing) {
+        VStack(spacing: FlekTheme.cardInnerSpacing * scale) {
             ZStack(alignment: .topTrailing) {
                 icon()
-                    .frame(width: FlekTheme.iconSize, height: FlekTheme.iconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: FlekTheme.iconCorner, style: .continuous))
+                    .frame(width: FlekTheme.iconSize * scale, height: FlekTheme.iconSize * scale)
+                    .clipShape(RoundedRectangle(cornerRadius: FlekTheme.iconCorner * scale, style: .continuous))
 
                 if showsSingleModeBadge {
                     Image(systemName: "1.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 16 * scale))
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, Color.accentColor)
                         .background(Circle().fill(Color.white))
@@ -44,21 +48,21 @@ struct FlekAppCard<Icon: View>: View {
                 if isNew {
                     Circle()
                         .fill(Color.blue)
-                        .frame(width: 7, height: 7)
+                        .frame(width: 7 * scale, height: 7 * scale)
                 }
                 Text(title)
-                    .font(.system(size: FlekTheme.labelSize, weight: .medium))
+                    .font(.system(size: FlekTheme.labelSize * scale, weight: .medium))
                     .foregroundStyle(.black)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
         }
-        .padding(.top, FlekTheme.cardTopPadding)
-        .padding(.bottom, FlekTheme.cardBottomPadding)
+        .padding(.top, FlekTheme.cardTopPadding * scale)
+        .padding(.bottom, FlekTheme.cardBottomPadding * scale)
         .padding(.horizontal, FlekTheme.cardHPadding)
         .frame(maxWidth: .infinity)
-        .frame(height: FlekTheme.cardHeight)
-        .flekGlassCard()
+        .frame(height: cardHeight)
+        .flekGlassCard(cornerRadius: FlekTheme.cardCorner * min(1, scale))
         .overlay(alignment: .topLeading) {
             if isEditing && canDelete {
                 Button {

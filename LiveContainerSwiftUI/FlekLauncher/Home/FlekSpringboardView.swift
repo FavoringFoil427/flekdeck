@@ -33,21 +33,27 @@ struct FlekSpringboardView<Menu: View>: View {
 
     var body: some View {
         GeometryReader { geo in
-            let rowHeight = FlekTheme.cardHeight + FlekTheme.gridSpacing
+            let spacing = FlekTheme.gridSpacing
             // Reserve room for the page indicator + VStack spacing so the last
             // row never gets clipped when there are multiple pages.
             let reserve: CGFloat = 34
-            let available = max(rowHeight, geo.size.height - reserve)
-            let rowsPerPage = max(1, Int((available + FlekTheme.gridSpacing) / rowHeight))
-            let perPage = max(1, rowsPerPage * FlekTheme.gridColumns)
+            let available = max(FlekTheme.cardHeight, geo.size.height - reserve)
+            // Always show at least 5 rows; if more fit at full size use them.
+            let baseRow = FlekTheme.cardHeight + spacing
+            let fitRows = max(1, Int((available + spacing) / baseRow))
+            let rows = max(5, fitRows)
+            // Card height fitted so `rows` rows occupy the available height
+            // exactly (never larger than the design height).
+            let cardHeight = min(FlekTheme.cardHeight, (available - CGFloat(rows - 1) * spacing) / CGFloat(rows))
+            let perPage = max(1, rows * FlekTheme.gridColumns)
             let pages = chunk(items, size: perPage)
 
             VStack(spacing: 8) {
                 TabView(selection: $currentPage) {
                     ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
-                        LazyVGrid(columns: columns, alignment: .center, spacing: FlekTheme.gridSpacing) {
+                        LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
                             ForEach(pageItems) { item in
-                                cardButton(for: item)
+                                cardButton(for: item, cardHeight: cardHeight)
                             }
                         }
                         .padding(.horizontal, FlekTheme.screenHPadding)
@@ -66,9 +72,9 @@ struct FlekSpringboardView<Menu: View>: View {
     }
 
     @ViewBuilder
-    private func cardButton(for item: FlekHomeItem) -> some View {
+    private func cardButton(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
         if case .installing = item {
-            FlekInstallingCard(state: installState)
+            FlekInstallingCard(state: installState, cardHeight: cardHeight)
                 .contextMenu {
                     Button(role: .destructive) {
                         onCancelInstall()
@@ -83,6 +89,7 @@ struct FlekSpringboardView<Menu: View>: View {
                 showsSingleModeBadge: singleBadge(for: item),
                 isEditing: isEditing,
                 canDelete: canDelete(item),
+                cardHeight: cardHeight,
                 onDelete: { onDelete(item) },
                 icon: { iconView(for: item) }
             )

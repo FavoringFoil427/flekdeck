@@ -69,21 +69,24 @@ struct FlekInstallIcon: View {
 /// Springboard grid card for the in-progress install.
 struct FlekInstallingCard: View {
     let state: FlekInstallState
+    var cardHeight: CGFloat = FlekTheme.cardHeight
+
+    private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }
 
     var body: some View {
-        VStack(spacing: FlekTheme.cardInnerSpacing) {
-            FlekInstallIcon(state: state, size: FlekTheme.iconSize, corner: FlekTheme.iconCorner)
+        VStack(spacing: FlekTheme.cardInnerSpacing * scale) {
+            FlekInstallIcon(state: state, size: FlekTheme.iconSize * scale, corner: FlekTheme.iconCorner * scale)
             Text(state.name ?? "lc.flek.installing".loc)
-                .font(.system(size: FlekTheme.labelSize, weight: .medium))
+                .font(.system(size: FlekTheme.labelSize * scale, weight: .medium))
                 .foregroundStyle(.black)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .padding(.top, FlekTheme.cardTopPadding)
-        .padding(.bottom, FlekTheme.cardBottomPadding)
+        .padding(.top, FlekTheme.cardTopPadding * scale)
+        .padding(.bottom, FlekTheme.cardBottomPadding * scale)
         .padding(.horizontal, FlekTheme.cardHPadding)
         .frame(maxWidth: .infinity)
-        .frame(height: FlekTheme.cardHeight)
-        .flekGlassCard()
+        .frame(height: cardHeight)
+        .flekGlassCard(cornerRadius: FlekTheme.cardCorner * min(1, scale))
     }
 }
