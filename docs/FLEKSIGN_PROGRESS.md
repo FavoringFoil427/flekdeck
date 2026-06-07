@@ -27,7 +27,11 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       Done pill and delete (default apps protected). **Remaining:** drag-to-reorder
       cards (persists to LCAppSortManager custom order) — to be added next.
 - [ ] Phase 3 — Install-on-home (progress, cancel, game warning).
-- [ ] Phase 4 — Springboard search overlay.
+- [~] **Phase 4 — Springboard search overlay.** Bottom search pill opens a
+      blurred full-screen overlay with a focused search field (magnifier + clear
+      that returns home) and an "Installed" results section that launches the
+      tapped app. **Remaining:** per-source results (depends on the Installer
+      source cache from Phase 6).
 - [x] **Phase 5 — List view layout.** Glass rows (icon, name, version·bundle,
       RUN) switched on by Personalization → List. Shares context menu / tap /
       delete with the grid. (Row drag-reorder pending with grid reorder.)

@@ -83,6 +83,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var isEditing = false
     @State private var showSettingsCover = false
     @State private var showInstallerCover = false
+    @State private var showSearch = false
     @State private var installerPreselectFlekstore = false
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
     @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
@@ -203,7 +204,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 } else {
                     FlekGlassCircleButton(systemImage: "magnifyingglass",
                                           size: FlekTheme.searchPillSize, iconScale: 0.5) {
-                        // Springboard search overlay is implemented in a later phase.
+                        showSearch = true
                     }
                     .padding(.bottom, 10)
                 }
@@ -238,6 +239,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             FlekInternalPage(isPresented: $showInstallerCover) {
                 FlekstoreAppsListView(selectedTab: $sharedModel.selectedTab)
             }
+        }
+        .fullScreenCover(isPresented: $showSearch) {
+            FlekSearchView(
+                isPresented: $showSearch,
+                apps: sortedApps,
+                darkModeIcon: darkModeIcon,
+                onSelect: { app in handleHomeTap(.installed(app)) }
+            )
         }
         .sheet(isPresented: $isNavigationActive) {
             if let navigateTo { navigateTo }
