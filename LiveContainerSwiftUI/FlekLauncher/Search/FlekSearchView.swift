@@ -2,9 +2,10 @@
 //  FlekSearchView.swift
 //  LiveContainerSwiftUI
 //
-//  Springboard search overlay. Opened from the bottom search pill. Searches
-//  installed apps; per-source (Installer) results are added once the Installer
-//  source cache is reworked.
+//  Springboard search. Presented as an overlay over the (dimmed, blurred) home
+//  screen: results fill from the top and the search field sits in a bottom bar
+//  just above the keyboard, matching the FlekSign design. Searches installed
+//  apps; per-source (Installer) results are added with the Installer rework.
 //
 
 import SwiftUI
@@ -28,72 +29,97 @@ struct FlekSearchView: View {
 
     var body: some View {
         ZStack {
-            FlekWallpaperView().blur(radius: 35).overlay(Color.black.opacity(0.15))
-            Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
+            Color.black.opacity(0.3).ignoresSafeArea()
+                .onTapGesture { close() }
 
-            VStack(spacing: 14) {
-                searchField
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                if query.isEmpty {
-                    Spacer()
-                } else if results.isEmpty {
-                    Spacer()
-                    Text("lc.flek.noResults".loc)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("lc.flek.installed".loc)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 16)
-                            ForEach(results, id: \.self) { app in
-                                Button {
-                                    onSelect(app)
-                                    close()
-                                } label: {
-                                    FlekSearchRow(app: app, darkModeIcon: darkModeIcon)
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 16)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
-                }
+            VStack(spacing: 0) {
+                resultsArea
+                bottomBar
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
             }
         }
         .onAppear { fieldFocused = true }
     }
 
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("lc.flek.searchApps".loc, text: $query)
-                .focused($fieldFocused)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+    @ViewBuilder
+    private var resultsArea: some View {
+        if query.isEmpty {
+            Spacer()
+        } else if results.isEmpty {
+            Spacer()
+            Text("lc.flek.noResults".loc)
+                .foregroundStyle(.white.opacity(0.8))
+            Spacer()
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("lc.flek.installed".loc)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 16)
+                    ForEach(results, id: \.self) { app in
+                        Button {
+                            onSelect(app)
+                            close()
+                        } label: {
+                            FlekSearchRow(app: app, darkModeIcon: darkModeIcon)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                    }
+                }
+                .padding(.top, 80)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 16) {
+            // Search field pill
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.black.opacity(0.6))
+                TextField("lc.flek.search".loc, text: $query)
+                    .font(.system(size: 18))
+                    .foregroundStyle(.black)
+                    .focused($fieldFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(Capsule().fill(Color.white.opacity(0.45)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+            .compositingGroup()
+
+            // Clear + close button (returns to the home screen)
             Button {
-                // Clears the input, closes search and returns to the home screen.
                 close()
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                ZStack {
+                    Circle().fill(.ultraThinMaterial)
+                        .overlay(Circle().fill(Color.white.opacity(0.45)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.black.opacity(0.7))
+                }
+                .frame(width: 50, height: 50)
+                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
     }
 
     private func close() {
         query = ""
+        fieldFocused = false
         isPresented = false
     }
 }
@@ -111,19 +137,19 @@ private struct FlekSearchRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.appInfo.displayName() ?? "?")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.black)
                     .lineLimit(1)
                 Text("\(app.appInfo.version() ?? "?") - \(app.appInfo.bundleIdentifier() ?? "?")")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.black.opacity(0.55))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             Image(systemName: "arrow.up.forward.app")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.black.opacity(0.6))
         }
         .padding(.horizontal, 12)
         .frame(height: 68)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
+        .flekGlassCard(cornerRadius: 16)
     }
 }

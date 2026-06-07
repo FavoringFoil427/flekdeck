@@ -24,9 +24,9 @@ enum FlekTheme {
     static let cardHPadding: CGFloat = 8
     static let cardInnerSpacing: CGFloat = 8
 
-    // Icon
-    static let iconSize: CGFloat = 60
-    static let iconCorner: CGFloat = 14   // continuous squircle approximation
+    // Icon (Figma: 74×74 squircle)
+    static let iconSize: CGFloat = 74
+    static let iconCorner: CGFloat = 17   // continuous squircle approximation (~0.2237 * size)
 
     // Label
     static let labelSize: CGFloat = 14
@@ -36,9 +36,11 @@ enum FlekTheme {
 }
 
 /// Frosted "liquid glass" surface used by cards, pills and popups.
+/// The design specifies a white 60% fill over the wallpaper; we approximate the
+/// iOS-26 liquid-glass look with a thin material plus a strong white tint.
 struct FlekGlassBackground: View {
     var cornerRadius: CGFloat = FlekTheme.cardCorner
-    var tint: Double = 0.22
+    var tint: Double = 0.45
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -74,7 +76,7 @@ struct FlekGlassCircleButton: View {
             ZStack {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .overlay(Circle().fill(Color.white.opacity(0.28)))
+                    .overlay(Circle().fill(Color.white.opacity(0.45)))
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
                 Image(systemName: systemImage)
                     .font(.system(size: size * iconScale, weight: .regular))

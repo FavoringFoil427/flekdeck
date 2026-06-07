@@ -179,7 +179,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             .padding(.top, 8)
             .padding(.bottom, 84)
             .id(homeRefreshToggle)
+            .blur(radius: showSearch ? 20 : 0)
 
+            if !showSearch {
             VStack {
                 Spacer()
                 if isEditing {
@@ -209,6 +211,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     .padding(.bottom, 10)
                 }
             }
+            }
 
             if installprogressVisible {
                 VStack {
@@ -219,6 +222,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         .padding(.top, 60)
                     Spacer()
                 }
+            }
+
+            if showSearch {
+                FlekSearchView(
+                    isPresented: $showSearch,
+                    apps: sortedApps,
+                    darkModeIcon: darkModeIcon,
+                    onSelect: { app in handleHomeTap(.installed(app)) }
+                )
+                .transition(.opacity)
             }
         }
         .onAppear {
@@ -239,14 +252,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             FlekInternalPage(isPresented: $showInstallerCover) {
                 FlekstoreAppsListView(selectedTab: $sharedModel.selectedTab)
             }
-        }
-        .fullScreenCover(isPresented: $showSearch) {
-            FlekSearchView(
-                isPresented: $showSearch,
-                apps: sortedApps,
-                darkModeIcon: darkModeIcon,
-                onSelect: { app in handleHomeTap(.installed(app)) }
-            )
         }
         .sheet(isPresented: $isNavigationActive) {
             if let navigateTo { navigateTo }

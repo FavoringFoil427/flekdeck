@@ -28,18 +28,19 @@ struct FlekPersonalizationView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader("lc.flek.wallpapers".loc)
 
-                    HStack(spacing: 12) {
+                    HStack(alignment: .top, spacing: 8) {
                         currentPreview
-                        VStack(spacing: 12) {
-                            actionTile(title: "lc.flek.chooseFromCollection".loc, systemImage: "square.grid.2x2.fill") {
+                        VStack(spacing: 8) {
+                            actionTile(title: "lc.flek.chooseFromCollection".loc, systemImage: "rectangle.grid.3x2.fill") {
                                 showCollection = true
                             }
                             actionTile(title: "lc.flek.chooseFromPhotos".loc, systemImage: "photo.badge.plus") {
                                 showPhotoPicker = true
                             }
                         }
+                        .frame(height: 226)
                     }
-                    .padding(14)
+                    .padding(16)
                     .background(card)
                 }
 
@@ -47,11 +48,11 @@ struct FlekPersonalizationView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader("lc.flek.homeScreenLayout".loc)
 
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         layoutOption(.grid, title: "lc.flek.layoutGrid".loc)
                         layoutOption(.list, title: "lc.flek.layoutList".loc)
                     }
-                    .padding(14)
+                    .padding(16)
                     .background(card)
                 }
             }
@@ -74,6 +75,9 @@ struct FlekPersonalizationView: View {
 
     // MARK: Pieces
 
+    private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255) // #0075ff
+    private static let tileFill = Color(red: 136/255, green: 136/255, blue: 136/255).opacity(0.15)
+
     private var currentPreview: some View {
         ZStack(alignment: .topLeading) {
             Group {
@@ -83,28 +87,28 @@ struct FlekPersonalizationView: View {
                     FlekWallpaper.from(descriptor: wallpaperDescriptor).thumbnail()
                 }
             }
-            .frame(width: 96, height: 150)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(width: 110, height: 226)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
             Text("lc.flek.current".loc)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Capsule().fill(.ultraThinMaterial))
-                .padding(6)
+                .font(.system(size: 14))
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(.horizontal, 16).frame(height: 21)
+                .background(Capsule().fill(Color.black.opacity(0.2)))
+                .padding(.leading, 10).padding(.top, 8)
         }
     }
 
     private func actionTile(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: systemImage).font(.system(size: 22))
-                Text(title).font(.system(size: 13, weight: .medium)).multilineTextAlignment(.center)
+            VStack(spacing: 16) {
+                Image(systemName: systemImage).font(.system(size: 28))
+                Text(title).font(.system(size: 14)).multilineTextAlignment(.center)
             }
-            .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity)
-            .frame(height: 69)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(.tertiarySystemFill)))
+            .foregroundStyle(Self.flekBlue)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 24)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Self.tileFill))
         }
         .buttonStyle(.plain)
     }
@@ -114,30 +118,34 @@ struct FlekPersonalizationView: View {
         return Button {
             homeLayout = layout.rawValue
         } label: {
-            VStack(spacing: 10) {
+            VStack(spacing: 16) {
                 LayoutGlyph(layout: layout, selected: selected)
-                    .frame(width: 64, height: 92)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selected ? .white : Color.primary)
-                    .padding(.horizontal, 14).padding(.vertical, 4)
-                    .background(
-                        Capsule().fill(selected ? Color.accentColor : Color(.tertiarySystemFill))
-                    )
+                    .frame(width: 59, height: 100)
+                if selected {
+                    Text(title)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 6)
+                        .background(Capsule().fill(Self.flekBlue))
+                } else {
+                    Text(title)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.black)
+                }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(.tertiarySystemFill).opacity(0.5)))
+            .padding(.horizontal, 32).padding(.vertical, 16)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Self.tileFill))
         }
         .buttonStyle(.plain)
     }
 
     private func sectionHeader(_ text: String) -> some View {
-        Text(text).font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
+        Text(text).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
     }
 
     private var card: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(.secondarySystemGroupedBackground))
+        RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color.white)
     }
 }
 
