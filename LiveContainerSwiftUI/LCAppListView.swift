@@ -85,6 +85,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var showInstallerCover = false
     @State private var installerPreselectFlekstore = false
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
+    @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
 
     @State private var homeSaveIconExporterShow = false
     @State private var homeSaveIconFile : ImageDocument?
@@ -146,18 +147,34 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         ZStack {
             FlekWallpaperView()
 
-            FlekSpringboardView(
-                items: homeItems,
-                darkModeIcon: darkModeIcon,
-                isEditing: $isEditing,
-                isNew: { FlekLaunchTracker.shared.isNew($0) },
-                isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
-                onTap: { handleHomeTap($0) },
-                onDelete: { item in
-                    if case .installed(let app) = item { Task { await requestUninstall(app) } }
-                },
-                contextMenu: { item in homeContextMenu(for: item) }
-            )
+            Group {
+                if homeLayout == FlekHomeLayout.list.rawValue {
+                    FlekHomeListView(
+                        items: homeItems,
+                        darkModeIcon: darkModeIcon,
+                        isEditing: $isEditing,
+                        isNew: { FlekLaunchTracker.shared.isNew($0) },
+                        onTap: { handleHomeTap($0) },
+                        onDelete: { item in
+                            if case .installed(let app) = item { Task { await requestUninstall(app) } }
+                        },
+                        contextMenu: { item in homeContextMenu(for: item) }
+                    )
+                } else {
+                    FlekSpringboardView(
+                        items: homeItems,
+                        darkModeIcon: darkModeIcon,
+                        isEditing: $isEditing,
+                        isNew: { FlekLaunchTracker.shared.isNew($0) },
+                        isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
+                        onTap: { handleHomeTap($0) },
+                        onDelete: { item in
+                            if case .installed(let app) = item { Task { await requestUninstall(app) } }
+                        },
+                        contextMenu: { item in homeContextMenu(for: item) }
+                    )
+                }
+            }
             .padding(.top, 8)
             .padding(.bottom, 84)
             .id(homeRefreshToggle)

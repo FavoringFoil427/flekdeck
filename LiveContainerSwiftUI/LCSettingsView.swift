@@ -136,6 +136,13 @@ struct LCSettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    NavigationLink {
+                        FlekPersonalizationView()
+                    } label: {
+                        Label("lc.flek.personalization".loc, systemImage: "paintbrush")
+                    }
+                }
                 Section(header: Text("User information")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {

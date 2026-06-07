@@ -28,10 +28,16 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       cards (persists to LCAppSortManager custom order) — to be added next.
 - [ ] Phase 3 — Install-on-home (progress, cancel, game warning).
 - [ ] Phase 4 — Springboard search overlay.
-- [ ] Phase 5 — List view layout.
+- [x] **Phase 5 — List view layout.** Glass rows (icon, name, version·bundle,
+      RUN) switched on by Personalization → List. Shares context menu / tap /
+      delete with the grid. (Row drag-reorder pending with grid reorder.)
 - [ ] Phase 6 — Installer rework (source carousel, sources popup, import menu).
 - [ ] Phase 7 — Categorized Settings + UDID/Premium card.
-- [ ] Phase 8 — Personalization page + wallpapers popup + grid/list toggle.
+- [x] **Phase 8 — Personalization page + wallpapers popup + grid/list toggle.**
+      New Personalization page (reachable from Settings): current-wallpaper
+      preview, Choose from Collection (bundled default + gradient presets),
+      Choose from Photos (PHPicker, saved to app group), and the Grid/List
+      home-layout switch. Wallpaper drives the home background live.
 
 ## Architecture notes
 - `LCAppListView` was repurposed as the springboard host: it keeps ALL of the
