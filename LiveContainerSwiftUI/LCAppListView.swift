@@ -37,6 +37,12 @@ struct AppReplaceOption : Hashable {
     var appToReplace: LCAppModel?
 }
 
+/// Identifiable wrapper so the game-launch warning can be presented via .sheet(item:).
+struct FlekGameWarningTarget: Identifiable {
+    let id = UUID()
+    let app: LCAppModel
+}
+
 struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @Binding var appDataFolderNames: [String]
     @Binding var tweakFolderNames: [String]
@@ -93,6 +99,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @StateObject private var homeUninstallAlert = YesNoHelper()
     @StateObject private var homeUninstallFolderAlert = YesNoHelper()
     @State private var homeRefreshToggle = false
+    @State private var gameWarningTarget: FlekGameWarningTarget?
 
     @EnvironmentObject private var sharedModel : SharedModel
     @EnvironmentObject private var sharedAppSortManager : LCAppSortManager
@@ -215,11 +222,38 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
             if installprogressVisible {
                 VStack {
-                    ProgressView(value: installProgressPercentage)
-                        .progressViewStyle(.linear)
-                        .tint(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 60)
+                    HStack(spacing: 12) {
+                        Group {
+                            if let iconURL = sharedModel.installingIconURL, let url = URL(string: iconURL) {
+                                AsyncImage(url: url) { img in img.resizable().scaledToFill() } placeholder: {
+                                    Image(systemName: "arrow.down.circle").font(.system(size: 26)).foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                            } else {
+                                Image(systemName: "arrow.down.circle").font(.system(size: 26)).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(sharedModel.installingName ?? "lc.flek.installing".loc)
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.black).lineLimit(1)
+                            ProgressView(value: installProgressPercentage)
+                                .tint(Color(red: 0, green: 117/255, blue: 1))
+                        }
+                        Button {
+                            downloadHelper.cancel()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 24)).foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .flekGlassCard(cornerRadius: 18)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 56)
                     Spacer()
                 }
             }
@@ -255,6 +289,21 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .sheet(isPresented: $isNavigationActive) {
             if let navigateTo { navigateTo }
+        }
+        .sheet(item: $gameWarningTarget) { target in
+            FlekGameWarningView(appName: target.app.appInfo.displayName() ?? "") { parallel, remember in
+                if remember {
+                    FlekLaunchModeStore.shared.set(parallel ? .parallel : .single, for: target.app)
+                    homeRefreshToggle.toggle()
+                }
+                Task { await launchHomeApp(target.app, parallel: parallel) }
+            }
+        }
+        .onChange(of: installprogressVisible) { visible in
+            if !visible {
+                sharedModel.installingName = nil
+                sharedModel.installingIconURL = nil
+            }
         }
         .fileExporter(
             isPresented: $homeSaveIconExporterShow,
@@ -446,9 +495,20 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installed(let app):
             FlekLaunchTracker.shared.markLaunched(app)
-            let parallel = FlekLaunchModeStore.shared.mode(for: app) == .parallel
-            Task { await launchHomeApp(app, parallel: parallel) }
+            let mode = FlekLaunchModeStore.shared.mode(for: app)
+            if mode == nil, isGame(app) {
+                gameWarningTarget = FlekGameWarningTarget(app: app)
+            } else {
+                Task { await launchHomeApp(app, parallel: mode == .parallel) }
+            }
         }
+    }
+
+    func isGame(_ app: LCAppModel) -> Bool {
+        if let info = app.appInfo.info(), let cat = info["LSApplicationCategoryType"] as? String {
+            return cat.localizedCaseInsensitiveContains("game")
+        }
+        return false
     }
 
     func launchHomeApp(_ app: LCAppModel, parallel: Bool) async {

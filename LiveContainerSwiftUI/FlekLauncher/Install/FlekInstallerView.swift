@@ -289,6 +289,8 @@ struct FlekInstallerView: View {
             showPremium = true
             return
         }
+        sharedModel.installingName = app.app_name
+        sharedModel.installingIconURL = app.app_icon
         sharedModel.urlToInstall = app.install_url
     }
 

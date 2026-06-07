@@ -26,7 +26,7 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       for default apps, single-mode badge, blue "new" dot, jiggle edit mode with
       Done pill and delete (default apps protected). **Remaining:** drag-to-reorder
       cards (persists to LCAppSortManager custom order) — to be added next.
-- [ ] Phase 3 — Install-on-home (progress, cancel, game warning).
+- [x] **Phase 3 — Install-on-home + game warning.** Installing app shows a frosted progress card on the home (icon, name, progress, cancel via DownloadHelper). Game launch shows a "Recommended for games" sheet (Run Single vs Run Parallel, remember-my-choice default on) wired to the per-app launch-mode store.
 - [~] **Phase 4 — Springboard search overlay.** Bottom search pill opens a
       blurred full-screen overlay with a focused search field (magnifier + clear
       that returns home) and an "Installed" results section that launches the

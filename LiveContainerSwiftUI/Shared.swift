@@ -76,6 +76,9 @@ class SharedModel: ObservableObject {
     
     @Published var pidCallback : ((NSNumber, Error?) -> Void)? = nil
     @Published var urlToInstall: String?
+    // Display info for the in-progress install shown on the home screen.
+    @Published var installingName: String?
+    @Published var installingIconURL: String?
     
     static let isPhone: Bool = {
         UIDevice.current.userInterfaceIdiom == .phone

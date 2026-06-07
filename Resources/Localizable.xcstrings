@@ -28466,6 +28466,72 @@
           }
         }
       }
+    },
+    "lc.flek.game.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended for games"
+          }
+        }
+      }
+    },
+    "lc.flek.game.desc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Games usually run better in Single Mode. Single Mode gives the game more resources, but you'll need to close LiveContainer to exit it."
+          }
+        }
+      }
+    },
+    "lc.flek.game.remember": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remember my choice for this app"
+          }
+        }
+      }
+    },
+    "lc.flek.game.runParallel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Parallel Anyway"
+          }
+        }
+      }
+    },
+    "lc.flek.game.runSingle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Single"
+          }
+        }
+      }
+    },
+    "lc.flek.installing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing…"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
