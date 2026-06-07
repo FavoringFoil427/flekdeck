@@ -264,7 +264,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     isPresented: $showSearch,
                     apps: sortedApps,
                     darkModeIcon: darkModeIcon,
-                    onSelect: { app in handleHomeTap(.installed(app)) }
+                    onSelect: { app in handleHomeTap(.installed(app)) },
+                    onInstallStoreApp: { app in
+                        sharedModel.installingName = app.app_name
+                        sharedModel.installingIconURL = app.app_icon
+                        sharedModel.urlToInstall = app.install_url
+                    }
                 )
                 .transition(.opacity)
             }

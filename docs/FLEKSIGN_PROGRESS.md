@@ -20,18 +20,17 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       (default apps + installed apps), bottom search pill, page dots. Tabs removed.
       Settings/Installer open as full-screen covers; installed apps launch via the
       existing engine (reused from `LCAppListView`).
-- [~] **Phase 2 — Icon states + context menu + edit mode.** Done: full app
-      context menu (Run Single/Parallel with remembered per-app mode, Add to Home
-      Screen submenu, Move Cards, Settings-as-sheet, Uninstall), restricted menu
-      for default apps, single-mode badge, blue "new" dot, jiggle edit mode with
-      Done pill and delete (default apps protected). **Remaining:** drag-to-reorder
-      cards (persists to LCAppSortManager custom order) — to be added next.
+- [x] **Phase 2 — Icon states + context menu + edit mode.** Full app context
+      menu (Run Single/Parallel with remembered per-app mode, Add to Home Screen
+      submenu, Move Cards, Settings-as-sheet, Uninstall), restricted menu for
+      default apps, single-mode badge, blue "new" dot, jiggle edit mode with Done
+      pill, delete (default apps protected), and drag-to-reorder (persists to
+      LCAppSortManager custom order).
 - [x] **Phase 3 — Install-on-home + game warning.** Installing app shows a frosted progress card on the home (icon, name, progress, cancel via DownloadHelper). Game launch shows a "Recommended for games" sheet (Run Single vs Run Parallel, remember-my-choice default on) wired to the per-app launch-mode store.
-- [~] **Phase 4 — Springboard search overlay.** Bottom search pill opens a
-      blurred full-screen overlay with a focused search field (magnifier + clear
-      that returns home) and an "Installed" results section that launches the
-      tapped app. **Remaining:** per-source results (depends on the Installer
-      source cache from Phase 6).
+- [x] **Phase 4 — Springboard search overlay.** Bottom-bar search field (above
+      the keyboard) over the dimmed/blurred home, with "Installed" results
+      (launch on tap) and a "FlekSt0re" section (server-side search, install on
+      tap); clear/close returns home.
 - [x] **Phase 5 — List view layout.** Glass rows (icon, name, version·bundle,
       RUN) switched on by Personalization → List. Shares context menu / tap /
       delete with the grid. (Row drag-reorder pending with grid reorder.)

@@ -15,9 +15,13 @@ struct FlekSearchView: View {
     let apps: [LCAppModel]
     let darkModeIcon: Bool
     var onSelect: (LCAppModel) -> Void
+    var onInstallStoreApp: (FSAppModel) -> Void = { _ in }
 
     @State private var query = ""
     @FocusState private var fieldFocused: Bool
+    @StateObject private var storeVM = FlekstoreAppsListViewModel()
+
+    private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
 
     private var results: [LCAppModel] {
         guard !query.isEmpty else { return [] }
@@ -39,39 +43,70 @@ struct FlekSearchView: View {
                     .padding(.bottom, 8)
             }
         }
-        .onAppear { fieldFocused = true }
+        .onAppear {
+            fieldFocused = true
+            storeVM.repository = .flekstore
+            Task { await storeVM.refreshSubscriptionStatus() }
+        }
+        .onChange(of: query) { q in
+            storeVM.searchQuery = q
+            storeVM.debounceSearch(q)
+        }
     }
 
     @ViewBuilder
     private var resultsArea: some View {
         if query.isEmpty {
             Spacer()
-        } else if results.isEmpty {
+        } else if results.isEmpty && storeVM.apps.isEmpty && !storeVM.isLoading {
             Spacer()
             Text("lc.flek.noResults".loc)
                 .foregroundStyle(.white.opacity(0.8))
             Spacer()
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("lc.flek.installed".loc)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .padding(.horizontal, 16)
-                    ForEach(results, id: \.self) { app in
-                        Button {
-                            onSelect(app)
-                            close()
-                        } label: {
-                            FlekSearchRow(app: app, darkModeIcon: darkModeIcon)
+                VStack(alignment: .leading, spacing: 14) {
+                    if !results.isEmpty {
+                        section(title: "lc.flek.installed".loc) {
+                            ForEach(results, id: \.self) { app in
+                                Button {
+                                    onSelect(app)
+                                    close()
+                                } label: {
+                                    FlekSearchRow(app: app, darkModeIcon: darkModeIcon)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
+                    }
+                    if !storeVM.apps.isEmpty {
+                        section(title: "FlekSt0re") {
+                            ForEach(storeVM.apps) { app in
+                                FlekInstallerRow(app: app, accent: Self.flekBlue) {
+                                    onInstallStoreApp(app)
+                                    close()
+                                }
+                            }
+                        }
+                    }
+                    if storeVM.isLoading {
+                        ProgressView().frame(maxWidth: .infinity).padding()
                     }
                 }
+                .padding(.horizontal, 16)
                 .padding(.top, 80)
                 .padding(.bottom, 8)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.8))
+            content()
         }
     }
 
