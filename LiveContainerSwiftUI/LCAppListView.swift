@@ -249,8 +249,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
         .fullScreenCover(isPresented: $showInstallerCover) {
-            FlekInternalPage(isPresented: $showInstallerCover) {
-                FlekstoreAppsListView(selectedTab: $sharedModel.selectedTab)
+            FlekInstallerView(preselectFlekstore: installerPreselectFlekstore) {
+                showInstallerCover = false
             }
         }
         .sheet(isPresented: $isNavigationActive) {

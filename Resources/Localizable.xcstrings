@@ -28312,6 +28312,94 @@
           }
         }
       }
+    },
+    "lc.flek.importIpa": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import IPA"
+          }
+        }
+      }
+    },
+    "lc.flek.appSources": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Sources"
+          }
+        }
+      }
+    },
+    "lc.flek.addSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Source"
+          }
+        }
+      }
+    },
+    "lc.flek.connectedSources": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected Sources"
+          }
+        }
+      }
+    },
+    "lc.flek.edit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        }
+      }
+    },
+    "lc.flek.defaultSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default source"
+          }
+        }
+      }
+    },
+    "lc.flek.invalidSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read this source."
+          }
+        }
+      }
+    },
+    "lc.flek.confirmDeleteSource": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Are you sure you want to delete this source?"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
