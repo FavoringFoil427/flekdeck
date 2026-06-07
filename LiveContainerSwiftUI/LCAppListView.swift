@@ -86,6 +86,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var installerPreselectFlekstore = false
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
 
+    @State private var homeSaveIconExporterShow = false
+    @State private var homeSaveIconFile : ImageDocument?
+    @StateObject private var homeUninstallAlert = YesNoHelper()
+    @StateObject private var homeUninstallFolderAlert = YesNoHelper()
+    @State private var homeRefreshToggle = false
+
     @EnvironmentObject private var sharedModel : SharedModel
     @EnvironmentObject private var sharedAppSortManager : LCAppSortManager
     
@@ -145,21 +151,45 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 darkModeIcon: darkModeIcon,
                 isEditing: $isEditing,
                 isNew: { FlekLaunchTracker.shared.isNew($0) },
-                isSingleMode: { _ in false },
+                isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
                 onTap: { handleHomeTap($0) },
-                onDelete: { _ in },
-                contextMenu: { _ in EmptyView() }
+                onDelete: { item in
+                    if case .installed(let app) = item { Task { await requestUninstall(app) } }
+                },
+                contextMenu: { item in homeContextMenu(for: item) }
             )
             .padding(.top, 8)
             .padding(.bottom, 84)
+            .id(homeRefreshToggle)
 
             VStack {
                 Spacer()
-                FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                      size: FlekTheme.searchPillSize, iconScale: 0.5) {
-                    // Springboard search overlay is implemented in a later phase.
+                if isEditing {
+                    Button {
+                        withAnimation { isEditing = false }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("Done")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.75))
+                        .padding(.horizontal, 18)
+                        .frame(height: FlekTheme.searchPillSize)
+                        .background(Capsule().fill(.ultraThinMaterial))
+                        .overlay(Capsule().fill(Color.white.opacity(0.28)))
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 10)
+                } else {
+                    FlekGlassCircleButton(systemImage: "magnifyingglass",
+                                          size: FlekTheme.searchPillSize, iconScale: 0.5) {
+                        // Springboard search overlay is implemented in a later phase.
+                    }
+                    .padding(.bottom, 10)
                 }
-                .padding(.bottom, 10)
             }
 
             if installprogressVisible {
@@ -194,6 +224,28 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .sheet(isPresented: $isNavigationActive) {
             if let navigateTo { navigateTo }
+        }
+        .fileExporter(
+            isPresented: $homeSaveIconExporterShow,
+            document: homeSaveIconFile,
+            contentType: .image,
+            defaultFilename: "Icon.png",
+            onCompletion: { _ in })
+        .alert("lc.appBanner.confirmUninstallTitle".loc, isPresented: $homeUninstallAlert.show) {
+            Button(role: .destructive) { homeUninstallAlert.close(result: true) } label: {
+                Text("lc.appBanner.uninstall".loc)
+            }
+            Button("lc.common.cancel".loc, role: .cancel) { homeUninstallAlert.close(result: false) }
+        } message: {
+            Text("lc.appBanner.confirmUninstallShortMsg".loc)
+        }
+        .alert("lc.appBanner.deleteDataTitle".loc, isPresented: $homeUninstallFolderAlert.show) {
+            Button(role: .destructive) { homeUninstallFolderAlert.close(result: true) } label: {
+                Text("lc.common.delete".loc)
+            }
+            Button("lc.common.no".loc, role: .cancel) { homeUninstallFolderAlert.close(result: false) }
+        } message: {
+            Text("lc.appBanner.deleteDataShortMsg".loc)
         }
         .task(id: sharedModel.urlToInstall) {
             if let installURL = sharedModel.urlToInstall {
@@ -363,11 +415,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installed(let app):
             FlekLaunchTracker.shared.markLaunched(app)
-            Task { await launchHomeApp(app) }
+            let parallel = FlekLaunchModeStore.shared.mode(for: app) == .parallel
+            Task { await launchHomeApp(app, parallel: parallel) }
         }
     }
 
-    func launchHomeApp(_ app: LCAppModel) async {
+    func launchHomeApp(_ app: LCAppModel, parallel: Bool) async {
         if app.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
             do {
                 if !(try await LCUtils.authenticateUser()) { return }
@@ -378,10 +431,152 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
         do {
-            if #available(iOS 16.0, *), sharedModel.multiLCStatus != 2, launchInMultitaskMode {
+            if #available(iOS 16.0, *), sharedModel.multiLCStatus != 2, parallel {
                 try await app.runApp(multitask: true)
             } else {
                 try await app.runApp(multitask: false)
+            }
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
+    // MARK: - Home context menu
+
+    @ViewBuilder
+    func homeContextMenu(for item: FlekHomeItem) -> some View {
+        switch item {
+        case .defaultApp:
+            // Built-in apps: only the "arrange" action is offered (they can be
+            // moved but not removed, have no launch mode / settings / uninstall).
+            Button {
+                withAnimation { isEditing = true }
+            } label: {
+                Label("lc.appBanner.moveCards".loc, systemImage: "square.grid.2x2")
+            }
+        case .installed(let app):
+            installedContextMenu(app)
+        }
+    }
+
+    @ViewBuilder
+    private func installedContextMenu(_ app: LCAppModel) -> some View {
+        let mode = FlekLaunchModeStore.shared.mode(for: app) ?? .single
+        Button {
+            FlekLaunchModeStore.shared.set(.single, for: app)
+            homeRefreshToggle.toggle()
+            FlekLaunchTracker.shared.markLaunched(app)
+            Task { await launchHomeApp(app, parallel: false) }
+        } label: {
+            Label("lc.appBanner.runSingle".loc, systemImage: mode == .single ? "checkmark" : "1.square")
+        }
+        if #available(iOS 16.0, *) {
+            Button {
+                FlekLaunchModeStore.shared.set(.parallel, for: app)
+                homeRefreshToggle.toggle()
+                FlekLaunchTracker.shared.markLaunched(app)
+                Task { await launchHomeApp(app, parallel: true) }
+            } label: {
+                Label("lc.appBanner.runParallel".loc, systemImage: mode == .parallel ? "checkmark" : "square.on.square")
+            }
+        }
+
+        Divider()
+
+        Menu {
+            Button {
+                homeCopyLaunchUrl(app)
+            } label: {
+                Label("lc.appBanner.copyLaunchUrl".loc, systemImage: "link")
+            }
+            Button {
+                Task { await homeSaveIcon(app) }
+            } label: {
+                Label("lc.appBanner.saveAppIcon".loc, systemImage: "square.and.arrow.down")
+            }
+            Button {
+                Task { await homeCreateAppClip(app) }
+            } label: {
+                Label("lc.appBanner.createAppClip".loc, systemImage: "appclip")
+            }
+        } label: {
+            Label("lc.appBanner.addToHomeScreen".loc, systemImage: "plus.app")
+        }
+
+        Button {
+            withAnimation { isEditing = true }
+        } label: {
+            Label("lc.appBanner.moveCards".loc, systemImage: "square.grid.2x2")
+        }
+
+        Button {
+            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
+        } label: {
+            Label("lc.tabView.settings".loc, systemImage: "gear")
+        }
+
+        if !app.uiIsShared {
+            Button(role: .destructive) {
+                Task { await requestUninstall(app) }
+            } label: {
+                Label("lc.appBanner.uninstall".loc, systemImage: "trash")
+            }
+        }
+    }
+
+    func homeCopyLaunchUrl(_ app: LCAppModel) {
+        guard let path = app.appInfo.relativeBundlePath else { return }
+        if let fn = app.uiSelectedContainer?.folderName {
+            UIPasteboard.general.string = "livecontainer://livecontainer-launch?bundle-name=\(path)&container-folder-name=\(fn)"
+        } else {
+            UIPasteboard.general.string = "livecontainer://livecontainer-launch?bundle-name=\(path)"
+        }
+    }
+
+    func homeSaveIcon(_ app: LCAppModel) async {
+        guard let style = await promptForGeneratedIconStyle() else { return }
+        guard let img = app.appInfo.generateLiveContainerWrappedIcon(with: style) else { return }
+        homeSaveIconFile = ImageDocument(uiImage: img)
+        homeSaveIconExporterShow = true
+    }
+
+    func homeCreateAppClip(_ app: LCAppModel) async {
+        guard let style = await promptForGeneratedIconStyle() else { return }
+        do {
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: app.appInfo.generateWebClipConfig(withContainerId: app.uiSelectedContainer?.folderName, iconStyle: style)!,
+                format: .xml, options: 0)
+            installMdm(data: data)
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
+    func requestUninstall(_ app: LCAppModel) async {
+        do {
+            if let r = await homeUninstallAlert.open(), !r { return }
+
+            var doRemoveFolder = false
+            let containers = app.appInfo.containers
+            if !containers.isEmpty {
+                if let r = await homeUninstallFolderAlert.open() { doRemoveFolder = r }
+            }
+
+            let fm = FileManager()
+            try fm.removeItem(atPath: app.appInfo.bundlePath()!)
+            removeApp(app: app)
+            if doRemoveFolder {
+                for container in containers {
+                    let dataUUID = container.folderName
+                    let dataFolderPath = LCPath.dataPath.appendingPathComponent(dataUUID)
+                    try? fm.removeItem(at: dataFolderPath)
+                    LCUtils.removeAppKeychain(dataUUID: dataUUID)
+                    DispatchQueue.main.async {
+                        self.appDataFolderNames.removeAll { $0 == dataUUID }
+                    }
+                }
             }
         } catch {
             errorInfo = error.localizedDescription

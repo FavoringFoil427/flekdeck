@@ -61,6 +61,43 @@ enum FlekHomeItem: Identifiable {
     }
 }
 
+/// Per-app launch mode chosen from the home screen context menu. "Single"
+/// launches the app on its own (full screen); "Parallel" uses the existing
+/// multitasking window engine. A `nil` value means the user never picked one
+/// (treated as single, and not badged).
+enum FlekLaunchMode: String {
+    case single
+    case parallel
+}
+
+final class FlekLaunchModeStore {
+    static let shared = FlekLaunchModeStore()
+    private let store = LCUtils.appGroupUserDefault
+    private let key = "FlekAppLaunchModes"
+
+    private var map: [String: String] {
+        get { store.dictionary(forKey: key) as? [String: String] ?? [:] }
+        set { store.set(newValue, forKey: key) }
+    }
+
+    func mode(for app: LCAppModel) -> FlekLaunchMode? {
+        guard let id = app.appInfo.relativeBundlePath, let raw = map[id] else { return nil }
+        return FlekLaunchMode(rawValue: raw)
+    }
+
+    func set(_ mode: FlekLaunchMode, for app: LCAppModel) {
+        guard let id = app.appInfo.relativeBundlePath else { return }
+        var m = map
+        m[id] = mode.rawValue
+        map = m
+    }
+
+    /// Whether the single-mode badge should be shown (user explicitly chose single).
+    func showsSingleBadge(for app: LCAppModel) -> Bool {
+        mode(for: app) == .single
+    }
+}
+
 /// Tracks which guest apps have been launched at least once, so freshly
 /// installed apps can show the blue "new" dot until first launch.
 final class FlekLaunchTracker {

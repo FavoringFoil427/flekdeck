@@ -20,7 +20,12 @@ New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
       (default apps + installed apps), bottom search pill, page dots. Tabs removed.
       Settings/Installer open as full-screen covers; installed apps launch via the
       existing engine (reused from `LCAppListView`).
-- [ ] Phase 2 — Icon states + context menu + jiggle edit mode.
+- [~] **Phase 2 — Icon states + context menu + edit mode.** Done: full app
+      context menu (Run Single/Parallel with remembered per-app mode, Add to Home
+      Screen submenu, Move Cards, Settings-as-sheet, Uninstall), restricted menu
+      for default apps, single-mode badge, blue "new" dot, jiggle edit mode with
+      Done pill and delete (default apps protected). **Remaining:** drag-to-reorder
+      cards (persists to LCAppSortManager custom order) — to be added next.
 - [ ] Phase 3 — Install-on-home (progress, cancel, game warning).
 - [ ] Phase 4 — Springboard search overlay.
 - [ ] Phase 5 — List view layout.
