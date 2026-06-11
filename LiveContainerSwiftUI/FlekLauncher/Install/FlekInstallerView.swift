@@ -30,6 +30,7 @@ struct FlekInstallerView: View {
     @State private var showPremium = false
     @State private var searchActive = false
     @State private var importURLInput = false
+    @FocusState private var searchFocused: Bool
     @StateObject private var importUrlHelper = InputHelper()
     @State private var choosingIPA = false
 
@@ -45,17 +46,16 @@ struct FlekInstallerView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
-                if searchActive {
-                    searchField.padding(.horizontal, 16).padding(.top, 8)
-                } else if viewModel.repository == .flekstore {
+                if viewModel.repository == .flekstore && !searchActive {
                     categoryBar.padding(.top, 8)
                 }
 
                 content
-
+            }
+            .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 25)
-                    .padding(.vertical, 12)
+                    .padding(.bottom, 12)
             }
         }
         .task {
@@ -188,6 +188,16 @@ struct FlekInstallerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
+        } else if viewModel.visibleApps.isEmpty && searchActive && !viewModel.searchQuery.isEmpty && !viewModel.isLoading {
+            VStack(spacing: 12) {
+                Image(systemName: "square.dashed")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Color(.systemGray3))
+                Text("Nothing found")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color(.systemGray))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -214,7 +224,8 @@ struct FlekInstallerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.top, 10)
+                .padding(.bottom, 80)
             }
             .refreshable { await viewModel.resetAndFetchApps() }
         }
@@ -223,6 +234,17 @@ struct FlekInstallerView: View {
     // MARK: Bottom bar
 
     private var bottomBar: some View {
+        Group {
+            if searchActive {
+                searchBar
+            } else {
+                defaultBottomBar
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: searchActive)
+    }
+
+    private var defaultBottomBar: some View {
         HStack {
             Menu {
                 Button {
@@ -254,41 +276,66 @@ struct FlekInstallerView: View {
 
             Spacer()
 
-            FlekGlassCircleButton(systemImage: searchActive ? "xmark" : "magnifyingglass", size: 50, iconScale: 0.5) {
-                withAnimation {
-                    searchActive.toggle()
-                    if !searchActive {
-                        viewModel.searchQuery = ""
-                        Task { await viewModel.resetAndFetchApps() }
-                    }
-                }
+            FlekGlassCircleButton(systemImage: "magnifyingglass", size: 50, iconScale: 0.5) {
+                withAnimation { searchActive = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { searchFocused = true }
             }
         }
     }
 
-    private var searchField: some View {
+    private var searchBar: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16))
+                .foregroundStyle(Color(.systemGray))
+
             TextField("lc.flek.search".loc, text: $viewModel.searchQuery)
+                .font(.system(size: 17))
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .focused($searchFocused)
                 .onChange(of: viewModel.searchQuery) { q in
                     viewModel.debounceSearch(q)
                 }
+
             if !viewModel.searchQuery.isEmpty {
                 Button {
                     viewModel.searchQuery = ""
                     Task { await viewModel.resetAndFetchApps() }
                 } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color(.systemGray))
                 }
                 .buttonStyle(.plain)
             }
+
+            Button {
+                withAnimation {
+                    searchFocused = false
+                    searchActive = false
+                    viewModel.searchQuery = ""
+                    Task { await viewModel.resetAndFetchApps() }
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black.opacity(0.7))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color(.systemGray5)))
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(Capsule().fill(Color.white))
+        .frame(height: 50)
+        .background(
+            Capsule().fill(Color.white.opacity(0.85))
+                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
     }
+
+
 
     // MARK: Actions
 
@@ -306,6 +353,7 @@ struct FlekInstallerView: View {
     private func switchTo(_ repo: AppRepository) async {
         viewModel.searchQuery = ""
         searchActive = false
+        searchFocused = false
         viewModel.repository = Self.source(for: repo)
         await viewModel.resetAndFetchApps()
     }
