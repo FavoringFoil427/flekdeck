@@ -82,10 +82,13 @@ struct FlekSearchView: View {
                     if !storeVM.apps.isEmpty {
                         section(title: "FlekSt0re") {
                             ForEach(storeVM.apps) { app in
-                                FlekInstallerRow(app: app, accent: Self.flekBlue) {
+                                Button {
                                     onInstallStoreApp(app)
                                     close()
+                                } label: {
+                                    FlekStoreSearchRow(app: app)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -182,6 +185,39 @@ private struct FlekSearchRow: View {
             Spacer(minLength: 4)
             Image(systemName: "arrow.up.forward.app")
                 .foregroundStyle(.black.opacity(0.6))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 68)
+        .flekGlassCard(cornerRadius: 16)
+    }
+}
+
+private struct FlekStoreSearchRow: View {
+    let app: FSAppModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            FlekRemoteIcon(url: app.app_icon, size: 48, corner: 11)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.app_name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                Text("\(app.app_version)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.black.opacity(0.55))
+                    .lineLimit(1)
+                if !app.app_short_description.isEmpty {
+                    Text(app.app_short_description)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.black.opacity(0.55))
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(Color(red: 0/255, green: 117/255, blue: 255/255))
         }
         .padding(.horizontal, 12)
         .frame(height: 68)

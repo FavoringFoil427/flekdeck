@@ -569,7 +569,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Button {
                 withAnimation { isEditing = true }
             } label: {
-                Label("lc.appBanner.moveCards".loc, systemImage: "square.grid.2x2")
+                Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
             }
         case .installed(let app):
             installedContextMenu(app)
@@ -625,7 +625,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         Button {
             withAnimation { isEditing = true }
         } label: {
-            Label("lc.appBanner.moveCards".loc, systemImage: "square.grid.2x2")
+            Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }
 
         Button {
