@@ -356,6 +356,9 @@ struct AppRow: View {
                     } else {
                         selectedTab = .apps
                         flekstoreSharedModel.appInstallURL = app.install_url
+                        if !isCustomRepository {
+                            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                        }
                     }
                 }) {
                     Text("GET")

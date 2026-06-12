@@ -83,6 +83,7 @@ struct FlekSearchView: View {
                         section(title: "FlekSt0re") {
                             ForEach(storeVM.apps) { app in
                                 Button {
+                                    FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
                                     onInstallStoreApp(app)
                                     close()
                                 } label: {

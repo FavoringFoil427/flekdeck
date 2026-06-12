@@ -348,6 +348,9 @@ struct FlekInstallerView: View {
         sharedModel.installingIconURL = app.app_icon
         sharedModel.installingURL = app.install_url
         sharedModel.urlToInstall = app.install_url
+        if viewModel.repository == .flekstore {
+            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+        }
     }
 
     private func switchTo(_ repo: AppRepository) async {
