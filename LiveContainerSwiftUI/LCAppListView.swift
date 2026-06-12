@@ -581,22 +581,33 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @ViewBuilder
     private func installedContextMenu(_ app: LCAppModel) -> some View {
         let mode = FlekLaunchModeStore.shared.mode(for: app) ?? .single
-        Button {
-            FlekLaunchModeStore.shared.set(.single, for: app)
-            homeRefreshToggle.toggle()
-            FlekLaunchTracker.shared.markLaunched(app)
-            Task { await launchHomeApp(app, parallel: false) }
-        } label: {
-            Label("lc.appBanner.runSingle".loc, systemImage: mode == .single ? "checkmark" : "1.square")
-        }
         if #available(iOS 16.0, *) {
+            ControlGroup {
+                Button {
+                    FlekLaunchModeStore.shared.set(.single, for: app)
+                    homeRefreshToggle.toggle()
+                    FlekLaunchTracker.shared.markLaunched(app)
+                    Task { await launchHomeApp(app, parallel: false) }
+                } label: {
+                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                }
+                Button {
+                    FlekLaunchModeStore.shared.set(.parallel, for: app)
+                    homeRefreshToggle.toggle()
+                    FlekLaunchTracker.shared.markLaunched(app)
+                    Task { await launchHomeApp(app, parallel: true) }
+                } label: {
+                    Label("lc.appBanner.runParallel".loc, systemImage: mode == .parallel ? "macwindow.on.rectangle.fill" : "macwindow.on.rectangle")
+                }
+            }
+        } else {
             Button {
-                FlekLaunchModeStore.shared.set(.parallel, for: app)
+                FlekLaunchModeStore.shared.set(.single, for: app)
                 homeRefreshToggle.toggle()
                 FlekLaunchTracker.shared.markLaunched(app)
-                Task { await launchHomeApp(app, parallel: true) }
+                Task { await launchHomeApp(app, parallel: false) }
             } label: {
-                Label("lc.appBanner.runParallel".loc, systemImage: mode == .parallel ? "checkmark" : "square.on.square")
+                Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
             }
         }
 
