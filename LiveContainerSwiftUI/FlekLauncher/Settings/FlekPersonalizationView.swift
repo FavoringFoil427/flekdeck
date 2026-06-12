@@ -171,32 +171,31 @@ struct FlekPersonalizationView: View {
     }
 }
 
-/// Small phone illustration showing a grid or list arrangement.
+/// Small phone illustration showing a grid or list arrangement using SF Symbols.
 private struct LayoutGlyph: View {
     let layout: FlekHomeLayout
     let selected: Bool
 
     var body: some View {
         let tint = selected ? Color.accentColor : Color.secondary
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(tint, lineWidth: 2)
-            .overlay {
+        ZStack {
+            Image(systemName: "iphone.gen3")
+                .font(.system(size: 80, weight: .thin))
+                .foregroundStyle(tint)
+
+            Group {
                 if layout == .grid {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(10), spacing: 4), count: 3), spacing: 4) {
-                        ForEach(0 ..< 9, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 2).fill(tint).frame(width: 10, height: 10)
-                        }
-                    }
-                    .padding(10)
+                    Image(systemName: "square.grid.4x3.fill")
+                        .font(.system(size: 24))
+                        .rotationEffect(.degrees(90))
                 } else {
-                    VStack(spacing: 5) {
-                        ForEach(0 ..< 5, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 2).fill(tint).frame(height: 6)
-                        }
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 10)
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 24, weight: .bold))
                 }
             }
+            .foregroundStyle(tint)
+            .offset(y: -2)
+        }
     }
 }
 

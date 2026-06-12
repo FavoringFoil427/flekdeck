@@ -247,27 +247,27 @@ struct LCSettingsView: View {
                 // MARK: - Categories
                 Section {
                     NavigationLink { FlekPersonalizationView() } label: {
-                        categoryRow("lc.flek.personalization".loc, "paintbrush.fill", .pink)
+                        categoryRow("lc.flek.personalization".loc, "paintbrush.fill", .purple)
                     }
                     NavigationLink { launchBehaviorPage } label: {
-                        categoryRow("lc.flek.cat.launch".loc, "arrow.up.forward.app.fill", .blue)
+                        categoryRow("lc.flek.cat.launch".loc, "app.grid", .blue)
                     }
                     if #available(iOS 16.1, *) {
                         NavigationLink { multitaskPage } label: {
-                            categoryRow("lc.flek.cat.multitask".loc, "rectangle.on.rectangle.fill", .indigo)
+                            categoryRow("lc.flek.cat.multitask".loc, "macwindow.on.rectangle", .green)
                         }
                     }
                     NavigationLink { jitPage } label: {
-                        categoryRow("lc.flek.cat.jit".loc, "bolt.fill", .orange)
+                        categoryRow("lc.flek.cat.jit".loc, "j.circle", .blue)
                     }
                     NavigationLink { contentRestrictionsPage } label: {
-                        categoryRow("lc.flek.cat.content".loc, "hand.raised.fill", .red)
+                        categoryRow("lc.flek.cat.content".loc, "nosign", .red)
                     }
                     NavigationLink { signingPage } label: {
-                        categoryRow("lc.flek.cat.signing".loc, "signature", .green)
+                        categoryRow("lc.flek.cat.signing".loc, "signature", .mint)
                     }
                     NavigationLink { LCTweaksView(tweakFolders: $tweakFolderNames) } label: {
-                        categoryRow("Tweaks", "wrench.and.screwdriver.fill", Color(red: 1, green: 0.58, blue: 0))
+                        categoryRow("Tweaks", "wrench.and.screwdriver.fill", .orange)
                     }
                 }
                 Section {
@@ -278,19 +278,18 @@ struct LCSettingsView: View {
                         }
                     }
                     HStack {
-                        Image("Twitter")
-                        Button("khanhduytran0") {
-                            openTwitter()
-                        }
-                    }
-                    HStack {
                         Image("GitHub")
                         Button("Huge_Black") {
                             openGitHub2()
                         }
                     }
-                } header: {
-                    Text("lc.settings.about".loc)
+                    
+                    HStack {
+                        Image("Twitter")
+                        Button("khanhduytran0") {
+                            openTwitter()
+                        }
+                    }
                 } footer: {
                     Text("lc.settings.warning".loc)
                 }
@@ -753,8 +752,10 @@ struct LCSettingsView: View {
     }
     
     func openTwitter() {
-        UIApplication.shared.open(URL(string: "https://twitter.com/khanhduytran0")!)
+        UIApplication.shared.open(URL(string: "https://x.com/khanhduytran0")!)
     }
+
+
     
     func export() {
         let fileManager = FileManager.default
