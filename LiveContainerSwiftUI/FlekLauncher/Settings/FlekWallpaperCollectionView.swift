@@ -32,7 +32,7 @@ struct FlekWallpaperCollectionView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .strokeBorder(isSelected ? Color.accentColor : Color.black.opacity(0.08),
+                                        .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.08),
                                                       lineWidth: isSelected ? 3 : 0.5)
                                 )
                                 .overlay(alignment: .bottomTrailing) {

@@ -152,7 +152,7 @@ struct FlekPersonalizationView: View {
                 } else {
                     Text(title)
                         .font(.system(size: 14))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.primary)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -167,7 +167,7 @@ struct FlekPersonalizationView: View {
     }
 
     private var card: some View {
-        RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color.white)
+        RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color(.secondarySystemGroupedBackground))
     }
 }
 

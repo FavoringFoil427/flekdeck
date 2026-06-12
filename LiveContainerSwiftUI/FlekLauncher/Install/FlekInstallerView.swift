@@ -35,7 +35,7 @@ struct FlekInstallerView: View {
     @State private var choosingIPA = false
 
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
-    private static let screenBG = Color(red: 0xf2/255, green: 0xf2/255, blue: 0xf6/255)
+    private static let screenBG = Color(.systemGroupedBackground)
 
     var body: some View {
         ZStack {
@@ -113,12 +113,12 @@ struct FlekInstallerView: View {
                                 FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 8)
                                 Text(repo.name)
                                     .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(.black)
+                                    .foregroundStyle(.primary)
                                     .lineLimit(1)
                             }
                             .padding(.horizontal, 14).padding(.vertical, 7)
                             .background(
-                                Capsule().fill(selected ? Color(white: 0.93) : Color.clear)
+                                Capsule().fill(selected ? Color(.systemGray5) : Color.clear)
                             )
                         }
                         .buttonStyle(.plain)
@@ -128,7 +128,7 @@ struct FlekInstallerView: View {
             }
             .frame(height: 52)
             .background(
-                Capsule().fill(Color.white.opacity(0.65))
+                Capsule().fill(Color(.secondarySystemGroupedBackground))
                     .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
             )
 
@@ -137,9 +137,9 @@ struct FlekInstallerView: View {
             } label: {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.black.opacity(0.7))
+                    .foregroundStyle(.primary.opacity(0.7))
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.white.opacity(0.65)))
+                    .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
             }
             .buttonStyle(.plain)
         }
@@ -165,9 +165,9 @@ struct FlekInstallerView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 15, weight: selected ? .medium : .regular))
-                .foregroundStyle(selected ? .white : .black)
+                .foregroundStyle(selected ? .white : .primary)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Capsule().fill(selected ? Self.flekBlue : Color.white))
+                .background(Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground)))
         }
         .buttonStyle(.plain)
     }
@@ -262,10 +262,10 @@ struct FlekInstallerView: View {
                     Image(systemName: "square.and.arrow.down")
                     Text("lc.flek.importIpa".loc).font(.system(size: 16))
                 }
-                .foregroundStyle(.black.opacity(0.75))
+                .foregroundStyle(.primary.opacity(0.75))
                 .padding(12)
                 .frame(height: 50)
-                .background(Capsule().fill(Color.white.opacity(0.6)).shadow(color: .black.opacity(0.25), radius: 20, y: 4))
+                .background(Capsule().fill(Color(.secondarySystemGroupedBackground)).shadow(color: .black.opacity(0.25), radius: 20, y: 4))
             }
 
             Spacer()
@@ -320,7 +320,7 @@ struct FlekInstallerView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.black.opacity(0.7))
+                    .foregroundStyle(.primary.opacity(0.7))
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color(.systemGray5)))
             }
@@ -329,7 +329,7 @@ struct FlekInstallerView: View {
         .padding(.horizontal, 14)
         .frame(height: 50)
         .background(
-            Capsule().fill(Color.white.opacity(0.85))
+            Capsule().fill(Color(.secondarySystemGroupedBackground))
                 .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
         )
         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
@@ -394,10 +394,10 @@ struct FlekInstallerRow: View {
         HStack(spacing: 8) {
             FlekRemoteIcon(url: app.app_icon, size: 74, corner: 17)
             VStack(alignment: .leading, spacing: 6) {
-                Text(app.app_name).font(.system(size: 18, weight: .medium)).foregroundStyle(.black).lineLimit(1)
-                Text(app.app_version).font(.system(size: 14)).foregroundStyle(.black.opacity(0.6)).lineLimit(1)
+                Text(app.app_name).font(.system(size: 18, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
+                Text(app.app_version).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
                 if !app.app_short_description.isEmpty {
-                    Text(app.app_short_description).font(.system(size: 12)).foregroundStyle(.black.opacity(0.6)).lineLimit(2)
+                    Text(app.app_short_description).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
@@ -416,7 +416,7 @@ struct FlekInstallerRow: View {
             }
         }
         .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white))
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
     }
 }
 
@@ -455,7 +455,7 @@ struct FlekRemoteIcon: View {
             case .success(let image):
                 image.resizable().scaledToFill()
             default:
-                RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Color(white: 0.9))
+                RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Color(.systemGray5))
             }
         }
         .frame(width: size, height: size)

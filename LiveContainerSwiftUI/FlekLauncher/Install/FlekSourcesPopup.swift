@@ -119,16 +119,16 @@ struct FlekSourcesPopup: View {
             }
             FlekRemoteIcon(url: repo.iconUrl, size: 44, corner: 10)
             VStack(alignment: .leading, spacing: 6) {
-                Text(repo.name).font(.system(size: 18, weight: .medium)).foregroundStyle(.black).lineLimit(1)
+                Text(repo.name).font(.system(size: 18, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
                 Text(isDefault ? "lc.flek.defaultSource".loc : repo.sourceURL)
-                    .font(.system(size: 14)).foregroundStyle(.black.opacity(0.6)).lineLimit(1)
+                    .font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right").font(.system(size: 16, weight: .medium)).foregroundStyle(Color(white: 0.85))
+            Image(systemName: "chevron.right").font(.system(size: 16, weight: .medium)).foregroundStyle(Color(.tertiaryLabel))
         }
         .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color.white))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color(white: 0.85), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color(.separator), lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture {
             if editing { return }
