@@ -244,6 +244,22 @@ struct LCSettingsView: View {
                     }
                     .padding(.vertical, 6)
                 }
+                // MARK: - Certificate (shown only when no certificate is detected)
+                if sharedModel.multiLCStatus != 2 && !certificateDataFound {
+                    Section {
+                        Button("Import Flekstore certificate") {
+                            Task { await importEmbeddedCertificate() }
+                        }
+                        
+                        Button("lc.settings.importCertificate".loc) {
+                            Task { await importCertificate() }
+                        }
+                    } header: {
+                        Text("lc.settings.jitLess".loc)
+                    } footer: {
+                        Text("lc.settings.jitLessDesc".loc)
+                    }
+                }
                 // MARK: - Categories
                 Section {
                     NavigationLink { FlekPersonalizationView() } label: {
@@ -589,42 +605,22 @@ struct LCSettingsView: View {
     @ViewBuilder private var jitPage: some View {
         Form {
                 if sharedModel.multiLCStatus != 2 {
-                    Section{
+                    Section {
                         if !certificateDataFound {
-                            Section {
-                                Button("Import Flekstore certificate") {
-                                    Task { await importEmbeddedCertificate() }
-                                }
-                                
-                                Button("lc.settings.importCertificate".loc) {
-                                    Task { await importCertificate() }
-                                }
+                            Button("lc.settings.importCertificate".loc) {
+                                Task { await importCertificate() }
                             }
                         } else {
-                            Section {
-                                Button("lc.settings.removeCertificate".loc) {
-                                    Task { await removeCertificate() }
-                                }
+                            Button("lc.settings.removeCertificate".loc) {
+                                Task { await removeCertificate() }
                             }
                         }
-                        //                        if store == .AltStore || store == .SideStore {
-                        //                            Button {
-                        //                                Task{ await importCertificateFromSideStore() }
-                        //                            } label: {
-                        //                                if certificateDataFound {
-                        //                                    Text("lc.settings.refreshCertificateFromStore %@".localizeWithFormat(storeName))
-                        //                                } else {
-                        //                                    Text("lc.settings.importCertificateFromStore %@".localizeWithFormat(storeName))
-                        //                                }
-                        //                            }
-                        //                        }
                         
                         NavigationLink {
                             LCJITLessDiagnoseView()
                         } label: {
                             Text("lc.settings.jitlessDiagnose".loc)
                         }
-                        
                     } header: {
                         Text("lc.settings.jitLess".loc)
                     } footer: {
