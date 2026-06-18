@@ -57,7 +57,7 @@ struct LCTabView: View {
                 // FlekLauncher: the springboard home screen replaces the old tab bar.
                 // Settings and the Installer are now opened as full-screen pages from
                 // the home screen instead of being separate tabs.
-                LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
+                LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
             }
         }
         .downloadAlert(helper: downloadHelper)
