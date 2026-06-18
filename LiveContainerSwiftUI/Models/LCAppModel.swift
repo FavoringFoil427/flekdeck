@@ -3,9 +3,9 @@ import Foundation
 protocol LCAppModelDelegate {
     func closeNavigationView()
     func changeAppVisibility(app : LCAppModel)
-    func jitLaunch() async
-    func jitLaunch(withScript script: String) async
-    func jitLaunch(withPID pid: Int, withScript script: String?) async
+    func jitLaunch(appName: String) async
+    func jitLaunch(withScript script: String, appName: String) async
+    func jitLaunch(withPID pid: Int, withScript script: String?, appName: String) async
     func showRunWhenMultitaskAlert() async -> Bool?
 }
 
@@ -110,6 +110,41 @@ class LCAppModel: ObservableObject, Hashable {
         }
     }
     
+    @Published var uiIsMultitaskModeSpecificed : MultitaskSpecified {
+        didSet {
+            appInfo.multitaskSpecified = uiIsMultitaskModeSpecificed;
+        }
+    }
+    
+    public var bundleIdentifier: String {
+        get {
+            return appInfo.bundleIdentifier() ?? "?"
+        }
+    }
+    
+    public var version: String {
+        get {
+            return appInfo.version() ?? "?"
+        }
+    }
+    
+    public var displayName: String {
+        get {
+            return appInfo.displayName() ?? "?"
+        }
+    }
+    
+    public var shouldLaunchInMultitaskMode : Bool {
+        get {
+            if #available(iOS 16.0, *) {
+                return uiIsMultitaskModeSpecificed == .yes ||
+                (uiIsMultitaskModeSpecificed == .default && UserDefaults.standard.bool(forKey: "LCLaunchInMultitaskMode"))
+            } else {
+                return false
+            }
+        }
+    }
+    
     @Published var supportedLanguages : [String]?
     
     var delegate : LCAppModelDelegate?
@@ -132,6 +167,7 @@ class LCAppModel: ObservableObject, Hashable {
         self.uiTweakFolder = appInfo.tweakFolder
         self.uiDoSymlinkInbox = appInfo.doSymlinkInbox
         self.uiOrientationLock = appInfo.orientationLock
+        self.uiIsMultitaskModeSpecificed = appInfo.multitaskSpecified
         self.uiUseLCBundleId = appInfo.doUseLCBundleId
         self.uiFixFilePickerNew = appInfo.fixFilePickerNew
         self.uiFixLocalNotification = appInfo.fixLocalNotification
@@ -162,7 +198,8 @@ class LCAppModel: ObservableObject, Hashable {
         hasher.combine(ObjectIdentifier(self))
     }
     
-    func runApp(multitask: Bool = false, containerFolderName : String? = nil, bundleIdOverride : String? = nil, forceJIT: Bool? = nil) async throws{
+    // You should let LCAppModel.runApp to decide whether to run in multitask mode, but you may override the multitask parameter if necessary
+    func runApp(multitask: Bool? = nil, containerFolderName : String? = nil, bundleIdOverride : String? = nil, urlStr : String? = nil, forceJIT: Bool? = nil) async throws{
         if isAppRunning {
             return
         }
@@ -184,6 +221,8 @@ class LCAppModel: ObservableObject, Hashable {
         }
         let currentDataFolder = containerFolderName ?? uiSelectedContainer?.folderName
         
+        let multitask = multitask ?? shouldLaunchInMultitaskMode;
+        
         if multitask,
            let currentDataFolder,
            await bringExistingMultitaskWindowIfNeeded(dataUUID: currentDataFolder) {
@@ -202,18 +241,61 @@ class LCAppModel: ObservableObject, Hashable {
         {
             runningLC = (runningLC as NSString).deletingPathExtension
             
-            let openURL = URL(string: "\(runningLC)://")!
-            if await UIApplication.shared.canOpenURL(openURL) {
-                await UIApplication.shared.open(openURL)
+            var openURLComp = URLComponents()
+            openURLComp.scheme = runningLC
+            if let urlStr {
+                openURLComp.host = "open-url"
+                openURLComp.queryItems = [
+                    URLQueryItem(name: "url", value: Data(urlStr.utf8).base64EncodedString())
+                ]
+            }
+            if await UIApplication.shared.canOpenURL(openURLComp.url!) {
+                await UIApplication.shared.open(openURLComp.url!)
                 return
             }
         }
         
-        // ask user if they want to terminate all multitasking apps
+        // find a free lc to run non-multitasking shared app. If none, ask user if they want to terminate all multitasking apps
         if MultitaskManager.isMultitasking() && !multitask {
             if let currentDataFolder,
                await bringExistingMultitaskWindowIfNeeded(dataUUID: currentDataFolder) {
                 return
+            }
+            
+            if self.uiIsShared {
+                var freeScheme: String? = nil
+                LCUtils.forEachInstalledLC(isFree: true) { scheme, shouldBreak in
+                    freeScheme = scheme
+                    shouldBreak = true
+                }
+                if let freeScheme {
+                    LCUtils.appGroupUserDefault.set(freeScheme, forKey: "LCLaunchExtensionScheme")
+                    LCUtils.appGroupUserDefault.set(self.appInfo.relativeBundlePath, forKey: "LCLaunchExtensionBundleID")
+                    LCUtils.appGroupUserDefault.set(uiSelectedContainer?.folderName, forKey: "LCLaunchExtensionContainerName")
+                    if let urlStr {
+                        LCUtils.appGroupUserDefault.set(urlStr, forKey: "LCLaunchExtensionLaunchURL")
+                    }
+                    LCUtils.appGroupUserDefault.set(Date.now, forKey: "LCLaunchExtensionLaunchDate")
+                    var launchURLComp = URLComponents()
+                    launchURLComp.scheme = freeScheme
+                    launchURLComp.host = "livecontainer-launch"
+                    var queryItems: [URLQueryItem] = []
+                    if let bundlePath = self.appInfo.relativeBundlePath {
+                        queryItems.append(URLQueryItem(name: "bundle-name", value: bundlePath))
+                    }
+                    if let folderName = uiSelectedContainer?.folderName {
+                        queryItems.append(URLQueryItem(name: "container-folder-name", value: folderName))
+                    }
+                    
+                    launchURLComp.queryItems = queryItems
+                    
+                    if let url = launchURLComp.url {
+                        await UIApplication.shared.open(url)
+                    } else {
+                        throw "Unable to build URL from launchURLComp???"
+                    }
+                    return
+                }
             }
             
             guard let ans = await delegate?.showRunWhenMultitaskAlert(), ans else {
@@ -236,8 +318,9 @@ class LCAppModel: ObservableObject, Hashable {
         } else {
             UserDefaults.standard.set(self.appInfo.relativeBundlePath, forKey: "selected")
         }
-        
-
+        if let urlStr {
+            UserDefaults.standard.setValue(urlStr, forKey: "launchAppUrlScheme")
+        }
         UserDefaults.standard.set(uiSelectedContainer?.folderName, forKey: "selectedContainer")
         var is32bit = false
         
@@ -262,9 +345,9 @@ class LCAppModel: ObservableObject, Hashable {
                         }
                         Task {
                             if let scriptData = self.jitLaunchScriptJs, !scriptData.isEmpty {
-                                await self.delegate?.jitLaunch(withPID: pidNumber.intValue, withScript: scriptData)
+                                await self.delegate?.jitLaunch(withPID: pidNumber.intValue, withScript: scriptData, appName: self.appInfo.displayName())
                             } else {
-                                await self.delegate?.jitLaunch(withPID: pidNumber.intValue, withScript: nil)
+                                await self.delegate?.jitLaunch(withPID: pidNumber.intValue, withScript: nil, appName: self.appInfo.displayName())
                             }
                             continuation.resume()
                         }
@@ -273,9 +356,9 @@ class LCAppModel: ObservableObject, Hashable {
             } else {
                 // Non-multitask JIT flow remains unchanged
                 if let scriptData = jitLaunchScriptJs, !scriptData.isEmpty {
-                    await delegate?.jitLaunch(withScript: scriptData)
+                    await delegate?.jitLaunch(withScript: scriptData, appName: self.appInfo.displayName())
                 } else {
-                    await delegate?.jitLaunch()
+                    await delegate?.jitLaunch(appName: self.appInfo.displayName())
                 }
             }
         } else if multitask, #available(iOS 16.0, *) {

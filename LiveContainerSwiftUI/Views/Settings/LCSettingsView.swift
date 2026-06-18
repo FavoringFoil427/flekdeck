@@ -7,13 +7,29 @@
 
 import Foundation
 import SwiftUI
+import UserNotifications
 
-enum JITEnablerType : Int {
+enum JITEnablerType : Int, CaseIterable, Identifiable {
+    var id: Int { rawValue }
     case SideJITServer = 0
-    case StkiJIT = 1
+    case StikJIT = 1
     case JITStreamerEBLegacy = 2
     case StikJITLC = 3
     case SideStore = 4
+    case StosDebug = 5
+    case StosDebugLC = 6
+    
+    var displayName: String {
+        switch self {
+        case .StikJIT: "StikDebug"
+        case .StikJITLC: "StikDebug (Another LiveContainer)"
+        case .StosDebug: "StosDebug"
+        case .StosDebugLC: "StosDebug (Another LiveContainer)"
+        case .SideStore: "SideStore"
+        case .JITStreamerEBLegacy: "JitStreamer-EB (Relaunch)"
+        case .SideJITServer: "SideJITServer/JITStreamer 2.0"
+        }
+    }
 }
 
 struct LCSettingsView: View {
@@ -52,17 +68,6 @@ struct LCSettingsView: View {
     @AppStorage("LCDeviceUDID", store: LCUtils.appGroupUserDefault) var deviceUDID: String = ""
     @AppStorage("FSDeviceUDID") private var fsDeviceUDID: String = ""
     @AppStorage("LCJITEnablerType", store: LCUtils.appGroupUserDefault) var JITEnabler: JITEnablerType = .SideJITServer
-    
-    @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
-    @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = false
-    @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
-    @AppStorage("LCMultitaskBottomWindowBar", store: LCUtils.appGroupUserDefault) var bottomWindowBar = false
-    @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
-    @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = false
-    @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = false
-    @AppStorage("LCMaxOneAppOnStage", store: LCUtils.appGroupUserDefault) var onlyOneAppOnStage = false
-    @AppStorage("LCDockWidth", store: LCUtils.appGroupUserDefault) var dockWidth: Double = 80
-    @AppStorage("LCRedirectURLToHost", store: LCUtils.appGroupUserDefault) var redirectURLToHost = false
     
     @State var store : Store = .Unknown
     
@@ -751,8 +756,17 @@ struct LCSettingsView: View {
         UIApplication.shared.open(URL(string: "https://x.com/khanhduytran0")!)
     }
 
+    func clearNotifications() {
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.removeAllDeliveredNotifications()
+        notificationCenter.removeAllPendingNotificationRequests()
+        if #available(iOS 16.0, *) {
+            notificationCenter.setBadgeCount(0)
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
+    }
 
-    
     func export() {
         let fileManager = FileManager.default
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!

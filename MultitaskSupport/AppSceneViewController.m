@@ -7,7 +7,7 @@
 #import "AppSceneViewController.h"
 #import "DecoratedAppSceneViewController.h"
 #import "LiveContainerSwiftUI-Swift.h"
-#import "../LiveContainerSwiftUI/LCUtils.h"
+#import "../LiveContainerSwiftUI/Utilities/LCUtils.h"
 #import "PiPManager.h"
 #import "Localization.h"
 #import "LCSharedUtils.h"
@@ -18,6 +18,7 @@
 @property CGPoint normalizedOrigin;
 @property bool isNativeWindow;
 @property NSUUID* identifier;
+@property bool stagedToAppGroup;
 @end
 
 @interface AppSceneViewController()
@@ -60,23 +61,54 @@
         @"lcHomePath": NSHomeDirectory(),
     }.mutableCopy;
     
+    NSString* launchAppUrlScheme = [NSUserDefaults.standardUserDefaults stringForKey:@"launchAppUrlScheme"];
+    [NSUserDefaults.lcUserDefaults removeObjectForKey:@"launchAppUrlScheme"];
+    if(launchAppUrlScheme) {
+        [userInfo setValue:launchAppUrlScheme forKey:@"launchAppUrlScheme"];
+    }
+    
     NSURL *docURL = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].lastObject;
+    NSFileManager *fm = NSFileManager.defaultManager;
     if ([NSUserDefaults.standardUserDefaults boolForKey:@"LCSharePrivateDataWithLiveProcess"]) {
         NSData* bookmarkData = [docURL bookmarkDataWithOptions:(1<<11) includingResourceValuesForKeys:0 relativeToURL:0 error:0];
-        [bookmarks addObject:bookmarkData];
-    } else {
-        bool isSharedApp = false;
-        NSBundle* bundle = [LCSharedUtils findBundleWithBundleId:bundleId isSharedAppOut:&isSharedApp];
-        // when mutlitask with private app, we can restrict its sandbox to only its own container
-        if (!isSharedApp) {
-            NSURL *dataURL = [docURL URLByAppendingPathComponent:[NSString stringWithFormat:@"Data/Application/%@", dataUUID]];
-            NSURL *tweaksURL = [docURL URLByAppendingPathComponent:@"Tweaks"];
-            [bookmarks addObject:[bundle.bundleURL bookmarkDataWithOptions:(1<<11) includingResourceValuesForKeys:0 relativeToURL:0 error:0]];
-            NSData* containerBookmark = [dataURL bookmarkDataWithOptions:(1<<11) includingResourceValuesForKeys:0 relativeToURL:0 error:0];
-            if(containerBookmark) {
-                [bookmarks addObject:containerBookmark];
+        if(bookmarkData) {
+            [bookmarks addObject:bookmarkData];
+        }
+    }
+    
+    // Stage local app files to app group container so the extension can access them
+    // (security-scoped bookmarks are unreliable on iOS 26+)
+    bool isSharedApp = false;
+    [LCSharedUtils findBundleWithBundleId:bundleId isSharedAppOut:&isSharedApp];
+    if (!isSharedApp) {
+        NSURL *appGroupPath = [LCSharedUtils appGroupPath];
+        if (appGroupPath) {
+            NSURL *appGroupLC = [appGroupPath URLByAppendingPathComponent:@"LiveContainer"];
+            
+            // Stage app bundle
+            NSURL *srcBundle = [docURL URLByAppendingPathComponent:[NSString stringWithFormat:@"Applications/%@", bundleId]];
+            NSURL *dstBundle = [appGroupLC URLByAppendingPathComponent:[NSString stringWithFormat:@"Applications/%@", bundleId]];
+            [fm createDirectoryAtURL:[dstBundle URLByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            [fm removeItemAtURL:dstBundle error:nil];
+            [fm copyItemAtURL:srcBundle toURL:dstBundle error:nil];
+            
+            // Stage data container
+            NSURL *srcData = [docURL URLByAppendingPathComponent:[NSString stringWithFormat:@"Data/Application/%@", dataUUID]];
+            NSURL *dstData = [appGroupLC URLByAppendingPathComponent:[NSString stringWithFormat:@"Data/Application/%@", dataUUID]];
+            [fm createDirectoryAtURL:[dstData URLByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+            [fm removeItemAtURL:dstData error:nil];
+            if ([fm fileExistsAtPath:srcData.path]) {
+                [fm copyItemAtURL:srcData toURL:dstData error:nil];
             }
-            [bookmarks addObject:[tweaksURL bookmarkDataWithOptions:(1<<11) includingResourceValuesForKeys:0 relativeToURL:0 error:0]];
+            
+            // Stage tweaks (only if not already present from shared apps)
+            NSURL *srcTweaks = [docURL URLByAppendingPathComponent:@"Tweaks"];
+            NSURL *dstTweaks = [appGroupLC URLByAppendingPathComponent:@"Tweaks"];
+            if ([fm fileExistsAtPath:srcTweaks.path] && ![fm fileExistsAtPath:dstTweaks.path]) {
+                [fm copyItemAtURL:srcTweaks toURL:dstTweaks error:nil];
+            }
+            
+            self.stagedToAppGroup = true;
         }
     }
     item.userInfo = userInfo;
@@ -252,6 +284,30 @@
         return;
     }
     _isAppTerminationCleanUpCalled = true;
+    
+    // Sync staged data back from app group and clean up
+    if (self.stagedToAppGroup) {
+        NSURL *appGroupPath = [LCSharedUtils appGroupPath];
+        if (appGroupPath) {
+            NSURL *appGroupLC = [appGroupPath URLByAppendingPathComponent:@"LiveContainer"];
+            NSURL *docURL = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].lastObject;
+            NSFileManager *fm = NSFileManager.defaultManager;
+            
+            // Sync data container back
+            NSURL *stagedData = [appGroupLC URLByAppendingPathComponent:[NSString stringWithFormat:@"Data/Application/%@", self.dataUUID]];
+            NSURL *localData = [docURL URLByAppendingPathComponent:[NSString stringWithFormat:@"Data/Application/%@", self.dataUUID]];
+            if ([fm fileExistsAtPath:stagedData.path]) {
+                [fm removeItemAtURL:localData error:nil];
+                [fm copyItemAtURL:stagedData toURL:localData error:nil];
+                [fm removeItemAtURL:stagedData error:nil];
+            }
+            
+            // Remove staged app bundle
+            NSURL *stagedBundle = [appGroupLC URLByAppendingPathComponent:[NSString stringWithFormat:@"Applications/%@", self.bundleId]];
+            [fm removeItemAtURL:stagedBundle error:nil];
+        }
+    }
+    
     dispatch_async(dispatch_get_main_queue(), ^{
         if(self.sceneID) {
             [[PrivClass(FBSceneManager) sharedInstance] destroyScene:self.sceneID withTransitionContext:nil];

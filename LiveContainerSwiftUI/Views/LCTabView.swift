@@ -13,6 +13,7 @@ struct LCTabView: View {
     @Binding var tweakFolderNames: [String]
     
     @State var errorShow = false
+    @State var crashReportShow = false
     @State var errorInfo = ""
     
     @State var previousSelectedTab : LCTabIdentifier = .apps
@@ -29,8 +30,12 @@ struct LCTabView: View {
     @EnvironmentObject var sceneDelegate: SceneDelegate
     @State var shouldToggleMainWindowOpen = false
     @Environment(\.scenePhase) var scenePhase
-    let pub = NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification)
+    @StateObject var downloadHelper = DownloadHelper()
     
+    @StateObject var searchContextAppList = SearchContext()
+    @StateObject var searchContextSource = SearchContext()
+    
+    let pub = NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification)
     
     var body: some View {
         Group {
@@ -55,11 +60,39 @@ struct LCTabView: View {
                 LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
             }
         }
+        .downloadAlert(helper: downloadHelper)
+        .environmentObject(downloadHelper)
         .alert("lc.common.error".loc, isPresented: $errorShow) {
             Button("lc.common.ok".loc) {}
             Button("lc.common.copy".loc) { copyError() }
         } message: {
             Text(errorInfo)
+        }
+        .sheet(isPresented: $crashReportShow) {
+            NavigationView {
+                ScrollView {
+                    Text(errorInfo)
+                        .font(.system(size: 12).monospaced())
+                        .fixedSize(horizontal: false, vertical: false)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("lc.common.copy".loc, action: {
+                            copyError()
+                        })
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("lc.common.ok".loc, action: {
+                            crashReportShow = false
+                        })
+                    }
+                }
+                .navigationTitle("lc.common.error".loc)
+                .navigationBarTitleDisplayMode(.inline)
+            }
         }
         .task {
             setupInitialRepositoriesIfNeeded()
@@ -159,7 +192,7 @@ struct LCTabView: View {
         guard let errorStr else { return }
         UserDefaults.standard.removeObject(forKey: "error")
         errorInfo = errorStr
-        errorShow = true
+        crashReportShow = true
     }
     
     func copyError() { UIPasteboard.general.string = errorInfo }

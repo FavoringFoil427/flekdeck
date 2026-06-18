@@ -47,6 +47,7 @@ import Intents
             return nil
         }
     }
+    
 }
 
 class SceneDelegate: NSObject, UIWindowSceneDelegate, ObservableObject { // Make SceneDelegate conform ObservableObject

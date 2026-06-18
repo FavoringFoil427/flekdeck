@@ -5,14 +5,9 @@
 #import <UIKit/UIKit.h>
 #import "LCAppInfo.h"
 #import "LCUtils.h"
-#import "../LiveContainer/LCSharedUtils.h"
+#import "../../LiveContainer/LCSharedUtils.h"
 
 uint32_t dyld_get_sdk_version(const struct mach_header* mh);
-
-@interface LCAppInfo()
-@property UIImage* cachedIcon;
-@property UIImage* cachedIconDark;
-@end
 
 @implementation LCAppInfo
 
@@ -388,43 +383,10 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
         return;
     }
     
-    if(forceSign) {
-        // remove ZSign cache since hash is changed after upgrading patch
-        NSString* cachePath = [appPath stringByAppendingPathComponent:@"zsign_cache.json"];
-        if([fm fileExistsAtPath:cachePath]) {
-            NSError* err;
-            [fm removeItemAtPath:cachePath error:&err];
-        }
-    }
-    
     // Sign app if JIT-less is set up
         NSURL *appPathURL = [NSURL fileURLWithPath:appPath];
-            // We need to temporarily fake bundle ID and main executable to sign properly
-            NSString *tmpExecPath = [appPath stringByAppendingPathComponent:@"LiveContainer.tmp"];
-            if (!info[@"LCBundleIdentifier"]) {
-                // Don't let main executable get entitlements
-                [fm copyItemAtPath:NSBundle.mainBundle.executablePath toPath:tmpExecPath error:nil];
-
-                infoPlist[@"LCBundleExecutable"] = infoPlist[@"CFBundleExecutable"];
-                infoPlist[@"LCBundleIdentifier"] = infoPlist[@"CFBundleIdentifier"];
-                infoPlist[@"CFBundleExecutable"] = tmpExecPath.lastPathComponent;
-                infoPlist[@"CFBundleIdentifier"] = NSBundle.mainBundle.bundleIdentifier;
-                [infoPlist writeBinToFile:infoPath atomically:YES];
-            }
-            infoPlist[@"CFBundleExecutable"] = infoPlist[@"LCBundleExecutable"];
-            infoPlist[@"CFBundleIdentifier"] = infoPlist[@"LCBundleIdentifier"];
-            [infoPlist removeObjectForKey:@"LCBundleExecutable"];
-            [infoPlist removeObjectForKey:@"LCBundleIdentifier"];
-            
             void (^signCompletionHandler)(BOOL success, NSError *error)  = ^(BOOL success, NSError *_Nullable error) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    
-                    // Remove fake main executable
-                    [fm removeItemAtPath:tmpExecPath error:nil];
-                    
-                    // Save sign ID and restore bundle ID
-                    [self save];
-                    [infoPlist writeBinToFile:infoPath atomically:YES];
                     [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SigningInProgress"];
                     if(!success) {
                         completetionHandler(NO, error.localizedDescription);
@@ -445,7 +407,6 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
             if (progress) {
                 progressHandler(progress);
             }
-
 }
 
 - (bool)isJITNeeded {
@@ -591,12 +552,18 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
 
 - (LCOrientationLock)orientationLock {
     return (LCOrientationLock) [((NSNumber*) _info[@"LCOrientationLock"]) intValue];
-
 }
 - (void)setOrientationLock:(LCOrientationLock)orientationLock {
     _info[@"LCOrientationLock"] = [NSNumber numberWithInt:(int) orientationLock];
     [self save];
-    
+}
+
+- (MultitaskSpecified)multitaskSpecified {
+    return (LCOrientationLock) [((NSNumber*) _info[@"MultitaskSpecified"]) intValue];
+}
+- (void)setMultitaskSpecified:(MultitaskSpecified)multitaskSpecified {
+    _info[@"MultitaskSpecified"] = [NSNumber numberWithInt:(int) multitaskSpecified];
+    [self save];
 }
 
 - (UIColor*)cachedColor {

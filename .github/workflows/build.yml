@@ -1,7 +1,7 @@
 name: iOS Build
 
 on:
-  
+
   pull_request:
   workflow_dispatch:
 
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true  
+          submodules: true
 
       - name: Select Xcode version
         uses: maxim-lobanov/setup-xcode@v1

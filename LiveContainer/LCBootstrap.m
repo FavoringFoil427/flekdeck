@@ -27,6 +27,7 @@ NSBundle* lcMainBundle;
 NSDictionary* guestAppInfo;
 NSDictionary* guestContainerInfo;
 NSString* lcGuestAppId;
+NSString* lcLaunchURL;
 bool isLiveProcess = false;
 bool isSharedBundle = false;
 bool isSideStore = false;
@@ -37,6 +38,9 @@ bool sideStoreExist = false;
     return lcUserDefaults;
 }
 + (instancetype)lcSharedDefaults {
+    if(!lcUserDefaults) {
+        lcSharedDefaults = [[NSUserDefaults alloc] initWithSuiteName: [LCSharedUtils appGroupID]];
+    }
     return lcSharedDefaults;
 }
 + (NSString *)lcAppGroupPath {
@@ -72,6 +76,9 @@ bool sideStoreExist = false;
 + (NSString*)lcGuestAppId {
     return lcGuestAppId;
 }
++ (NSString*)lcLaunchURL {
+    return lcLaunchURL;
+}
 @end
 
 static BOOL checkJITEnabled() {
@@ -106,17 +113,33 @@ void overwriteMainCFBundle(void) {
     // Overwrite CFBundleGetMainBundle
     uint32_t *pc = (uint32_t *)CFBundleGetMainBundle;
     void **mainBundleAddr = 0;
-    while (true) {
-        uint64_t addr = aarch64_get_tbnz_jump_address(*pc, (uint64_t)pc);
-        if (addr) {
-            // adrp <- pc-1
-            // tbnz <- pc
-            // ...
-            // ldr  <- addr
-            mainBundleAddr = (void **)aarch64_emulate_adrp_ldr(*(pc-1), *(uint32_t *)addr, (uint64_t)(pc-1));
-            break;
+    
+    if(@available(iOS 27.0, *)) {
+        // at least in iOS 27.0 db1, the logic is inversed and the __mainBundle is right after the first tbz instruction
+        while (true) {
+            bool isTbz = ((*pc) & 0x7F000000) == 0x36000000;
+            if (isTbz) {
+                // adrp <- pc-1
+                // tbz <- pc
+                // ldr  <- addr
+                mainBundleAddr = (void **)aarch64_emulate_adrp_ldr(*(pc-1), *(uint32_t *)(pc+1), (uint64_t)(pc-1));
+                break;
+            }
+            ++pc;
         }
-        ++pc;
+    } else {
+        while (true) {
+            uint64_t addr = aarch64_get_tbnz_jump_address(*pc, (uint64_t)pc);
+            if (addr) {
+                // adrp <- pc-1
+                // tbnz <- pc
+                // ...
+                // ldr  <- addr
+                mainBundleAddr = (void **)aarch64_emulate_adrp_ldr(*(pc-1), *(uint32_t *)addr, (uint64_t)(pc-1));
+                break;
+            }
+            ++pc;
+        }
     }
     assert(mainBundleAddr != NULL);
     *mainBundleAddr = (__bridge void *)NSBundle.mainBundle._cfBundle;
@@ -363,7 +386,7 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
                     [lcUserDefaults setObject:@"Bookmark resolution timed out. Is the data storage offline?" forKey:@"error"];
                     NSError* err = nil;
                     BOOL isStale = false;
-                    bookmarkURL = [NSURL URLByResolvingBookmarkData:bookmarkData options:0 relativeToURL:nil bookmarkDataIsStale:&isStale error:&err];
+                    bookmarkURL = [NSURL URLByResolvingBookmarkData:bookmarkData options:(1<<10) relativeToURL:nil bookmarkDataIsStale:&isStale error:&err];
                     bool access = [bookmarkURL startAccessingSecurityScopedResource];
                     if(!bookmarkURL || !access) {
                         return [@"Bookmark resolution failed or unable to access the container. You might need to readd the data storage. %@" stringByAppendingString:err.localizedDescription];
@@ -479,6 +502,17 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
     
     BOOL hookDlopen = !isSideStore && !isSharedBundle && LCSharedUtils.certificatePassword && isLiveProcess;
     DyldHooksInit([guestAppInfo[@"hideLiveContainer"] boolValue], hookDlopen, [guestAppInfo[@"spoofSDKVersion"] unsignedIntValue]);
+    
+    if([guestContainerInfo[@"spoofIdentifierForVendor"] boolValue]) {
+        NSString* idForVendorStr = guestContainerInfo[@"spoofedIdentifierForVendor"];
+        if([idForVendorStr isKindOfClass:NSString.class]) {
+            NSUUID* idForVendorUUID = [[NSUUID UUID] initWithUUIDString:idForVendorStr];
+            if(idForVendorUUID) {
+                IDFVHookInit(idForVendorUUID);
+            }
+        }
+    }
+    
 #if is32BitSupported
     bool is32bit = [guestAppInfo[@"is32bit"] boolValue];
     if(is32bit) {
@@ -604,21 +638,29 @@ int LiveContainerMain(int argc, char *argv[]) {
 
     NSString *selectedApp = [lcUserDefaults stringForKey:@"selected"];
     NSString *selectedContainer = [lcUserDefaults stringForKey:@"selectedContainer"];
-    if(!selectedApp) {
-        NSString* selectedAppFromLaunchExtension = [lcSharedDefaults stringForKey:@"LCLaunchExtensionBundleID"];
-        
-        if(selectedAppFromLaunchExtension) {
-            NSDate* launchDate = [lcSharedDefaults objectForKey:@"LCLaunchExtensionLaunchDate"];
-            NSTimeInterval secondsSinceDate = [launchDate timeIntervalSinceNow];
-
-            if (secondsSinceDate < 0 && secondsSinceDate >= -3.0) {
-                selectedApp = selectedAppFromLaunchExtension;
-                selectedContainer = [lcSharedDefaults stringForKey:@"LCLaunchExtensionContainerName"];
-            }
-            [lcSharedDefaults removeObjectForKey:@"LCLaunchExtensionBundleID"];
-            [lcSharedDefaults removeObjectForKey:@"LCLaunchExtensionContainerName"];
+    NSString *launchUrl = nil;
+    do {
+        if(selectedApp) {
+            launchUrl = [lcUserDefaults stringForKey:@"launchAppUrlScheme"];
+            break;
         }
-    }
+        // check launch task in shared defaults
+        NSString* scheemFromLaunchExtension = [lcSharedDefaults stringForKey:@"LCLaunchExtensionScheme"];
+        if(![scheemFromLaunchExtension isEqualToString:lcAppUrlScheme]) break;
+        NSString* selectedAppFromLaunchExtension = [lcSharedDefaults stringForKey:@"LCLaunchExtensionBundleID"];
+        if(!selectedAppFromLaunchExtension) break;
+        NSDate* launchDate = [lcSharedDefaults objectForKey:@"LCLaunchExtensionLaunchDate"];
+        NSTimeInterval secondsSinceDate = [launchDate timeIntervalSinceNow];
+        if (secondsSinceDate >= 0 || secondsSinceDate < -3.0) break;
+        
+        selectedApp = selectedAppFromLaunchExtension;
+        selectedContainer = [lcSharedDefaults stringForKey:@"LCLaunchExtensionContainerName"];
+        launchUrl = [lcSharedDefaults stringForKey:@"LCLaunchExtensionLaunchURL"];
+        
+        [lcSharedDefaults removeObjectForKey:@"LCLaunchExtensionBundleID"];
+        if (selectedContainer) [lcSharedDefaults removeObjectForKey:@"LCLaunchExtensionContainerName"];
+        if (launchUrl) [lcSharedDefaults removeObjectForKey:@"LCLaunchExtensionLaunchURL"];
+    } while (0);
     
     NSString* lastLaunchDataUUID;
     if(!isLiveProcess) {
@@ -721,24 +763,11 @@ int LiveContainerMain(int argc, char *argv[]) {
     }
     
     if (selectedApp || isSideStore) {
-        
-        NSString *launchUrl = [lcUserDefaults stringForKey:@"launchAppUrlScheme"];
         [lcUserDefaults removeObjectForKey:@"selected"];
         [lcUserDefaults removeObjectForKey:@"selectedContainer"];
-        // wait for app to launch so that it can receive the url
         if(launchUrl) {
+            lcLaunchURL = launchUrl;
             [lcUserDefaults removeObjectForKey:@"launchAppUrlScheme"];
-            dispatch_time_t delay = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC));
-            dispatch_after(delay, dispatch_get_main_queue(), ^{
-                // Base64 encode the data
-                NSData *data = [launchUrl dataUsingEncoding:NSUTF8StringEncoding];
-                NSString *encodedUrl = [data base64EncodedStringWithOptions:0];
-                
-                NSString* finalUrl = [NSString stringWithFormat:@"%@://open-url?url=%@", lcAppUrlScheme, encodedUrl];
-                NSURL* url = [NSURL URLWithString: finalUrl];
-                
-                [[NSClassFromString(@"UIApplication") sharedApplication] openURL:url options:@{} completionHandler:nil];
-            });
         }
         NSSetUncaughtExceptionHandler(&exceptionHandler);
         NSString *appError = invokeAppMain(selectedApp, selectedContainer, argc, argv);

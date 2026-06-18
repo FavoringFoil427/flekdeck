@@ -48,6 +48,7 @@ int LiveProcessMain(int argc, char *argv[]) {
     // Pass selected app info to user defaults
     NSUserDefaults *lcUserDefaults = NSUserDefaults.standardUserDefaults;
     [lcUserDefaults setObject:appInfo[@"hostUrlScheme"] forKey:@"hostUrlScheme"];
+    [lcUserDefaults setObject:appInfo[@"launchAppUrlScheme"] forKey:@"launchAppUrlScheme"];
     [lcUserDefaults setObject:appInfo[@"selected"] forKey:@"selected"];
     [lcUserDefaults setObject:appInfo[@"selectedContainer"] forKey:@"selectedContainer"];
     
@@ -57,8 +58,13 @@ int LiveProcessMain(int argc, char *argv[]) {
     for(int i = 0; i < bookmarks.count; i++) {
         bool isStale = false;
         NSError* error = nil;
-        bookmarkedUrls[i] = [NSURL URLByResolvingBookmarkData:bookmarks[i] options:0 relativeToURL:nil bookmarkDataIsStale:&isStale error:&error];
-        access = [bookmarkedUrls[i] startAccessingSecurityScopedResource];
+        NSURL *url = [NSURL URLByResolvingBookmarkData:bookmarks[i] options:(1<<10) relativeToURL:nil bookmarkDataIsStale:&isStale error:&error];
+        if (url) {
+            [bookmarkedUrls addObject:url];
+            access = [url startAccessingSecurityScopedResource];
+        } else {
+            NSLog(@"[LiveProcess] Failed to resolve bookmark %d: %@", i, error);
+        }
     }
     
     if ([appInfo[@"selected"] isEqualToString:@"builtinSideStore"]) {

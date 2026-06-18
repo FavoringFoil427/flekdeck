@@ -484,7 +484,7 @@ struct LCSourcesView: View {
     @StateObject private var viewModel = AltStoreSourcesViewModel()
     @State private var errorMessage: String?
     @State private var sourcePendingRemoval: AltStoreSourcesViewModel.SourceItem?
-    @ObservedObject public var searchContext = SearchContext()
+    @ObservedObject public var searchContext: SearchContext
     @State private var expandedSources: Set<URL> = []
     @State private var isManagingSources = false
     

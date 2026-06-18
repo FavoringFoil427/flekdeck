@@ -8,6 +8,13 @@ typedef NS_ENUM(NSInteger, LCOrientationLock){
     Portrait = 2
 };
 
+typedef NS_ENUM(NSInteger, MultitaskSpecified){
+    MultitaskSpecifiedDefault = 0,
+    MultitaskSpecifiedNo = 1,
+    MultitaskSpecifiedYes = 2
+};
+
+
 @interface LCAppInfo : NSObject {
     NSMutableDictionary* _info;
     NSMutableDictionary* _infoPlist;
@@ -22,9 +29,8 @@ typedef NS_ENUM(NSInteger, LCOrientationLock){
 @property bool hideLiveContainer;
 @property bool dontLoadTweakLoader;
 @property bool dontInjectTweakLoader;
-@property UIColor* cachedColor;
-@property UIColor* cachedColorDark;
 @property LCOrientationLock orientationLock;
+@property MultitaskSpecified multitaskSpecified;
 @property bool fixFilePickerNew;
 @property bool fixLocalNotification;
 @property bool doUseLCBundleId;
@@ -42,6 +48,11 @@ typedef NS_ENUM(NSInteger, LCOrientationLock){
 #if is32BitSupported
 @property bool is32bit;
 #endif
+@property UIColor* cachedColor;
+@property UIColor* cachedColorDark;
+@property UIImage* cachedIcon;
+@property UIImage* cachedIconDark;
+
 - (void)setBundlePath:(NSString*)newBundlePath;
 - (NSMutableDictionary*)info;
 - (UIImage*)iconIsDarkIcon:(BOOL)isDarkIcon;

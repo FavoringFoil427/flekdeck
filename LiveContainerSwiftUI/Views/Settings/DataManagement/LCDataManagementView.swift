@@ -22,6 +22,9 @@ struct LCDataManagementView : View {
     @State private var folderRemoveCount = 0
     
     @StateObject private var keyChainRemovalAlert = YesNoHelper()
+    @StateObject private var tmpRemovalAlert = YesNoHelper()
+    @StateObject private var cacheRemovalAlert = YesNoHelper() 
+
     
     @State var errorShow = false
     @State var errorInfo = ""
@@ -29,7 +32,6 @@ struct LCDataManagementView : View {
     @State var successInfo = ""
     
     @EnvironmentObject private var sharedModel : SharedModel
-    @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = false
     
     init(appDataFolderNames: Binding<[String]>) {        
         _appDataFolderNames = appDataFolderNames
@@ -74,6 +76,19 @@ struct LCDataManagementView : View {
                 } label: {
                     Text("lc.settings.cleanKeychain".loc)
                 }
+
+                Button(role:.destructive) {
+                    Task { await clearTemporaryFiles() }
+                } label: {
+                    Text("lc.settings.cleanTmp".loc)
+                }
+                
+                Button(role:.destructive) {
+                    Task { await clearCacheFiles() }
+                } label: {
+                    Text("lc.settings.cleanCaches".loc) 
+                }
+
             }
             
             Section {
@@ -150,6 +165,33 @@ struct LCDataManagementView : View {
         } message: {
             Text("lc.settings.cleanKeychainDesc".loc)
         }
+        .alert("lc.settings.cleanTmp".loc, isPresented: $tmpRemovalAlert.show) {
+            Button(role: .destructive) {
+                tmpRemovalAlert.close(result: true)
+            } label: {
+                Text("lc.common.delete".loc)
+            }
+
+            Button("lc.common.cancel".loc, role: .cancel) {
+                tmpRemovalAlert.close(result: false)
+            }
+        } message: {
+            Text("lc.settings.cleanTmpConfirm".loc)
+        }
+        .alert("lc.settings.cleanCaches".loc, isPresented: $cacheRemovalAlert.show) {
+    Button(role: .destructive) {
+        cacheRemovalAlert.close(result: true)
+    } label: {
+        Text("lc.common.delete".loc)
+    }
+
+    Button("lc.common.cancel".loc, role: .cancel) {
+        cacheRemovalAlert.close(result: false)
+    }
+} message: {
+    Text("lc.settings.cleanCacheConfirm".loc) 
+}
+
         .onAppear {
             onAppearFunc()
         }
@@ -225,7 +267,87 @@ struct LCDataManagementView : View {
           }
         }
     }
-    
+
+    func clearTemporaryFiles() async {
+        guard let result = await tmpRemovalAlert.open(), result else {
+            return
+        }
+
+        let fm = FileManager.default
+        let tmpDirectory = fm.temporaryDirectory
+
+        do {
+            let tmpItems = try fm.contentsOfDirectory(at: tmpDirectory, includingPropertiesForKeys: nil)
+
+            if tmpItems.isEmpty {
+                successInfo = "lc.settings.noTmpToClean".loc
+                successShow = true
+                return
+            }
+
+            for item in tmpItems {
+                try fm.removeItem(at: item)
+            }
+
+            successInfo = "lc.settings.cleanTmpComplete".loc
+            successShow = true
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
+    func clearCacheFiles() async {
+        guard let result = await cacheRemovalAlert.open(), result else {
+            return
+        }
+
+        let fm = FileManager.default
+       
+        var allApps = sharedModel.apps + sharedModel.hiddenApps
+        if UserDefaults.sideStoreExist() {
+            allApps.append(LCAppModel(appInfo: BuiltInSideStoreAppInfo()))
+        }
+        
+        var cleanedCount = 0
+
+        do {
+            for app in allApps {
+                for container in app.uiContainers {
+                    let containerPath = container.containerURL
+                    let guestCachePath = containerPath.appendingPathComponent("Library/Caches")
+                    
+                    if fm.fileExists(atPath: guestCachePath.path) {
+                        let cacheItems = try fm.contentsOfDirectory(at: guestCachePath, includingPropertiesForKeys: nil)
+                        for item in cacheItems {
+                            try fm.removeItem(at: item)
+                        }
+                        cleanedCount += 1
+                    }
+                }
+            }
+            if let lcCaches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
+                fm.fileExists(atPath: lcCaches.path) {
+                let cacheItems = try fm.contentsOfDirectory(at: lcCaches, includingPropertiesForKeys: nil)
+                for item in cacheItems {
+                    try fm.removeItem(at: item)
+                }
+                cleanedCount += 1
+            }
+
+            if cleanedCount == 0 {
+                successInfo = "lc.settings.noCacheToClean".loc
+            } else {
+                successInfo = "lc.settings.cleanCacheComplete".loc
+            }
+            successShow = true
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+        }
+    }
+
+
     func moveDanglingFolders() async {
         let fm = FileManager()
         do {
@@ -351,12 +473,11 @@ struct LCDataManagementView : View {
     
     func openInFilza(path: URL) {
         let launchURLStr = "filza://view\(path.path)/."
-        UserDefaults.standard.setValue(launchURLStr, forKey: "launchAppUrlScheme")
         Task {
             do {
                 try await sharedModel.apps.first(where: { app in
                     return app.appInfo.bundleIdentifier() == "com.tigisoftware.Filza"
-                })?.runApp(multitask: launchInMultitaskMode)
+                })?.runApp(urlStr: launchURLStr)
             } catch {
                 successInfo = error.localizedDescription
                 successShow = true
@@ -369,4 +490,5 @@ struct LCDataManagementView : View {
             app.appInfo.clearIconCache()
         }
     }
+
 }

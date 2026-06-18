@@ -13,6 +13,7 @@ void SecItemGuestHooksInit(void);
 void DyldHooksInit(bool hideLiveContainer, bool hookDlopen, uint32_t spoofSDKVersion);
 void NSFMGuestHooksInit(void);
 void initDead10ccFix(void);
+void IDFVHookInit(NSUUID* uuid);
 
 @interface NSBundle(LiveContainer)
 - (instancetype)initWithPathForMainBundle:(NSString *)path;
