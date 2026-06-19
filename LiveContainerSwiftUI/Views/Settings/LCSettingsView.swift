@@ -153,13 +153,21 @@ struct LCSettingsView: View {
         NavigationView {
             Form {
                 Section {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "wallet.pass.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.blue)
+                            .cornerRadius(8)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("UDID")
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
+                                .font(.body)
                             
                             Text(udid)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                                 .lineLimit(1)
                                 .scaledToFit()
                                 .minimumScaleFactor(0.3)
@@ -173,17 +181,9 @@ struct LCSettingsView: View {
                                     await checkSubscription()
                                 }
                             } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Refresh")
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.gray.opacity(0.15))
-                                )
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.blue)
                             }
                             .disabled(isSubscriptionLoading)
                         } else {
@@ -191,26 +191,27 @@ struct LCSettingsView: View {
                                 UIPasteboard.general.string = udid
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }) {
-                                Text("Copy UDID")
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                                    .background(Color.gray.opacity(0.2))
-                                    .cornerRadius(30)
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.blue)
                             }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
                     
                     // MARK: - Subscription Status
                     HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Subscription status")
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
+                        Image("premiumLogo")
+                            .resizable()
+                            .frame(width: 36, height: 36)
+                            .cornerRadius(8)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Premium Subscription")
+                                .font(.body)
 
                             if isSubscriptionLoading {
-                                HStack(spacing: 8) {
+                                HStack(spacing: 6) {
                                     ProgressView()
                                         .controlSize(.small)
                                     Text("Checking…")
@@ -218,15 +219,18 @@ struct LCSettingsView: View {
                                         .foregroundColor(.secondary)
                                 }
                             } else if hasSubscription, let endDate = subscriptionEndDate {
-                                Text("Valid till \(formattedSubscriptionDate(endDate))")
-                                    .font(.subheadline)
-                                    .foregroundColor(.green)
-                                    .fontWeight(.semibold)
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                        .font(.subheadline)
+                                    Text("Valid till \(formattedSubscriptionDate(endDate))")
+                                        .font(.subheadline)
+                                        .foregroundColor(.green)
+                                }
                             } else if let endDate = subscriptionEndDate {
                                 Text("Ended \(formattedSubscriptionDate(endDate))")
                                     .font(.subheadline)
                                     .foregroundColor(.red)
-                                    .fontWeight(.semibold)
                             } else {
                                 Text("No active subscription")
                                     .font(.subheadline)
@@ -244,17 +248,9 @@ struct LCSettingsView: View {
                                 }
                             }
                         } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Refresh")
-                            }
-                            .font(.subheadline)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(Color.gray.opacity(0.15))
-                            )
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 18))
+                                .foregroundColor(.blue)
                         }
                         .disabled(isSubscriptionLoading)
                     }
