@@ -60,7 +60,6 @@ struct LCTabView: View {
                 LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
             }
         }
-        .downloadAlert(helper: downloadHelper)
         .environmentObject(downloadHelper)
         .alert("lc.common.error".loc, isPresented: $errorShow) {
             Button("lc.common.ok".loc) {}
