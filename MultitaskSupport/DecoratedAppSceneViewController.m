@@ -46,7 +46,7 @@ void UIKitFixesInit(void) {
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
     self = [super initWithNibName:nil bundle:nil];
     _scaleRatio = 1.0;
-    _isMaximized = [NSUserDefaults.lcUserDefaults boolForKey:@"LCLaunchMultitaskMaximized"];
+    _isMaximized = NO;
     [rootVC addChildViewController:self];
     [MultitaskDockManager.shared.windowHostingView addSubview:self.view];
     _appSceneVC = [[AppSceneViewController alloc] initWithBundleId:bundleId dataUUID:dataUUID delegate:self];
@@ -503,7 +503,7 @@ void UIKitFixesInit(void) {
     }
     
     BOOL bottomWindowBar = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"];
-    BOOL hideWindowBar = MultitaskDockManager.shared.isCollapsed && _isMaximized;
+    BOOL hideWindowBar = NO;
     CGFloat navBarHeight = hideWindowBar ? 0 : 44;
     self.navigationBar.hidden = hideWindowBar;
     
