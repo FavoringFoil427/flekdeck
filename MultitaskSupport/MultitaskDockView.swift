@@ -133,6 +133,7 @@ class AppInfoProvider {
     @Published var apps: [DockAppModel] = []
     @Published var isVisible: Bool = false
     @Published var isSwitcherBarVisible: Bool = true
+    @Published var frontmostAppUUID: String?
 
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
@@ -181,10 +182,28 @@ class AppInfoProvider {
     
     // MARK: - Bar Width Calculation
     private func barWidth() -> CGFloat {
-        let appCount = max(1, apps.count)
-        let iconsWidth = CGFloat(appCount) * Constants.barIconSize + CGFloat(max(0, appCount - 1)) * Constants.barSpacing
-        let buttonsWidth = Constants.barButtonSize * 2 + Constants.barSpacing
-        return Constants.barHPadding + iconsWidth + Constants.barSpacing + buttonsWidth + Constants.barHPadding
+        // Side buttons: hide + home
+        let sideButtonsWidth = Constants.barButtonSize * 2 + Constants.barSpacing * 2
+        
+        // Menu label: icon + app name text + chevron
+        let menuIconSize: CGFloat = 24
+        let chevronWidth: CGFloat = 12
+        let menuInternalSpacing: CGFloat = 5
+        let menuHPadding: CGFloat = 8
+        let appName = frontmostAppName()
+        let textWidth = (appName as NSString).size(withAttributes: [
+            .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+        ]).width
+        let menuWidth = menuHPadding + menuIconSize + menuInternalSpacing + textWidth + menuInternalSpacing + chevronWidth + menuHPadding
+        
+        return Constants.barHPadding + sideButtonsWidth + menuWidth + Constants.barHPadding
+    }
+    
+    private func frontmostAppName() -> String {
+        if let uuid = frontmostAppUUID, let app = apps.first(where: { $0.appUUID == uuid }) {
+            return app.appName
+        }
+        return apps.last?.appName ?? "App"
     }
     
     override init() {
@@ -218,10 +237,14 @@ class AppInfoProvider {
     private func setupDockView() {
         DispatchQueue.main.async {
             let barView = AnyView(SwitcherBarContentView()
-                .environmentObject(self))
+                .environmentObject(self)
+                .preferredColorScheme(.dark)
+                .environment(\.colorScheme, .dark))
             
             self.hostingController = UIHostingController(rootView: barView)
             self.hostingController?.view.backgroundColor = .clear
+            self.hostingController?.overrideUserInterfaceStyle = .dark
+            self.hostingController?.view.overrideUserInterfaceStyle = .dark
         }
     }
 
@@ -261,6 +284,10 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.apps.removeAll { $0.appUUID == appUUID }
+            
+            if self.frontmostAppUUID == appUUID {
+                self.updateFrontmostApp()
+            }
             
             if self.apps.isEmpty {
                 self.hideDock()
@@ -328,17 +355,42 @@ class AppInfoProvider {
     
     // MARK: - Switcher Bar Actions
     
-    /// Minimize the frontmost visible window (home button action)
+    /// Home button: minimize all visible windows, or restore last app if all minimized
     @objc public func goHome() {
         DispatchQueue.main.async {
-            for view in self.windowHostingView.subviews.reversed() {
-                if !view.isHidden && view.alpha > 0.1,
-                   let decoratedVC = view._viewDelegate() as? DecoratedAppSceneViewController {
-                    decoratedVC.minimizeWindow()
+            // Check if any windows are visible
+            let hasVisibleWindow = self.windowHostingView.subviews.contains { view in
+                !view.isHidden && view.alpha > 0.1
+            }
+            
+            if hasVisibleWindow {
+                // Minimize ALL visible windows
+                self.minimizeAllWindows()
+                self.updateFrontmostApp()
+            } else {
+                // All minimized — bring back last used app
+                if let uuid = self.frontmostAppUUID {
+                    let _ = self.bringMultitaskViewToFront(uuid: uuid)
+                } else if let lastApp = self.apps.last {
+                    let _ = self.bringMultitaskViewToFront(uuid: lastApp.appUUID)
+                }
+            }
+        }
+    }
+    
+    /// Find the current frontmost visible app from the view hierarchy
+    private func updateFrontmostApp() {
+        for view in self.windowHostingView.subviews.reversed() {
+            if !view.isHidden && view.alpha > 0.1 {
+                if let app = apps.first(where: { $0.view === view }) {
+                    frontmostAppUUID = app.appUUID
+                    updateDockFrame()
                     return
                 }
             }
         }
+        frontmostAppUUID = nil
+        updateDockFrame()
     }
     
     /// Hide the switcher bar with slide-down animation and show navigation assist
@@ -535,6 +587,8 @@ class AppInfoProvider {
             if let targetView = findMultitaskView(in: window, withUUID: uuid) {
                 passURLSchemeToView(targetView)
                 animateViewAppearance(targetView, from: center, in: window)
+                self.frontmostAppUUID = uuid
+                self.updateDockFrame()
                 return true
             }
         }
@@ -645,6 +699,7 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.apps.append(appModel)
+            self.frontmostAppUUID = appUUID
             
             if self.apps.count == 1 {
                 self.showDock()
@@ -680,28 +735,7 @@ struct SwitcherBarContentView: View {
     
     var body: some View {
         HStack(spacing: MultitaskDockManager.Constants.barSpacing) {
-            // App icons
-            ForEach(dockManager.apps) { app in
-                AppIconView(app: app, iconSize: MultitaskDockManager.Constants.barIconSize)
-            }
-            
-            // Home button — minimize frontmost window
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                dockManager.goHome()
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                    Image(systemName: "house.fill")
-                        .foregroundColor(.white)
-                        .font(.system(size: 16, weight: .medium))
-                }
-                .frame(width: MultitaskDockManager.Constants.barButtonSize,
-                       height: MultitaskDockManager.Constants.barButtonSize)
-            }
-            
-            // Hide button — slide bar down, show navigation assist
+            // Left: Hide button — slide bar down, show navigation assist
             Button(action: {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 dockManager.hideSwitcherBar()
@@ -716,10 +750,49 @@ struct SwitcherBarContentView: View {
                 .frame(width: MultitaskDockManager.Constants.barButtonSize,
                        height: MultitaskDockManager.Constants.barButtonSize)
             }
+            
+            // Middle: App switcher dropdown menu
+            Menu {
+                ForEach(dockManager.apps) { app in
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+                    }) {
+                        Label {
+                            Text(app.appName)
+                        } icon: {
+                            if let icon = Self.cachedIcon(for: app) {
+                                Image(uiImage: icon)
+                            } else {
+                                Image(systemName: "app.fill")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                FrontmostAppIconLabel()
+            }
+            
+            // Right: Home button — minimize frontmost window
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                dockManager.goHome()
+            }) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.15))
+                    Image(systemName: "house.fill")
+                        .foregroundColor(.white)
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .frame(width: MultitaskDockManager.Constants.barButtonSize,
+                       height: MultitaskDockManager.Constants.barButtonSize)
+            }
         }
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
         .padding(.vertical, MultitaskDockManager.Constants.barVPadding)
         .modifier { content in
+
             if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
                 content.glassEffect(.regular, in: .capsule)
             } else {
@@ -731,6 +804,101 @@ struct SwitcherBarContentView: View {
                                 .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
                         )
                 )
+            }
+        }
+    }
+    
+    @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
+    
+    static func cachedIcon(for app: DockAppModel) -> UIImage? {
+        let cacheKey = "\(app.appName)_\(app.appUUID)"
+        if let cached = IconCacheManager.shared.getIcon(for: cacheKey) {
+            return cached
+        }
+        // Try loading synchronously and cache it
+        if let appInfo = app.appInfo {
+            let darkMode = LCUtils.appGroupUserDefault.bool(forKey: "darkModeIcon")
+            let icon = appInfo.iconIsDarkIcon(darkMode)
+            if let icon { IconCacheManager.shared.setIcon(icon, for: cacheKey) }
+            return icon
+        }
+        return nil
+    }
+}
+
+// MARK: - Frontmost App Icon Label
+@available(iOS 16.0, *)
+struct FrontmostAppIconLabel: View {
+    @EnvironmentObject var dockManager: MultitaskDockManager
+    @State private var appIcon: UIImage?
+    @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
+    
+    private var frontmostApp: DockAppModel? {
+        if let uuid = dockManager.frontmostAppUUID {
+            return dockManager.apps.first { $0.appUUID == uuid }
+        }
+        return dockManager.apps.last
+    }
+    
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon = appIcon {
+                Image(uiImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .frame(width: 24, height: 24)
+            } else {
+                Image(systemName: "app.fill")
+                    .foregroundColor(.white)
+                    .font(.system(size: 18))
+                    .frame(width: 24, height: 24)
+            }
+            
+            Text(frontmostApp?.appName ?? "App")
+                .foregroundColor(.white)
+                .font(.system(size: 14, weight: .medium))
+                .lineLimit(1)
+            
+            Image(systemName: "chevron.up")
+                .foregroundColor(.white.opacity(0.6))
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.12))
+        )
+        .onAppear { loadIcon() }
+        .onChange(of: dockManager.frontmostAppUUID) { _ in loadIcon() }
+        .onChange(of: dockManager.apps.count) { _ in loadIcon() }
+    }
+    
+    private func loadIcon() {
+        guard let app = frontmostApp else {
+            appIcon = nil
+            return
+        }
+        
+        let cacheKey = "\(app.appName)_\(app.appUUID)"
+        if let cached = IconCacheManager.shared.getIcon(for: cacheKey) {
+            self.appIcon = cached
+            return
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            var icon: UIImage?
+            if let appInfo = app.appInfo {
+                icon = appInfo.iconIsDarkIcon(darkModeIcon)
+            } else if let found = AppInfoProvider.shared.findAppInfo(appName: app.appName, dataUUID: app.appUUID) {
+                icon = found.iconIsDarkIcon(darkModeIcon)
+            }
+            DispatchQueue.main.async {
+                if let icon = icon {
+                    self.appIcon = icon
+                    IconCacheManager.shared.setIcon(icon, for: cacheKey)
+                }
             }
         }
     }
