@@ -46,7 +46,7 @@ void UIKitFixesInit(void) {
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
     self = [super initWithNibName:nil bundle:nil];
     _scaleRatio = 1.0;
-    _isMaximized = NO;
+    _isMaximized = YES;
     [rootVC addChildViewController:self];
     [MultitaskDockManager.shared.windowHostingView addSubview:self.view];
     _appSceneVC = [[AppSceneViewController alloc] initWithBundleId:bundleId dataUUID:dataUUID delegate:self];
@@ -54,68 +54,15 @@ void UIKitFixesInit(void) {
     
     [MultitaskDockManager.shared addRunningApp:windowName appUUID:dataUUID view:self.view];
     
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(switcherBarVisibilityChanged)
+                                                 name:@"MultitaskBarVisibilityChanged"
+                                               object:nil];
+    
     self.dataUUID = dataUUID;
     self.windowName = windowName;
     self.navigationItem.title = windowName;
     
-    NSArray *menuItems = @[
-        [UIAction actionWithTitle:@"lc.multitask.copyPid".loc image:[UIImage systemImageNamed:@"doc.on.doc"] identifier:nil handler:^(UIAction * _Nonnull action) {
-            UIPasteboard.generalPasteboard.string = @(self.appSceneVC.pid).stringValue;
-        }],
-        [UIAction actionWithTitle:@"lc.multitask.enablePip".loc image:[UIImage systemImageNamed:@"pip.enter"] identifier:nil handler:^(UIAction * _Nonnull action) {
-            if ([PiPManager.shared isPiPWithVC:self.appSceneVC]) {
-                [PiPManager.shared stopPiP];
-            } else {
-                [PiPManager.shared startPiPWithVC:self.appSceneVC];
-            }
-        }],
-        [UICustomViewMenuElement elementWithViewProvider:^UIView *(UICustomViewMenuElement *element) {
-            return [self scaleSliderViewWithTitle:@"lc.multitask.scale".loc min:0.5 max:2.0 value:self.scaleRatio stepInterval:0.01];
-        }]
-    ];
-    
-
-    __weak typeof(self) weakSelf = self;
-    [self.navigationItem setTitleMenuProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions){
-        if(!weakSelf.appSceneVC.isAppRunning) {
-            return [UIMenu menuWithTitle:NSLocalizedString(@"lc.multitaskAppWindow.appTerminated", nil) children:@[]];
-        } else {
-            NSString *pidText = [NSString stringWithFormat:@"PID: %d", weakSelf.pid];
-            return [UIMenu menuWithTitle:pidText children:menuItems];
-        }
-    }];
-    
-    UIImage *minimizeImage = [UIImage systemImageNamed:@"minus.circle"];
-    UIImageConfiguration *minimizeConfig = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
-    minimizeImage = [minimizeImage imageWithConfiguration:minimizeConfig];
-    UIBarButtonItem *minimizeButton = [[UIBarButtonItem alloc] initWithImage:minimizeImage style:UIBarButtonItemStylePlain target:self action:@selector(minimizeWindow)];
-    minimizeButton.tintColor = [UIColor systemYellowColor];
-    
-    NSString *maximizeImageName = _isMaximized ? @"arrow.down.right.and.arrow.up.left.circle" : @"arrow.up.left.and.arrow.down.right.circle";
-    UIImage *maximizeImage = [UIImage systemImageNamed:maximizeImageName];
-    UIImageConfiguration *maximizeConfig = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
-    maximizeImage = [maximizeImage imageWithConfiguration:maximizeConfig];
-    self.maximizeButton = [[UIBarButtonItem alloc] initWithImage:maximizeImage style:UIBarButtonItemStylePlain target:self action:@selector(maximizeWindow)];
-    self.maximizeButton.tintColor = [UIColor systemGreenColor];
-    
-    UIImage *closeImage = [UIImage systemImageNamed:@"xmark.circle"];
-    UIImageConfiguration *closeConfig = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
-    closeImage = [closeImage imageWithConfiguration:closeConfig];
-    UIBarButtonItem *closeButton = [[UIBarButtonItem alloc] initWithImage:closeImage style:UIBarButtonItemStylePlain target:self action:@selector(closeWindow)];
-    closeButton.tintColor = [UIColor systemRedColor];
-    
-    NSArray *barButtonItems = @[closeButton, self.maximizeButton, minimizeButton];
-    if([NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"]) {
-        // resize handle overlaps the close button, so put the buttons on the left
-        self.navigationItem.leftBarButtonItems = barButtonItems;
-    } else {
-        self.navigationItem.rightBarButtonItems = barButtonItems;
-    }
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self adjustNavigationBarButtonSpacingWithNegativeSpacing:-8.0 rightMargin:-4.0];
-    });
-
     return self;
 }
 
@@ -146,7 +93,7 @@ void UIKitFixesInit(void) {
     
     self.view.axis = UILayoutConstraintAxisVertical;
     self.view.backgroundColor = UIColor.systemBackgroundColor;
-    self.view.layer.cornerRadius = 10;
+    self.view.layer.cornerRadius = 0;
     self.view.layer.masksToBounds = YES;
 
     self.navigationBar = navigationBar;
@@ -170,22 +117,7 @@ void UIKitFixesInit(void) {
     self.contentView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [fixedPositionContentView addSubview:self.contentView];
     
-    UIPanGestureRecognizer *moveGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(moveWindow:)];
-    moveGesture.minimumNumberOfTouches = 1;
-    moveGesture.maximumNumberOfTouches = 1;
-    [self.navigationBar addGestureRecognizer:moveGesture];
-
-    // Resize handle (idea stolen from Notes debugging window)
-    UIPanGestureRecognizer *resizeGesture = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(resizeWindow:)];
-    resizeGesture.minimumNumberOfTouches = 1;
-    resizeGesture.maximumNumberOfTouches = 1;
-    self.resizeHandle = [[ResizeHandleView alloc] initWithFrame:CGRectMake(self.view.frame.size.width - navBarHeight, self.view.frame.size.height - navBarHeight, navBarHeight, navBarHeight)];
-    self.resizeHandle.alpha = _isMaximized ? 0.0 : 1.0;
-    [self.resizeHandle addGestureRecognizer:resizeGesture];
-    [self.view addSubview:self.resizeHandle];
-    
-    self.view.layer.borderWidth = _isMaximized ? 0.0 : 1.0;
-    self.view.layer.borderColor = UIColor.secondarySystemBackgroundColor.CGColor;
+    self.view.layer.borderWidth = 0;
     
     [self addChildViewController:_appSceneVC];
     [self.view insertSubview:_appSceneVC.view atIndex:0];
@@ -198,9 +130,6 @@ void UIKitFixesInit(void) {
     ]];
     
     
-    NSUserDefaults *defaults = NSUserDefaults.lcSharedDefaults;
-
-    [defaults addObserver:self forKeyPath:@"LCMultitaskBottomWindowBar" options:NSKeyValueObservingOptionNew context:NULL];
     [self updateOriginalFrame];
 }
 
@@ -300,39 +229,8 @@ void UIKitFixesInit(void) {
 }
 
 - (void)maximizeWindow {
-    if (self.isMaximized) {
-        CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
-        CGRect newFrame = CGRectMake(self.originalFrame.origin.x * maxFrame.size.width, self.originalFrame.origin.y * maxFrame.size.height, self.originalFrame.size.width, self.originalFrame.size.height);
-        [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-            self.view.frame = newFrame;
-            self.view.layer.borderWidth = 1;
-            self.resizeHandle.alpha = 1;
-            [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-                [self updateWindowedFrameWithSettings:settings];
-            }];
-        } completion:^(BOOL finished) {
-            self.isMaximized = NO;
-            UIImage *maximizeImage = [UIImage systemImageNamed:@"arrow.up.left.and.arrow.down.right.circle"];
-            UIImageConfiguration *maximizeConfig = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
-            self.maximizeButton.image = [maximizeImage imageWithConfiguration:maximizeConfig];
-        }];
-    } else {
-        [self updateOriginalFrame];
-        [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-            self.isMaximized = YES;
-            [self updateVerticalConstraints];
-            
-            self.view.layer.borderWidth = 0;
-            self.resizeHandle.alpha = 0;
-            [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-                [self updateMaximizedFrameWithSettings:settings];
-            }];
-        } completion:^(BOOL finished) {
-            UIImage *restoreImage = [UIImage systemImageNamed:@"arrow.down.right.and.arrow.up.left.circle"];
-            UIImageConfiguration *restoreConfig = [UIImageSymbolConfiguration configurationWithPointSize:16.0 weight:UIImageSymbolWeightMedium];
-            self.maximizeButton.image = [restoreImage imageWithConfiguration:restoreConfig];
-        }];
-    }
+    // Windows are always maximized in chromeless mode — no-op
+    return;
 }
 
 - (void)appSceneVCAppDidExit:(AppSceneViewController*)vc {
@@ -440,29 +338,7 @@ void UIKitFixesInit(void) {
 }
 
 
-- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
-    if(_isMaximized) {
-        [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-            [self updateMaximizedFrameWithSettings:settings];
-        }];
-    }
-    
-    BOOL bottomWindowBar = [change[NSKeyValueChangeNewKey] boolValue];
-    [UIView animateWithDuration:0.3 animations:^{
-        if(bottomWindowBar) {
-            self.navigationItem.leftBarButtonItems = self.navigationItem.rightBarButtonItems;
-            self.navigationItem.rightBarButtonItems = nil;
-            [self.view addArrangedSubview:self.navigationBar];
-        } else {
-            self.navigationItem.rightBarButtonItems = self.navigationItem.leftBarButtonItems;
-            self.navigationItem.leftBarButtonItems = nil;
-            [self.view insertArrangedSubview:self.navigationBar atIndex:0];
-        }
-        
-        [self updateVerticalConstraints];
-        [self adjustNavigationBarButtonSpacingWithNegativeSpacing:-8.0 rightMargin:-4.0];
-    }];
-}
+
 
 - (void)moveWindow:(UIPanGestureRecognizer*)sender {
     if(_isMaximized) return;
@@ -502,32 +378,33 @@ void UIKitFixesInit(void) {
         };
     }
     
-    BOOL bottomWindowBar = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"];
-    BOOL hideWindowBar = NO;
-    CGFloat navBarHeight = hideWindowBar ? 0 : 44;
-    self.navigationBar.hidden = hideWindowBar;
+    self.navigationBar.hidden = YES;
     
     [NSLayoutConstraint deactivateConstraints:self.activatedVerticalConstraints];
-    if(bottomWindowBar) {
-        self.activatedVerticalConstraints = @[
-            [self.appSceneVC.view.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-            [self.appSceneVC.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor constant:-navBarHeight],
-            [self.navigationBar.heightAnchor constraintEqualToConstant:navBarHeight]
-        ];
-    } else {
-        self.activatedVerticalConstraints = @[
-            [self.appSceneVC.view.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:navBarHeight],
-            [self.appSceneVC.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-            [self.navigationBar.heightAnchor constraintEqualToConstant:navBarHeight]
-        ];
-    }
+    self.activatedVerticalConstraints = @[
+        [self.appSceneVC.view.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [self.appSceneVC.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [self.navigationBar.heightAnchor constraintEqualToConstant:0]
+    ];
     [NSLayoutConstraint activateConstraints:self.activatedVerticalConstraints];
+}
+
+- (void)switcherBarVisibilityChanged {
+    if(!_isMaximized) return;
+    [UIView animateWithDuration:0.3 animations:^{
+        [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+            [self updateMaximizedFrameWithSettings:settings];
+        }];
+    }];
 }
 
 - (UIEdgeInsets)updateMaximizedSafeAreaWithSettings:(UIMutableApplicationSceneSettings *)settings {
     BOOL bottomWindowBar = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"];
     UIEdgeInsets safeAreaInsets = self.view.window.safeAreaInsets;
     if(self.navigationBar.hidden) {
+        if(MultitaskDockManager.shared.barVisible) {
+            safeAreaInsets.bottom = 0; // App window doesn't extend to bottom; switcher bar handles it
+        }
         settings.peripheryInsets = safeAreaInsets;
         safeAreaInsets = UIEdgeInsetsZero;
     } else if(bottomWindowBar) {
@@ -569,6 +446,12 @@ void UIKitFixesInit(void) {
 
 - (void)updateMaximizedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
+    if(MultitaskDockManager.shared.barVisible) {
+        // Leave space at bottom for the static switcher bar (content + safe area)
+        CGFloat barContentHeight = 52.0;
+        CGFloat bottomBarSpace = barContentHeight + self.view.window.safeAreaInsets.bottom;
+        maxFrame.size.height -= bottomBarSpace;
+    }
     self.view.frame = maxFrame;
 }
 

@@ -10,6 +10,10 @@ import SwiftUI
 import UIKit
 import Combine
 
+extension NSNotification.Name {
+    static let multitaskBarVisibilityChanged = NSNotification.Name("MultitaskBarVisibilityChanged")
+}
+
 // MARK: - App Info Provider
 class AppInfoProvider {
     
@@ -141,6 +145,9 @@ class AppInfoProvider {
 
     // Backward compatibility — always false since collapsed dock concept was removed
     @objc public var isCollapsed: Bool { return false }
+    
+    /// ObjC-accessible flag for whether the switcher bar is currently shown
+    @objc public var barVisible: Bool { return isSwitcherBarVisible }
 
     public struct Constants {
         // MARK: - Switcher Bar Layout
@@ -242,7 +249,9 @@ class AppInfoProvider {
                 .environment(\.colorScheme, .dark))
             
             self.hostingController = UIHostingController(rootView: barView)
-            self.hostingController?.view.backgroundColor = .clear
+            self.hostingController?.view.backgroundColor = .black
+            self.hostingController?.view.clipsToBounds = false
+            self.hostingController?.view.insetsLayoutMarginsFromSafeArea = false
             self.hostingController?.overrideUserInterfaceStyle = .dark
             self.hostingController?.view.overrideUserInterfaceStyle = .dark
         }
@@ -252,12 +261,9 @@ class AppInfoProvider {
     private func updateDockFrame(animated: Bool = true) {
         guard let hostingController = hostingController, isSwitcherBarVisible else { return }
 
-        let screenBounds = keyWindow!.bounds
-        let barW = barWidth()
-        let barH = Constants.barHeight
-        let x = (screenBounds.width - barW) / 2
-        let y = screenBounds.height - safeAreaInsets.bottom - barH - Constants.barBottomMargin
-        let newFrame = CGRect(x: x, y: y, width: barW, height: barH)
+        let screenBounds = UIScreen.main.bounds
+        let y = screenBounds.height - Constants.barHeight - safeAreaInsets.bottom
+        let newFrame = CGRect(x: 0, y: y, width: screenBounds.width, height: screenBounds.height - y)
         
         if animated {
             UIView.animate(
@@ -398,6 +404,9 @@ class AppInfoProvider {
         guard let hostingController = hostingController, let keyWindow = self.keyWindow else { return }
         
         DispatchQueue.main.async {
+            self.isSwitcherBarVisible = false
+            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+            
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
                 delay: 0,
@@ -411,7 +420,6 @@ class AppInfoProvider {
             ) { _ in
                 hostingController.view.isHidden = true
                 hostingController.view.transform = .identity
-                self.isSwitcherBarVisible = false
                 self.showNavAssist(in: keyWindow)
             }
         }
@@ -433,6 +441,7 @@ class AppInfoProvider {
             
             self.isSwitcherBarVisible = true
             self.updateDockFrame(animated: false)
+            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
             hostingController.view.isHidden = false
             hostingController.view.alpha = 0
@@ -740,15 +749,18 @@ struct SwitcherBarContentView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 dockManager.hideSwitcherBar()
             }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                    Image(systemName: "chevron.down")
-                        .foregroundColor(.white)
-                        .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .foregroundColor(.white)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: MultitaskDockManager.Constants.barButtonSize,
+                           height: MultitaskDockManager.Constants.barButtonSize)
+            }
+            .modifier { content in
+                if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
+                    content.glassEffect(.regular, in: .circle)
+                } else {
+                    content.background(Circle().fill(Color.white.opacity(0.15)))
                 }
-                .frame(width: MultitaskDockManager.Constants.barButtonSize,
-                       height: MultitaskDockManager.Constants.barButtonSize)
             }
             
             // Middle: App switcher dropdown menu
@@ -771,6 +783,13 @@ struct SwitcherBarContentView: View {
                 }
             } label: {
                 FrontmostAppIconLabel()
+                    .modifier { content in
+                        if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
+                            content.glassEffect(.regular, in: .capsule)
+                        } else {
+                            content.background(Capsule().fill(Color.white.opacity(0.15)))
+                        }
+                    }
             }
             
             // Right: Home button — minimize frontmost window
@@ -778,34 +797,23 @@ struct SwitcherBarContentView: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dockManager.goHome()
             }) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                    Image(systemName: "house.fill")
-                        .foregroundColor(.white)
-                        .font(.system(size: 16, weight: .medium))
+                Image(systemName: "square")
+                    .foregroundColor(.white)
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: MultitaskDockManager.Constants.barButtonSize,
+                           height: MultitaskDockManager.Constants.barButtonSize)
+            }
+            .modifier { content in
+                if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
+                    content.glassEffect(.regular, in: .circle)
+                } else {
+                    content.background(Circle().fill(Color.white.opacity(0.15)))
                 }
-                .frame(width: MultitaskDockManager.Constants.barButtonSize,
-                       height: MultitaskDockManager.Constants.barButtonSize)
             }
         }
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
         .padding(.vertical, MultitaskDockManager.Constants.barVPadding)
-        .modifier { content in
-
-            if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
-                content.glassEffect(.regular, in: .capsule)
-            } else {
-                content.background(
-                    Capsule()
-                        .fill(Color.black.opacity(0.7))
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-                        )
-                )
-            }
-        }
+        .frame(maxWidth: .infinity)
     }
     
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
@@ -866,10 +874,6 @@ struct FrontmostAppIconLabel: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(Color.white.opacity(0.12))
-        )
         .onAppear { loadIcon() }
         .onChange(of: dockManager.frontmostAppUUID) { _ in loadIcon() }
         .onChange(of: dockManager.apps.count) { _ in loadIcon() }

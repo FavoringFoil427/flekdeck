@@ -7,7 +7,6 @@ API_AVAILABLE(ios(16.0))
 @property(nonatomic) UIStackView *view;
 @property(nonatomic) UINavigationBar *navigationBar;
 @property(nonatomic) UINavigationItem *navigationItem;
-@property(nonatomic) UIView *resizeHandle;
 @property(nonatomic) UIView* contentView;
 
 @property(nonatomic) BOOL isMaximized;
