@@ -143,6 +143,9 @@ class AppInfoProvider {
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
     private var navAssistButton: UIView?
+    private var navAssistChevron: UIImageView?
+    private var isNavAssistStashed: Bool = false
+    private var navAssistStashedOnRight: Bool = true
 
     // Backward compatibility — always false since collapsed dock concept was removed
     @objc public var isCollapsed: Bool { return false }
@@ -436,7 +439,9 @@ class AppInfoProvider {
         guard let hostingController = hostingController else { return }
         
         DispatchQueue.main.async {
-            // Hide nav assist
+            // Hide nav assist and reset stash state
+            self.isNavAssistStashed = false
+            self.navAssistChevron = nil
             UIView.animate(withDuration: 0.2, animations: {
                 self.navAssistButton?.alpha = 0
                 self.navAssistButton?.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
@@ -474,6 +479,9 @@ class AppInfoProvider {
         let x = screenBounds.width - safeAreaInsets.right - size - Constants.navAssistMargin
         let y = screenBounds.height * 0.5
         
+        isNavAssistStashed = false
+        navAssistChevron = nil
+        
         let button = createNavAssistButton()
         button.center = CGPoint(x: x + size / 2, y: y)
         button.alpha = 0
@@ -508,12 +516,13 @@ class AppInfoProvider {
         button.addSubview(blurView)
         
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
-        let iconImage = UIImage(systemName: "square.grid.2x2", withConfiguration: iconConfig)
+        let iconImage = UIImage(systemName: "square.stack", withConfiguration: iconConfig)
         let iconView = UIImageView(image: iconImage)
         iconView.tintColor = .white
         iconView.contentMode = .center
         iconView.frame = button.bounds
         iconView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        iconView.tag = 100 // Tag for reliable lookup
         button.addSubview(iconView)
         
         button.layer.cornerRadius = size / 2
@@ -536,7 +545,12 @@ class AppInfoProvider {
     @objc private func navAssistTapped() {
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
         impactFeedback.impactOccurred()
-        showSwitcherBar()
+        
+        if isNavAssistStashed {
+            unstashNavAssist()
+        } else {
+            showSwitcherBar()
+        }
     }
     
     @objc private func navAssistDragged(_ gesture: UIPanGestureRecognizer) {
@@ -564,17 +578,91 @@ class AppInfoProvider {
         let safeArea = safeAreaInsets
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
+        let stashThreshold: CGFloat = halfSize + margin // How close to edge before stashing
         
-        let targetX: CGFloat
-        if button.center.x < screenBounds.width / 2 {
-            targetX = safeArea.left + margin + halfSize
+        let onRight = button.center.x >= screenBounds.width / 2
+        
+        // Check if close enough to screen edge to stash
+        let distanceToEdge: CGFloat
+        if onRight {
+            distanceToEdge = screenBounds.width - button.center.x
         } else {
-            targetX = screenBounds.width - safeArea.right - margin - halfSize
+            distanceToEdge = button.center.x
         }
+        
+        let shouldStash = distanceToEdge < stashThreshold
         
         let minY = safeArea.top + margin + halfSize
         let maxY = screenBounds.height - safeArea.bottom - margin - halfSize
         let targetY = max(minY, min(maxY, button.center.y))
+        
+        if shouldStash {
+            navAssistStashedOnRight = onRight
+            stashNavAssist(button, onRight: onRight, targetY: targetY, animated: animated)
+        } else {
+            let targetX: CGFloat
+            if onRight {
+                targetX = screenBounds.width - safeArea.right - margin - halfSize
+            } else {
+                targetX = safeArea.left + margin + halfSize
+            }
+            
+            isNavAssistStashed = false
+            navAssistChevron?.removeFromSuperview()
+            navAssistChevron = nil
+            button.viewWithTag(100)?.isHidden = false
+            
+            let newCenter = CGPoint(x: targetX, y: targetY)
+            if animated {
+                UIView.animate(
+                    withDuration: Constants.standardAnimationDuration,
+                    delay: 0,
+                    usingSpringWithDamping: Constants.standardSpringDamping,
+                    initialSpringVelocity: Constants.standardSpringVelocity,
+                    options: .curveEaseOut
+                ) {
+                    button.center = newCenter
+                    button.alpha = 1.0
+                }
+            } else {
+                button.center = newCenter
+                button.alpha = 1.0
+            }
+        }
+    }
+    
+    private func stashNavAssist(_ button: UIView, onRight: Bool, targetY: CGFloat, animated: Bool) {
+        let screenBounds = keyWindow!.bounds
+        let size = Constants.navAssistSize
+        // Show half the button so the chevron arrow is always visible
+        let visibleAmount: CGFloat = size * 0.50
+        let targetX: CGFloat
+        if onRight {
+            targetX = screenBounds.width - visibleAmount + size / 2
+        } else {
+            targetX = visibleAmount - size / 2
+        }
+        
+        isNavAssistStashed = true
+        
+        // Add chevron indicator if not already present
+        if navAssistChevron == nil {
+            let chevronName = onRight ? "chevron.left" : "chevron.right"
+            let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+            let chevronImage = UIImage(systemName: chevronName, withConfiguration: config)
+            let chevronView = UIImageView(image: chevronImage)
+            chevronView.tintColor = .white
+            chevronView.contentMode = .center
+            // Offset chevron toward the visible side
+            let chevronFrame = button.bounds
+            chevronView.frame = chevronFrame
+            chevronView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            
+            // Hide the main icon, show chevron
+            button.viewWithTag(100)?.isHidden = true
+            button.addSubview(chevronView)
+            navAssistChevron = chevronView
+        }
         
         let newCenter = CGPoint(x: targetX, y: targetY)
         if animated {
@@ -586,9 +674,44 @@ class AppInfoProvider {
                 options: .curveEaseOut
             ) {
                 button.center = newCenter
+                button.alpha = 0.85
             }
         } else {
             button.center = newCenter
+            button.alpha = 0.85
+        }
+    }
+    
+    private func unstashNavAssist() {
+        guard let button = navAssistButton else { return }
+        let screenBounds = keyWindow!.bounds
+        let safeArea = safeAreaInsets
+        let margin = Constants.navAssistMargin
+        let halfSize = Constants.navAssistSize / 2
+        
+        isNavAssistStashed = false
+        
+        // Remove chevron, restore square.stack icon
+        navAssistChevron?.removeFromSuperview()
+        navAssistChevron = nil
+        button.viewWithTag(100)?.isHidden = false
+        
+        let targetX: CGFloat
+        if navAssistStashedOnRight {
+            targetX = screenBounds.width - safeArea.right - margin - halfSize
+        } else {
+            targetX = safeArea.left + margin + halfSize
+        }
+        
+        UIView.animate(
+            withDuration: Constants.standardAnimationDuration,
+            delay: 0,
+            usingSpringWithDamping: Constants.standardSpringDamping,
+            initialSpringVelocity: Constants.standardSpringVelocity,
+            options: .curveEaseOut
+        ) {
+            button.center.x = targetX
+            button.alpha = 1.0
         }
     }
     

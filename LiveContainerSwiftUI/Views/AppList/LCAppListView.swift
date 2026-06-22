@@ -599,7 +599,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     @ViewBuilder
     private func installedContextMenu(_ app: LCAppModel) -> some View {
-        let mode = FlekLaunchModeStore.shared.mode(for: app) ?? .single
         if #available(iOS 16.0, *) {
             ControlGroup {
                 Button {
@@ -616,7 +615,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     FlekLaunchTracker.shared.markLaunched(app)
                     Task { await launchHomeApp(app, parallel: true) }
                 } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: mode == .parallel ? "macwindow.on.rectangle.fill" : "macwindow.on.rectangle")
+                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
                 }
             }
         } else {
