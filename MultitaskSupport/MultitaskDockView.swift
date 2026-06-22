@@ -139,9 +139,12 @@ class AppInfoProvider {
     @Published var isSwitcherBarVisible: Bool = true
     @Published var frontmostAppUUID: String?
     @Published var isHomeState: Bool = false
+    @Published var isAppSwitcherOpen: Bool = false
+    var appSnapshots: [String: UIImage] = [:]
 
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
+    private var switcherOverlayController: UIHostingController<AnyView>?
     private var navAssistButton: UIView?
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
@@ -294,12 +297,14 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.apps.removeAll { $0.appUUID == appUUID }
+            self.appSnapshots.removeValue(forKey: appUUID)
             
             if self.frontmostAppUUID == appUUID {
                 self.updateFrontmostApp()
             }
             
             if self.apps.isEmpty {
+                if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
@@ -369,6 +374,9 @@ class AppInfoProvider {
     /// Home button: minimize all visible windows, or restore last app if all minimized
     @objc public func goHome() {
         DispatchQueue.main.async {
+            // Dismiss app switcher if open
+            if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
+            
             // Check if any windows are visible
             let hasVisibleWindow = self.windowHostingView.subviews.contains { view in
                 !view.isHidden && view.alpha > 0.1
@@ -866,6 +874,185 @@ class AppInfoProvider {
         }
     }
     
+    // MARK: - App Switcher Overlay
+    
+    func captureSnapshots() {
+        appSnapshots.removeAll()
+        for app in apps {
+            guard let appView = app.view else { continue }
+            
+            // Try multiple capture strategies for the app view hierarchy
+            let viewsToTry: [UIView] = {
+                var views = [appView]
+                // Also try the appSceneVC.view directly (the actual remote app content)
+                if let decoratedVC = appView._viewDelegate() as? DecoratedAppSceneViewController {
+                    views.insert(decoratedVC.appSceneVC.view, at: 0)
+                }
+                return views
+            }()
+            
+            for targetView in viewsToTry {
+                // Temporarily show hidden/minimized views for snapshot
+                let wasHidden = targetView.isHidden
+                let oldAlpha = targetView.alpha
+                let oldTransform = targetView.transform
+                if wasHidden { targetView.isHidden = false }
+                if oldAlpha < 0.1 { targetView.alpha = 1.0 }
+                if oldTransform != .identity { targetView.transform = .identity }
+                
+                // Also ensure parent chain is visible
+                let parentView = appView
+                let parentWasHidden = parentView.isHidden
+                let parentOldAlpha = parentView.alpha
+                let parentOldTransform = parentView.transform
+                if parentWasHidden { parentView.isHidden = false }
+                if parentOldAlpha < 0.1 { parentView.alpha = 1.0 }
+                if parentOldTransform != .identity { parentView.transform = .identity }
+                
+                let bounds = targetView.bounds
+                guard bounds.width > 0 && bounds.height > 0 else {
+                    if wasHidden { targetView.isHidden = true }
+                    if oldAlpha < 0.1 { targetView.alpha = oldAlpha }
+                    if oldTransform != .identity { targetView.transform = oldTransform }
+                    if parentWasHidden { parentView.isHidden = true }
+                    if parentOldAlpha < 0.1 { parentView.alpha = parentOldAlpha }
+                    if parentOldTransform != .identity { parentView.transform = parentOldTransform }
+                    continue
+                }
+                
+                // Try drawHierarchy first (captures GPU/Metal content better)
+                let renderer = UIGraphicsImageRenderer(bounds: bounds)
+                let snapshot = renderer.image { ctx in
+                    targetView.drawHierarchy(in: bounds, afterScreenUpdates: true)
+                }
+                
+                // Restore state
+                if wasHidden { targetView.isHidden = true }
+                if oldAlpha < 0.1 { targetView.alpha = oldAlpha }
+                if oldTransform != .identity { targetView.transform = oldTransform }
+                if parentWasHidden { parentView.isHidden = true }
+                if parentOldAlpha < 0.1 { parentView.alpha = parentOldAlpha }
+                if parentOldTransform != .identity { parentView.transform = parentOldTransform }
+                
+                // Check if the snapshot has actual content (not all black/transparent)
+                if isSnapshotValid(snapshot) {
+                    appSnapshots[app.appUUID] = snapshot
+                    break
+                }
+            }
+        }
+    }
+    
+    /// Check if a snapshot image has meaningful content (not all black or transparent)
+    private func isSnapshotValid(_ image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage else { return false }
+        let width = min(cgImage.width, 20)
+        let height = min(cgImage.height, 20)
+        guard width > 0 && height > 0 else { return false }
+        
+        // Sample a small region to check if there's content
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return false }
+        
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = context.data else { return false }
+        
+        let pixels = data.bindMemory(to: UInt32.self, capacity: width * height)
+        var nonBlackCount = 0
+        let sampleCount = width * height
+        for i in 0..<sampleCount {
+            let pixel = pixels[i]
+            // Check if pixel is not black (allowing for very dark pixels)
+            if pixel & 0x00FFFFFF > 0x00050505 {
+                nonBlackCount += 1
+            }
+        }
+        // Valid if more than 5% of sampled pixels are non-black
+        return nonBlackCount > sampleCount / 20
+    }
+    
+    func showAppSwitcher() {
+        guard let keyWindow = self.keyWindow else { return }
+        
+        captureSnapshots()
+        isAppSwitcherOpen = true
+        
+        // Always recreate the overlay so it picks up the latest apps & snapshots
+        switcherOverlayController?.view.removeFromSuperview()
+        
+        let overlayView = AnyView(
+            AppSwitcherOverlay()
+                .environmentObject(self)
+                .preferredColorScheme(.dark)
+                .environment(\.colorScheme, .dark)
+        )
+        let hc = UIHostingController(rootView: overlayView)
+        hc.view.backgroundColor = .clear
+        hc.view.frame = keyWindow.bounds
+        hc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        hc.overrideUserInterfaceStyle = .dark
+        switcherOverlayController = hc
+        
+        hc.view.alpha = 0
+        
+        // Insert below switcher bar but above app windows
+        if let barView = hostingController?.view {
+            keyWindow.insertSubview(hc.view, belowSubview: barView)
+        } else {
+            keyWindow.addSubview(hc.view)
+        }
+        
+        UIView.animate(
+            withDuration: Constants.standardAnimationDuration,
+            delay: 0,
+            usingSpringWithDamping: 1.0,
+            initialSpringVelocity: 0,
+            options: .curveEaseOut
+        ) {
+            hc.view.alpha = 1
+        }
+    }
+    
+    func dismissAppSwitcher() {
+        isAppSwitcherOpen = false
+        
+        guard let overlay = switcherOverlayController else { return }
+        
+        UIView.animate(
+            withDuration: Constants.shortAnimationDuration1,
+            delay: 0,
+            options: .curveEaseIn
+        ) {
+            overlay.view.alpha = 0
+        } completion: { _ in
+            overlay.view.removeFromSuperview()
+        }
+    }
+    
+    func closeApp(uuid: String) {
+        if let app = apps.first(where: { $0.appUUID == uuid }),
+           let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+            vc.closeWindow()
+        }
+    }
+    
+    func closeAllApps() {
+        let appsToClose = apps
+        for app in appsToClose {
+            if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                vc.closeWindow()
+            }
+        }
+        dismissAppSwitcher()
+    }
+    
     // MARK: - Multitask Mode Check
     private func isDockEnabled() -> Bool {
         let multitaskMode = MultitaskMode(rawValue: LCUtils.appGroupUserDefault.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
@@ -907,25 +1094,15 @@ struct SwitcherBarContentView: View {
                 }
             }
             
-            // Middle: App switcher dropdown menu
-            Menu {
-                ForEach(dockManager.apps) { app in
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
-                    }) {
-                        Label {
-                            Text(app.appName)
-                        } icon: {
-                            if let icon = Self.cachedIcon(for: app) {
-                                Image(uiImage: icon)
-                            } else {
-                                Image(systemName: "app.fill")
-                            }
-                        }
-                    }
+            // Middle: App switcher button
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if dockManager.isAppSwitcherOpen {
+                    dockManager.dismissAppSwitcher()
+                } else {
+                    dockManager.showAppSwitcher()
                 }
-            } label: {
+            }) {
                 FrontmostAppIconLabel()
                     .modifier { content in
                         if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
@@ -1163,6 +1340,217 @@ extension View {
                     onRelease(value.startLocation)
                 }
         )
+    }
+}
+
+// MARK: - App Switcher Overlay
+@available(iOS 16.0, *)
+struct AppSwitcherOverlay: View {
+    @EnvironmentObject var dockManager: MultitaskDockManager
+    
+    private let cardCornerRadius: CGFloat = 12
+    private let cardSpacing: CGFloat = 12
+    
+    // Card dimensions — proportional to screen like iOS app switcher
+    private var cardWidth: CGFloat {
+        UIScreen.main.bounds.width * 0.62
+    }
+    private var cardHeight: CGFloat {
+        cardWidth * (UIScreen.main.bounds.height / UIScreen.main.bounds.width)
+    }
+    
+    var body: some View {
+        ZStack {
+            // Blurred dark background
+            Color.black.opacity(0.5)
+                .background(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+                .onTapGesture {
+                    dockManager.dismissAppSwitcher()
+                }
+            
+            VStack(spacing: 0) {
+                Spacer()
+                
+                // Horizontal scrolling app cards
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: cardSpacing) {
+                            ForEach(dockManager.apps) { app in
+                                AppSwitcherCard(
+                                    app: app,
+                                    cardWidth: cardWidth,
+                                    cardHeight: cardHeight,
+                                    cornerRadius: cardCornerRadius
+                                )
+                                .id(app.appUUID)
+                            }
+                        }
+                        .padding(.horizontal, (UIScreen.main.bounds.width - cardWidth) / 2)
+                    }
+                    .onAppear {
+                        if let uuid = dockManager.frontmostAppUUID {
+                            proxy.scrollTo(uuid, anchor: .center)
+                        }
+                    }
+                }
+                
+                Spacer()
+                    .frame(height: 20)
+                
+                // Bottom actions
+                VStack(spacing: 10) {
+                    // Close all button
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        dockManager.closeAllApps()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Close all")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.white.opacity(0.15)))
+                    }
+                    
+                    // Hide Switcher Bar button
+                    Button(action: {
+                        dockManager.dismissAppSwitcher()
+                        dockManager.hideSwitcherBar()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Hide Switcher Bar")
+                                .font(.system(size: 13, weight: .regular))
+                        }
+                        .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                .padding(.bottom, MultitaskDockManager.Constants.barHeight + 16)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
+// MARK: - App Switcher Card (with swipe-up-to-close)
+@available(iOS 16.0, *)
+struct AppSwitcherCard: View {
+    let app: DockAppModel
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
+    let cornerRadius: CGFloat
+    
+    @EnvironmentObject var dockManager: MultitaskDockManager
+    @State private var dragOffset: CGFloat = 0
+    @State private var isDismissing = false
+    @State private var isVerticalDrag = false
+    
+    private let dismissThreshold: CGFloat = -120
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // App icon + name above the card (like iOS)
+            HStack(spacing: 6) {
+                if let icon = SwitcherBarContentView.cachedIcon(for: app) {
+                    Image(uiImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                } else {
+                    Image(systemName: "app.fill")
+                        .foregroundColor(.white)
+                        .font(.system(size: 24))
+                        .frame(width: 32, height: 32)
+                }
+                
+                Text(app.appName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+            }
+            
+            // Card with snapshot
+            ZStack {
+                if let snapshot = dockManager.appSnapshots[app.appUUID] {
+                    Image(uiImage: snapshot)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .clipped()
+                } else {
+                    // Placeholder with blurred app icon
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: cardWidth, height: cardHeight)
+                        .overlay {
+                            VStack(spacing: 12) {
+                                if let icon = SwitcherBarContentView.cachedIcon(for: app) {
+                                    Image(uiImage: icon)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                }
+                                Text(app.appName)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.5))
+                            }
+                        }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
+        }
+        .offset(y: dragOffset)
+        .opacity(isDismissing ? 0 : (dragOffset < 0 ? Double(1 + dragOffset / 300) : 1))
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    let h = value.translation.height
+                    let w = value.translation.width
+                    
+                    // Determine direction on first significant movement
+                    if !isVerticalDrag && abs(h) > 20 && abs(h) > abs(w) * 1.5 {
+                        isVerticalDrag = true
+                    }
+                    
+                    // Only track upward vertical drags
+                    if isVerticalDrag && h < 0 {
+                        dragOffset = h
+                    }
+                }
+                .onEnded { value in
+                    if isVerticalDrag && (value.translation.height < dismissThreshold || value.predictedEndTranslation.height < dismissThreshold * 1.5) {
+                        // Swipe up to close
+                        isDismissing = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        withAnimation(.easeIn(duration: 0.2)) {
+                            dragOffset = -UIScreen.main.bounds.height
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            dockManager.closeApp(uuid: app.appUUID)
+                        }
+                    } else {
+                        // Snap back
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            dragOffset = 0
+                        }
+                    }
+                    isVerticalDrag = false
+                }
+        )
+        .onTapGesture {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            dockManager.dismissAppSwitcher()
+            let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+        }
     }
 }
 
