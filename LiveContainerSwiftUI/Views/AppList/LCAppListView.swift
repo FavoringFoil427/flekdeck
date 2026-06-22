@@ -220,20 +220,89 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     HStack(spacing: 10) {
                         // Show running multitask app icons when in home state
                         if #available(iOS 16.0, *), isMultitaskHomeState {
-                            MultitaskHomeIcons(darkModeIcon: darkModeIcon)
-                                .transition(.scale.combined(with: .opacity))
+                            if #available(iOS 26.0, *) {
+                                GlassEffectContainer(spacing: 10) {
+                                    HStack(spacing: 10) {
+                                        // App icons + switcher in unified glass pill
+                                        HStack(spacing: 8) {
+                                            MultitaskHomeIcons(darkModeIcon: darkModeIcon)
 
-                            // App switcher button — opens multitask overlay
-                            FlekGlassCircleButton(systemImage: "square.stack",
-                                                  size: FlekTheme.searchPillSize, iconScale: 0.45) {
-                                MultitaskDockManager.shared.showAppSwitcher()
+                                            // App switcher button
+                                            Button {
+                                                MultitaskDockManager.shared.showAppSwitcher()
+                                            } label: {
+                                                Image(systemName: "square.stack")
+                                                    .font(.system(size: FlekTheme.searchPillSize * 0.4, weight: .regular))
+                                                    .foregroundStyle(Color.primary.opacity(0.6))
+                                                    .frame(width: FlekTheme.searchPillSize * 0.8, height: FlekTheme.searchPillSize * 0.8)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .frame(height: FlekTheme.searchPillSize)
+                                        .glassEffect(in: .capsule)
+
+                                        // Search button with native glass
+                                        Button {
+                                            showSearch = true
+                                        } label: {
+                                            Image(systemName: "magnifyingglass")
+                                                .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                                .foregroundStyle(Color.primary.opacity(0.6))
+                                                .frame(width: FlekTheme.searchPillSize, height: FlekTheme.searchPillSize)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .glassEffect(in: .circle)
+                                    }
+                                }
+                                .transition(.scale.combined(with: .opacity))
+                            } else {
+                                HStack(spacing: 8) {
+                                    MultitaskHomeIcons(darkModeIcon: darkModeIcon)
+
+                                    // App switcher button
+                                    Button {
+                                        MultitaskDockManager.shared.showAppSwitcher()
+                                    } label: {
+                                        Image(systemName: "square.stack")
+                                            .font(.system(size: FlekTheme.searchPillSize * 0.4, weight: .regular))
+                                            .foregroundStyle(Color.primary.opacity(0.6))
+                                            .frame(width: FlekTheme.searchPillSize * 0.8, height: FlekTheme.searchPillSize * 0.8)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, 6)
+                                .frame(height: FlekTheme.searchPillSize)
+                                .background(
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay(Capsule().fill(Color.white.opacity(0.45)))
+                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                                )
+                                .transition(.scale.combined(with: .opacity))
                             }
-                            .transition(.scale.combined(with: .opacity))
                         }
 
-                        FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                              size: FlekTheme.searchPillSize, iconScale: 0.5) {
-                            showSearch = true
+                        // Search button — native glass on iOS 26+, custom on older
+                        if #available(iOS 26.0, *) {
+                            if !isMultitaskHomeState {
+                                // Standalone search with native glass (multitask case is in GlassEffectContainer above)
+                                Button {
+                                    showSearch = true
+                                } label: {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                        .foregroundStyle(Color.primary.opacity(0.6))
+                                        .frame(width: FlekTheme.searchPillSize, height: FlekTheme.searchPillSize)
+                                }
+                                .buttonStyle(.plain)
+                                .glassEffect(in: .circle)
+                            }
+                        } else {
+                            FlekGlassCircleButton(systemImage: "magnifyingglass",
+                                                  size: FlekTheme.searchPillSize, iconScale: 0.5) {
+                                showSearch = true
+                            }
                         }
                     }
                     .animation(.easeInOut(duration: 0.25), value: isMultitaskHomeState)

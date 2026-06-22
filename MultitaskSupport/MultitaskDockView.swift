@@ -304,7 +304,17 @@ class AppInfoProvider {
             }
             
             if self.apps.isEmpty {
-                if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
+                if self.isAppSwitcherOpen {
+                    // Dismiss overlay without restoring bar (since we're hiding dock next)
+                    self.isAppSwitcherOpen = false
+                    if let overlay = self.switcherOverlayController {
+                        UIView.animate(withDuration: Constants.shortAnimationDuration1, delay: 0, options: .curveEaseIn) {
+                            overlay.view.alpha = 0
+                        } completion: { _ in
+                            overlay.view.removeFromSuperview()
+                        }
+                    }
+                }
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
@@ -1055,8 +1065,15 @@ class AppInfoProvider {
                 vc.closeWindow()
             }
         }
-        dismissAppSwitcher()
-        // Hide the dock immediately since all apps are being closed
+        // Dismiss overlay without restoring bar (since we're hiding dock)
+        isAppSwitcherOpen = false
+        if let overlay = switcherOverlayController {
+            UIView.animate(withDuration: Constants.shortAnimationDuration1, delay: 0, options: .curveEaseIn) {
+                overlay.view.alpha = 0
+            } completion: { _ in
+                overlay.view.removeFromSuperview()
+            }
+        }
         hideDock()
     }
     
@@ -1421,7 +1438,7 @@ struct AppSwitcherOverlay: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Capsule().fill(Color.white.opacity(0.15)))
+                        .modifier(GlassCapsuleBackground())
                     }
                     
                     // Hide Switcher Bar button
@@ -1535,7 +1552,7 @@ struct AppSwitcherCard: View {
                     .foregroundColor(.white.opacity(0.7))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.white.opacity(0.15)))
+                    .modifier(GlassCapsuleBackground())
                 }
                 .buttonStyle(.plain)
                 
@@ -1682,7 +1699,7 @@ struct AppSwitcherCard: View {
 struct MultitaskHomeIcons: View {
     @ObservedObject var dockManager = MultitaskDockManager.shared
     let darkModeIcon: Bool
-    private let iconSize: CGFloat = FlekTheme.searchPillSize
+    private let iconSize: CGFloat = FlekTheme.searchPillSize * 0.72
     
     var body: some View {
         ForEach(Array(dockManager.apps.suffix(4))) { app in
@@ -1694,18 +1711,28 @@ struct MultitaskHomeIcons: View {
                     Image(uiImage: icon)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .frame(width: iconSize, height: iconSize)
-                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                 } else {
                     Image(systemName: "app.fill")
-                        .font(.system(size: 24))
+                        .font(.system(size: 20))
                         .foregroundStyle(.white.opacity(0.6))
                         .frame(width: iconSize, height: iconSize)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.gray.opacity(0.3)))
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.gray.opacity(0.3)))
                 }
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Glass Capsule Background (native Liquid Glass on iOS 26+, fallback on older)
+struct GlassCapsuleBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(in: .capsule)
+        } else {
+            content.background(Capsule().fill(Color.white.opacity(0.15)))
         }
     }
 }
