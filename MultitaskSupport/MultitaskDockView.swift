@@ -1006,14 +1006,9 @@ class AppInfoProvider {
         switcherOverlayController = hc
         
         hc.view.alpha = 0
+        keyWindow.addSubview(hc.view)
         
-        // Insert below switcher bar but above app windows
-        if let barView = hostingController?.view {
-            keyWindow.insertSubview(hc.view, belowSubview: barView)
-        } else {
-            keyWindow.addSubview(hc.view)
-        }
-        
+        // Hide the switcher bar while the overlay is shown
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
             delay: 0,
@@ -1022,6 +1017,7 @@ class AppInfoProvider {
             options: .curveEaseOut
         ) {
             hc.view.alpha = 1
+            self.hostingController?.view.alpha = 0
         }
     }
     
@@ -1030,12 +1026,16 @@ class AppInfoProvider {
         
         guard let overlay = switcherOverlayController else { return }
         
+        // Show the switcher bar again
         UIView.animate(
             withDuration: Constants.shortAnimationDuration1,
             delay: 0,
             options: .curveEaseIn
         ) {
             overlay.view.alpha = 0
+            if self.isSwitcherBarVisible {
+                self.hostingController?.view.alpha = 1
+            }
         } completion: { _ in
             overlay.view.removeFromSuperview()
         }
@@ -1056,6 +1056,8 @@ class AppInfoProvider {
             }
         }
         dismissAppSwitcher()
+        // Hide the dock immediately since all apps are being closed
+        hideDock()
     }
     
     // MARK: - Multitask Mode Check
@@ -1353,7 +1355,7 @@ extension View {
 struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     
-    private let cardCornerRadius: CGFloat = 12
+    private let cardCornerRadius: CGFloat = 24
     private let cardSpacing: CGFloat = 12
     
     // Card dimensions — proportional to screen like iOS app switcher
