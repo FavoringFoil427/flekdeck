@@ -110,6 +110,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
     
     @State private var isViewAppeared = false
+    @State private var isMultitaskHomeState = false
     
     @ObservedObject var searchContext: SearchContext
     var sortedApps: [LCAppModel] {
@@ -216,10 +217,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     .buttonStyle(.plain)
                     .padding(.bottom, 10)
                 } else {
-                    FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                          size: FlekTheme.searchPillSize, iconScale: 0.5) {
-                        showSearch = true
+                    HStack(spacing: 10) {
+                        // Show running multitask app icons when in home state
+                        if #available(iOS 16.0, *), isMultitaskHomeState {
+                            MultitaskHomeIcons(darkModeIcon: darkModeIcon)
+                                .transition(.scale.combined(with: .opacity))
+                        }
+                        
+                        FlekGlassCircleButton(systemImage: "magnifyingglass",
+                                              size: FlekTheme.searchPillSize, iconScale: 0.5) {
+                            showSearch = true
+                        }
                     }
+                    .animation(.easeInOut(duration: 0.25), value: isMultitaskHomeState)
                     .padding(.bottom, 10)
                 }
             }
@@ -249,6 +259,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     await MainActor.run { flekstoreSharedModel.appInstallURL = "" }
                 }
             }
+        }
+        .onReceive({
+            if #available(iOS 16.0, *) {
+                return MultitaskDockManager.shared.$isHomeState.eraseToAnyPublisher()
+            } else {
+                return Just(false).eraseToAnyPublisher()
+            }
+        }()) { newValue in
+            isMultitaskHomeState = newValue
         }
         .fullScreenCover(isPresented: $showSettingsCover) {
             FlekInternalPage(isPresented: $showSettingsCover) {

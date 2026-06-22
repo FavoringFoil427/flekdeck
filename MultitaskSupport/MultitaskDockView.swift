@@ -138,6 +138,7 @@ class AppInfoProvider {
     @Published var isVisible: Bool = false
     @Published var isSwitcherBarVisible: Bool = true
     @Published var frontmostAppUUID: String?
+    @Published var isHomeState: Bool = false
 
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
@@ -339,6 +340,8 @@ class AppInfoProvider {
         guard isVisible, let hostingController = hostingController else { return }
         
         DispatchQueue.main.async {
+            self.isVisible = false
+            
             // Also remove nav assist if visible
             self.navAssistButton?.removeFromSuperview()
             self.navAssistButton = nil
@@ -353,7 +356,6 @@ class AppInfoProvider {
                 hostingController.view.alpha = 0
                 hostingController.view.transform = CGAffineTransform(translationX: 0, y: 50)
             } completion: { _ in
-                self.isVisible = false
                 hostingController.view.transform = .identity
             }
         }
@@ -370,11 +372,15 @@ class AppInfoProvider {
             }
             
             if hasVisibleWindow {
-                // Minimize ALL visible windows
+                // Minimize ALL visible windows and hide the dock bar
                 self.minimizeAllWindows()
                 self.updateFrontmostApp()
+                self.isHomeState = true
+                self.hideDock()
             } else {
                 // All minimized — bring back last used app
+                self.isHomeState = false
+                self.showDock()
                 if let uuid = self.frontmostAppUUID {
                     let _ = self.bringMultitaskViewToFront(uuid: uuid)
                 } else if let lastApp = self.apps.last {
@@ -596,8 +602,14 @@ class AppInfoProvider {
             if let targetView = findMultitaskView(in: window, withUUID: uuid) {
                 passURLSchemeToView(targetView)
                 animateViewAppearance(targetView, from: center, in: window)
+                let wasHomeState = self.isHomeState
+                self.isHomeState = false
                 self.frontmostAppUUID = uuid
-                self.updateDockFrame()
+                if wasHomeState {
+                    self.showDock()
+                } else {
+                    self.updateDockFrame()
+                }
                 return true
             }
         }
@@ -709,10 +721,11 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             self.apps.append(appModel)
             self.frontmostAppUUID = appUUID
+            self.isHomeState = false
             
-            if self.apps.count == 1 {
+            if !self.isVisible {
                 self.showDock()
-            } else if self.isVisible {
+            } else {
                 self.updateDockFrame()
             }
         }
@@ -743,8 +756,16 @@ struct SwitcherBarContentView: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     
     var body: some View {
+        activeBarContent
+        .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
+        .padding(.vertical, MultitaskDockManager.Constants.barVPadding)
+        .frame(maxWidth: .infinity)
+    }
+    
+    // MARK: - Active State (app running in foreground)
+    private var activeBarContent: some View {
         HStack(spacing: MultitaskDockManager.Constants.barSpacing) {
-            // Left: Hide button — slide bar down, show navigation assist
+            // Left: Hide button
             Button(action: {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 dockManager.hideSwitcherBar()
@@ -792,7 +813,7 @@ struct SwitcherBarContentView: View {
                     }
             }
             
-            // Right: Home button — minimize frontmost window
+            // Right: Home button
             Button(action: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dockManager.goHome()
@@ -811,10 +832,8 @@ struct SwitcherBarContentView: View {
                 }
             }
         }
-        .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        .padding(.vertical, MultitaskDockManager.Constants.barVPadding)
-        .frame(maxWidth: .infinity)
     }
+    
     
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
     
@@ -1021,6 +1040,39 @@ extension View {
                     onRelease(value.startLocation)
                 }
         )
+    }
+}
+
+// MARK: - Multitask Home Icons (shown on home screen when dock is hidden)
+@available(iOS 16.0, *)
+struct MultitaskHomeIcons: View {
+    @ObservedObject var dockManager = MultitaskDockManager.shared
+    let darkModeIcon: Bool
+    private let iconSize: CGFloat = FlekTheme.searchPillSize
+    
+    var body: some View {
+        ForEach(Array(dockManager.apps.prefix(4))) { app in
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+            } label: {
+                if let icon = SwitcherBarContentView.cachedIcon(for: app) {
+                    Image(uiImage: icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(width: iconSize, height: iconSize)
+                        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                } else {
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: iconSize, height: iconSize)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.gray.opacity(0.3)))
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
