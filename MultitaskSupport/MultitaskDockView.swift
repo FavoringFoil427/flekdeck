@@ -736,6 +736,11 @@ class AppInfoProvider {
                 let wasHomeState = self.isHomeState
                 self.isHomeState = false
                 self.frontmostAppUUID = uuid
+                // Move app to end so it's most recent (for home screen icon ordering)
+                if let idx = self.apps.firstIndex(where: { $0.appUUID == uuid }) {
+                    let app = self.apps.remove(at: idx)
+                    self.apps.append(app)
+                }
                 if wasHomeState {
                     self.showDock()
                 } else {
@@ -1562,7 +1567,7 @@ struct MultitaskHomeIcons: View {
     private let iconSize: CGFloat = FlekTheme.searchPillSize
     
     var body: some View {
-        ForEach(Array(dockManager.apps.prefix(4))) { app in
+        ForEach(Array(dockManager.apps.suffix(4))) { app in
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)

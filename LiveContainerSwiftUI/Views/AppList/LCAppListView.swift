@@ -222,8 +222,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         if #available(iOS 16.0, *), isMultitaskHomeState {
                             MultitaskHomeIcons(darkModeIcon: darkModeIcon)
                                 .transition(.scale.combined(with: .opacity))
+
+                            // App switcher button — opens multitask overlay
+                            FlekGlassCircleButton(systemImage: "square.stack",
+                                                  size: FlekTheme.searchPillSize, iconScale: 0.45) {
+                                MultitaskDockManager.shared.showAppSwitcher()
+                            }
+                            .transition(.scale.combined(with: .opacity))
                         }
-                        
+
                         FlekGlassCircleButton(systemImage: "magnifyingglass",
                                               size: FlekTheme.searchPillSize, iconScale: 0.5) {
                             showSearch = true
