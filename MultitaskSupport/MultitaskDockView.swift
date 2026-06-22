@@ -1457,6 +1457,8 @@ struct AppSwitcherCard: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isDismissing = false
     @State private var isVerticalDrag = false
+    @State private var isCustomizeExpanded = false
+    @State private var currentScale: CGFloat = 1.0
     
     private let dismissThreshold: CGFloat = -120
     
@@ -1514,6 +1516,120 @@ struct AppSwitcherCard: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
+            
+            // Customize expandable panel
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isCustomizeExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("Customize")
+                            .font(.system(size: 13, weight: .medium))
+                        Image(systemName: isCustomizeExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
+                
+                if isCustomizeExpanded {
+                    VStack(spacing: 10) {
+                        // PID row
+                        HStack {
+                            if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                Text("PID: \(decoratedVC.appSceneVC.pid)")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            Spacer()
+                            Button {
+                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                    UIPasteboard.general.string = "\(decoratedVC.appSceneVC.pid)"
+                                }
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        Divider().background(Color.white.opacity(0.2))
+                        
+                        // PiP toggle
+                        Button {
+                            if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                let pipManager = PiPManager.shared!
+                                if pipManager.isPiP(withVC: decoratedVC.appSceneVC) {
+                                    pipManager.stopPiP()
+                                } else {
+                                    pipManager.startPiP(withVC: decoratedVC.appSceneVC)
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
+                                   PiPManager.shared?.isPiP(withVC: decoratedVC.appSceneVC) == true {
+                                    Label("Disable PiP", systemImage: "pip.exit")
+                                } else {
+                                    Label("Enable PiP", systemImage: "pip.enter")
+                                }
+                                Spacer()
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Divider().background(Color.white.opacity(0.2))
+                        
+                        // UI Scale slider
+                        VStack(spacing: 6) {
+                            HStack {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 11))
+                                Text("UI Scale")
+                                    .font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Text("\(Int(currentScale * 100))%")
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            }
+                            .foregroundColor(.white.opacity(0.7))
+                            
+                            Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
+                                .tint(.white.opacity(0.5))
+                                .onChange(of: currentScale) { newValue in
+                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                        decoratedVC.scaleRatio = newValue
+                                        decoratedVC.appSceneVC.scaleRatio = newValue
+                                        decoratedVC.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+                                    }
+                                }
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+                    .frame(width: cardWidth)
+                    .padding(.top, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .onAppear {
+                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                    currentScale = decoratedVC.scaleRatio
+                }
+            }
         }
         .offset(y: dragOffset)
         .opacity(isDismissing ? 0 : (dragOffset < 0 ? Double(1 + dragOffset / 300) : 1))
