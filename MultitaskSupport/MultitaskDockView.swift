@@ -915,33 +915,28 @@ class AppInfoProvider {
     
     /// Capture a snapshot of a single app's view while it's currently visible on screen.
     /// Must be called while the view is still rendering (before any minimize/hide animation).
-    /// Uses window.resizableSnapshotView to create a replicant view that can display
-    /// CARemoteLayer content from child processes (which cannot be captured as bitmap images).
+    /// Snapshots the app view directly (not the window) so each app captures its own
+    /// layer tree, avoiding cross-contamination when multiple apps overlap on screen.
     func captureSnapshot(for appUUID: String) {
         guard let app = apps.first(where: { $0.appUUID == appUUID }),
               let appView = app.view,
               !appView.isHidden, appView.alpha > 0.1 else { return }
         
-        // Capture from the window for the app view's region.
-        // The window composites all layers including CARemoteLayer from child processes.
-        // resizableSnapshotView creates a _UIReplicantView at the render server level
-        // that can natively display the composited content (including remote layers).
-        if let window = appView.window {
-            let frameInWindow = appView.convert(appView.bounds, to: window)
-            if frameInWindow.width > 0 && frameInWindow.height > 0,
-               let viewSnapshot = window.resizableSnapshotView(
-                from: frameInWindow,
-                afterScreenUpdates: false,
-                withCapInsets: .zero
-               ) {
-                // Normalize the snapshot view's frame to the known capture size in points.
-                // The replicant view returned by resizableSnapshotView may have bounds that
-                // don't match the from rect (e.g. reflecting native pixel dimensions on Retina),
-                // which causes incorrect scaling when displayed in the switcher card.
-                viewSnapshot.frame = CGRect(origin: .zero, size: frameInWindow.size)
-                appSnapshotViews[appUUID] = viewSnapshot
-                return
-            }
+        let viewSize = appView.bounds.size
+        guard viewSize.width > 0 && viewSize.height > 0 else { return }
+        
+        // Snapshot the app view directly to capture only this app's content.
+        // Using the view (not the window) ensures we get this specific app's
+        // layer tree including CARemoteLayer content, rather than whatever
+        // happens to be visually on top at the same screen position.
+        if let viewSnapshot = appView.resizableSnapshotView(
+            from: appView.bounds,
+            afterScreenUpdates: false,
+            withCapInsets: .zero
+        ) {
+            viewSnapshot.frame = CGRect(origin: .zero, size: viewSize)
+            appSnapshotViews[appUUID] = viewSnapshot
+            return
         }
         
         // Fallback: snapshot the content view directly
@@ -1007,8 +1002,6 @@ class AppInfoProvider {
             }
         } completion: { _ in
             overlay.view.removeFromSuperview()
-            // Clean up snapshot views to free memory
-            self.appSnapshotViews.removeAll()
         }
     }
     
