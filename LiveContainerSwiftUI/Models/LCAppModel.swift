@@ -137,8 +137,9 @@ class LCAppModel: ObservableObject, Hashable {
     public var shouldLaunchInMultitaskMode : Bool {
         get {
             if #available(iOS 16.0, *) {
+                let globalDefault = UserDefaults.standard.object(forKey: "LCLaunchInMultitaskMode") == nil ? true : UserDefaults.standard.bool(forKey: "LCLaunchInMultitaskMode")
                 return uiIsMultitaskModeSpecificed == .yes ||
-                (uiIsMultitaskModeSpecificed == .default && UserDefaults.standard.bool(forKey: "LCLaunchInMultitaskMode"))
+                (uiIsMultitaskModeSpecificed == .default && globalDefault)
             } else {
                 return false
             }
