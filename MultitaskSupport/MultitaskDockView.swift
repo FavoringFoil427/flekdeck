@@ -140,7 +140,7 @@ class AppInfoProvider {
     @Published var frontmostAppUUID: String?
     @Published var isHomeState: Bool = false
     @Published var isAppSwitcherOpen: Bool = false
-    var appSnapshots: [String: UIImage] = [:]
+    var appSnapshotViews: [String: UIView] = [:]
 
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
@@ -297,7 +297,7 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.apps.removeAll { $0.appUUID == appUUID }
-            self.appSnapshots.removeValue(forKey: appUUID)
+            self.appSnapshotViews.removeValue(forKey: appUUID)
             
             if self.frontmostAppUUID == appUUID {
                 self.updateFrontmostApp()
@@ -738,6 +738,11 @@ class AppInfoProvider {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
             return false
         }
+        
+        // Capture snapshot of the current frontmost app before switching away from it
+        if let currentFrontmost = self.frontmostAppUUID, currentFrontmost != uuid {
+            captureSnapshot(for: currentFrontmost)
+        }
 
         for window in windowScene.windows {
             if let targetView = findMultitaskView(in: window, withUUID: uuid) {
@@ -879,6 +884,10 @@ class AppInfoProvider {
     
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
         DispatchQueue.main.async {
+            // Capture snapshots of visible windows before minimizing them
+            for app in self.apps {
+                self.captureSnapshot(for: app.appUUID)
+            }
             self.apps.forEach { app in
                 if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
                    vc != except {
@@ -892,105 +901,50 @@ class AppInfoProvider {
     // MARK: - App Switcher Overlay
     
     func captureSnapshots() {
-        appSnapshots.removeAll()
+        // Only attempt fresh snapshots for currently visible apps.
+        // Keep existing cached snapshots for hidden/minimized apps,
+        // since drawHierarchy cannot capture CARemoteLayer content
+        // from child processes when views are not actively rendered.
         for app in apps {
             guard let appView = app.view else { continue }
-            
-            // Try multiple capture strategies for the app view hierarchy
-            let viewsToTry: [UIView] = {
-                var views = [appView]
-                // Also try the appSceneVC.view directly (the actual remote app content)
-                if let decoratedVC = appView._viewDelegate() as? DecoratedAppSceneViewController {
-                    views.insert(decoratedVC.appSceneVC.view, at: 0)
-                }
-                return views
-            }()
-            
-            for targetView in viewsToTry {
-                // Temporarily show hidden/minimized views for snapshot
-                let wasHidden = targetView.isHidden
-                let oldAlpha = targetView.alpha
-                let oldTransform = targetView.transform
-                if wasHidden { targetView.isHidden = false }
-                if oldAlpha < 0.1 { targetView.alpha = 1.0 }
-                if oldTransform != .identity { targetView.transform = .identity }
-                
-                // Also ensure parent chain is visible
-                let parentView = appView
-                let parentWasHidden = parentView.isHidden
-                let parentOldAlpha = parentView.alpha
-                let parentOldTransform = parentView.transform
-                if parentWasHidden { parentView.isHidden = false }
-                if parentOldAlpha < 0.1 { parentView.alpha = 1.0 }
-                if parentOldTransform != .identity { parentView.transform = .identity }
-                
-                let bounds = targetView.bounds
-                guard bounds.width > 0 && bounds.height > 0 else {
-                    if wasHidden { targetView.isHidden = true }
-                    if oldAlpha < 0.1 { targetView.alpha = oldAlpha }
-                    if oldTransform != .identity { targetView.transform = oldTransform }
-                    if parentWasHidden { parentView.isHidden = true }
-                    if parentOldAlpha < 0.1 { parentView.alpha = parentOldAlpha }
-                    if parentOldTransform != .identity { parentView.transform = parentOldTransform }
-                    continue
-                }
-                
-                // Try drawHierarchy first (captures GPU/Metal content better)
-                let renderer = UIGraphicsImageRenderer(bounds: bounds)
-                let snapshot = renderer.image { ctx in
-                    targetView.drawHierarchy(in: bounds, afterScreenUpdates: true)
-                }
-                
-                // Restore state
-                if wasHidden { targetView.isHidden = true }
-                if oldAlpha < 0.1 { targetView.alpha = oldAlpha }
-                if oldTransform != .identity { targetView.transform = oldTransform }
-                if parentWasHidden { parentView.isHidden = true }
-                if parentOldAlpha < 0.1 { parentView.alpha = parentOldAlpha }
-                if parentOldTransform != .identity { parentView.transform = parentOldTransform }
-                
-                // Check if the snapshot has actual content (not all black/transparent)
-                if isSnapshotValid(snapshot) {
-                    appSnapshots[app.appUUID] = snapshot
-                    break
-                }
+            if !appView.isHidden && appView.alpha > 0.1 {
+                captureSnapshot(for: app.appUUID)
             }
         }
     }
     
-    /// Check if a snapshot image has meaningful content (not all black or transparent)
-    private func isSnapshotValid(_ image: UIImage) -> Bool {
-        guard let cgImage = image.cgImage else { return false }
-        let width = min(cgImage.width, 20)
-        let height = min(cgImage.height, 20)
-        guard width > 0 && height > 0 else { return false }
+    /// Capture a snapshot of a single app's view while it's currently visible on screen.
+    /// Must be called while the view is still rendering (before any minimize/hide animation).
+    /// Uses window.resizableSnapshotView to create a replicant view that can display
+    /// CARemoteLayer content from child processes (which cannot be captured as bitmap images).
+    func captureSnapshot(for appUUID: String) {
+        guard let app = apps.first(where: { $0.appUUID == appUUID }),
+              let appView = app.view,
+              !appView.isHidden, appView.alpha > 0.1 else { return }
         
-        // Sample a small region to check if there's content
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return false }
-        
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let data = context.data else { return false }
-        
-        let pixels = data.bindMemory(to: UInt32.self, capacity: width * height)
-        var nonBlackCount = 0
-        let sampleCount = width * height
-        for i in 0..<sampleCount {
-            let pixel = pixels[i]
-            // Check if pixel is not black (allowing for very dark pixels)
-            if pixel & 0x00FFFFFF > 0x00050505 {
-                nonBlackCount += 1
+        // Capture from the window for the app view's region.
+        // The window composites all layers including CARemoteLayer from child processes.
+        // resizableSnapshotView creates a _UIReplicantView at the render server level
+        // that can natively display the composited content (including remote layers).
+        if let window = appView.window {
+            let frameInWindow = appView.convert(appView.bounds, to: window)
+            if frameInWindow.width > 0 && frameInWindow.height > 0,
+               let viewSnapshot = window.resizableSnapshotView(
+                from: frameInWindow,
+                afterScreenUpdates: false,
+                withCapInsets: .zero
+               ) {
+                appSnapshotViews[appUUID] = viewSnapshot
+                return
             }
         }
-        // Valid if more than 5% of sampled pixels are non-black
-        return nonBlackCount > sampleCount / 20
+        
+        // Fallback: snapshot the content view directly
+        if let decoratedVC = appView._viewDelegate() as? DecoratedAppSceneViewController,
+           let contentView = decoratedVC.appSceneVC.contentView,
+           let viewSnapshot = contentView.snapshotView(afterScreenUpdates: false) {
+            appSnapshotViews[appUUID] = viewSnapshot
+        }
     }
     
     func showAppSwitcher() {
@@ -1048,6 +1002,8 @@ class AppInfoProvider {
             }
         } completion: { _ in
             overlay.view.removeFromSuperview()
+            // Clean up snapshot views to free memory
+            self.appSnapshotViews.removeAll()
         }
     }
     
@@ -1504,10 +1460,8 @@ struct AppSwitcherCard: View {
             
             // Card with snapshot
             ZStack {
-                if let snapshot = dockManager.appSnapshots[app.appUUID] {
-                    Image(uiImage: snapshot)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+                if let snapshotView = dockManager.appSnapshotViews[app.appUUID] {
+                    SnapshotViewRepresentable(snapshotView: snapshotView)
                         .frame(width: cardWidth, height: cardHeight)
                         .clipped()
                 } else {
@@ -1734,6 +1688,40 @@ struct GlassCapsuleBackground: ViewModifier {
         } else {
             content.background(Capsule().fill(Color.white.opacity(0.15)))
         }
+    }
+}
+
+// MARK: - Snapshot View Representable
+/// Displays a UIView snapshot (replicant) in SwiftUI, scaling it to fill the available space.
+/// Used when CARemoteLayer content can be captured as a snapshot view but not as a bitmap image.
+@available(iOS 16.0, *)
+struct SnapshotViewRepresentable: UIViewRepresentable {
+    let snapshotView: UIView
+    
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.clipsToBounds = true
+        container.backgroundColor = .black
+        snapshotView.autoresizingMask = []
+        container.addSubview(snapshotView)
+        return container
+    }
+    
+    func updateUIView(_ container: UIView, context: Context) {
+        guard let snapshot = container.subviews.first else { return }
+        let snapshotSize = snapshot.bounds.size
+        guard snapshotSize.width > 0 && snapshotSize.height > 0 else { return }
+        
+        let containerSize = container.bounds.size
+        guard containerSize.width > 0 && containerSize.height > 0 else { return }
+        
+        // Scale to fill (like aspectFill)
+        let scaleX = containerSize.width / snapshotSize.width
+        let scaleY = containerSize.height / snapshotSize.height
+        let scale = max(scaleX, scaleY)
+        
+        snapshot.transform = CGAffineTransform(scaleX: scale, y: scale)
+        snapshot.center = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
     }
 }
 
