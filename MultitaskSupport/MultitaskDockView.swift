@@ -934,6 +934,11 @@ class AppInfoProvider {
                 afterScreenUpdates: false,
                 withCapInsets: .zero
                ) {
+                // Normalize the snapshot view's frame to the known capture size in points.
+                // The replicant view returned by resizableSnapshotView may have bounds that
+                // don't match the from rect (e.g. reflecting native pixel dimensions on Retina),
+                // which causes incorrect scaling when displayed in the switcher card.
+                viewSnapshot.frame = CGRect(origin: .zero, size: frameInWindow.size)
                 appSnapshotViews[appUUID] = viewSnapshot
                 return
             }
@@ -1692,8 +1697,10 @@ struct GlassCapsuleBackground: ViewModifier {
 }
 
 // MARK: - Snapshot View Representable
-/// Displays a UIView snapshot (replicant) in SwiftUI, scaling it to fill the available space.
-/// Used when CARemoteLayer content can be captured as a snapshot view but not as a bitmap image.
+/// Displays a UIView snapshot (replicant) in SwiftUI, resizing it to fit the available space.
+/// Uses frame-based resizing (not transforms) since the view from resizableSnapshotView is
+/// designed to be resized. This avoids issues with replicant views whose internal bounds
+/// may not reflect point dimensions on Retina displays.
 @available(iOS 16.0, *)
 struct SnapshotViewRepresentable: UIViewRepresentable {
     let snapshotView: UIView
@@ -1702,26 +1709,16 @@ struct SnapshotViewRepresentable: UIViewRepresentable {
         let container = UIView()
         container.clipsToBounds = true
         container.backgroundColor = .black
-        snapshotView.autoresizingMask = []
+        snapshotView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(snapshotView)
         return container
     }
     
     func updateUIView(_ container: UIView, context: Context) {
         guard let snapshot = container.subviews.first else { return }
-        let snapshotSize = snapshot.bounds.size
-        guard snapshotSize.width > 0 && snapshotSize.height > 0 else { return }
-        
-        let containerSize = container.bounds.size
-        guard containerSize.width > 0 && containerSize.height > 0 else { return }
-        
-        // Scale to fill (like aspectFill)
-        let scaleX = containerSize.width / snapshotSize.width
-        let scaleY = containerSize.height / snapshotSize.height
-        let scale = max(scaleX, scaleY)
-        
-        snapshot.transform = CGAffineTransform(scaleX: scale, y: scale)
-        snapshot.center = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
+        // The snapshot is a resizable snapshot view — just let it fill the container.
+        // autoresizingMask handles resizing automatically.
+        snapshot.frame = container.bounds
     }
 }
 
