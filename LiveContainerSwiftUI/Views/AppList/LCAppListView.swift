@@ -106,6 +106,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     
     @EnvironmentObject private var flekstoreSharedModel: FlekstoreSharedModel
+    @EnvironmentObject private var sceneDelegate: SceneDelegate
     
     @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
     
@@ -586,15 +587,24 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     func handleHomeTap(_ item: FlekHomeItem) {
         switch item {
         case .defaultApp(let kind):
-            switch kind {
-            case .settings:
-                showSettingsCover = true
-            case .installer:
-                installerPreselectFlekstore = false
-                showInstallerCover = true
-            case .flekstore:
-                installerPreselectFlekstore = true
-                showInstallerCover = true
+            let isMultitaskAvailable: Bool = {
+                guard #available(iOS 16.0, *) else { return false }
+                let mode = MultitaskMode(rawValue: LCUtils.appGroupUserDefault.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
+                return mode == .virtualWindow && sharedModel.multiLCStatus != 2
+            }()
+            if #available(iOS 16.0, *), isMultitaskAvailable {
+                openInternalPageForKind(kind)
+            } else {
+                switch kind {
+                case .settings:
+                    showSettingsCover = true
+                case .installer:
+                    installerPreselectFlekstore = false
+                    showInstallerCover = true
+                case .flekstore:
+                    installerPreselectFlekstore = true
+                    showInstallerCover = true
+                }
             }
         case .installed(let app):
             FlekLaunchTracker.shared.markLaunched(app)
@@ -607,6 +617,41 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installing:
             break
+        }
+    }
+
+    @available(iOS 16.0, *)
+    private func openInternalPageForKind(_ kind: FlekDefaultAppKind) {
+        let dockManager = MultitaskDockManager.shared
+        
+        switch kind {
+        case .settings:
+            dockManager.openInternalPage(kind: "settings", uuid: "internal-settings", name: "lc.tabView.settings".loc) {
+                StandaloneSettingsView()
+                    .environmentObject(sharedModel)
+                    .environmentObject(sceneDelegate)
+            }
+        case .installer:
+            dockManager.openInternalPage(kind: "installer", uuid: "internal-installer", name: "Installer") {
+                FlekInstallerView(preselectFlekstore: false) {
+                    dockManager.closeApp(uuid: "internal-installer")
+                }
+                .environmentObject(sharedModel)
+                .environmentObject(sceneDelegate)
+            }
+        case .flekstore:
+            // FlekStore reuses the installer UUID — if already open, bring to front
+            if dockManager.apps.contains(where: { $0.appUUID == "internal-installer" }) {
+                let _ = dockManager.bringMultitaskViewToFront(uuid: "internal-installer")
+            } else {
+                dockManager.openInternalPage(kind: "flekstore", uuid: "internal-installer", name: "FlekSt0re") {
+                    FlekInstallerView(preselectFlekstore: true) {
+                        dockManager.closeApp(uuid: "internal-installer")
+                    }
+                    .environmentObject(sharedModel)
+                    .environmentObject(sceneDelegate)
+                }
+            }
         }
     }
 

@@ -120,11 +120,36 @@ class AppInfoProvider {
     let appInfo: LCAppInfo?
     let view: UIView?
     
+    /// Non-nil for built-in pages (e.g. "settings", "installer"); nil for guest apps
+    let internalPageKind: String?
+    
+    var isInternalPage: Bool { internalPageKind != nil }
+    
+    /// Asset catalog icon name for built-in pages
+    var internalPageIconAssetName: String? {
+        switch internalPageKind {
+        case "settings": return "FlekIconSettings"
+        case "installer": return "FlekIconInstaller"
+        case "flekstore": return "FlekIconFlekStore"
+        default: return nil
+        }
+    }
+    
     @objc init(appName: String, appUUID: String, appInfo: LCAppInfo? = nil, view: UIView?) {
         self.appName = appName
         self.appUUID = appUUID
         self.appInfo = appInfo
         self.view = view
+        self.internalPageKind = nil
+        super.init()
+    }
+    
+    init(appName: String, appUUID: String, view: UIView?, internalPageKind: String) {
+        self.appName = appName
+        self.appUUID = appUUID
+        self.appInfo = nil
+        self.view = view
+        self.internalPageKind = internalPageKind
         super.init()
     }
 }
@@ -142,6 +167,7 @@ class AppInfoProvider {
     @Published var isAppSwitcherOpen: Bool = false
     @Published var isClosingAll: Bool = false
     var appSnapshotViews: [String: UIView] = [:]
+    var internalPageControllers: [String: UIHostingController<AnyView>] = [:]
 
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
@@ -299,6 +325,7 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             self.apps.removeAll { $0.appUUID == appUUID }
             self.appSnapshotViews.removeValue(forKey: appUUID)
+            self.internalPageControllers.removeValue(forKey: appUUID)
             
             if self.frontmostAppUUID == appUUID {
                 self.updateFrontmostApp()
@@ -883,6 +910,38 @@ class AppInfoProvider {
         }
     }
     
+    /// Open a built-in page (Settings, Installer, FlekStore) as a multitask window
+    public func openInternalPage<Content: View>(kind: String, uuid: String, name: String, @ViewBuilder content: () -> Content) {
+        guard isDockEnabled() else { return }
+        
+        // If already open, just bring to front
+        if apps.contains(where: { $0.appUUID == uuid }) {
+            let _ = bringMultitaskViewToFront(uuid: uuid)
+            return
+        }
+        
+        let hostVC = UIHostingController(rootView: AnyView(content()))
+        hostVC.view.frame = windowHostingView.bounds
+        hostVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        windowHostingView.addSubview(hostVC.view)
+        
+        internalPageControllers[uuid] = hostVC
+        
+        let appModel = DockAppModel(appName: name, appUUID: uuid, view: hostVC.view, internalPageKind: kind)
+        
+        DispatchQueue.main.async {
+            self.apps.append(appModel)
+            self.frontmostAppUUID = uuid
+            self.isHomeState = false
+            
+            if !self.isVisible {
+                self.showDock()
+            } else {
+                self.updateDockFrame()
+            }
+        }
+    }
+    
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
         DispatchQueue.main.async {
             // Capture snapshots of visible windows before minimizing them
@@ -890,7 +949,9 @@ class AppInfoProvider {
                 self.captureSnapshot(for: app.appUUID)
             }
             self.apps.forEach { app in
-                if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
+                if app.isInternalPage {
+                    app.view?.isHidden = true
+                } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
                    vc != except {
                     app.view?.layer.removeAllAnimations()
                     vc.minimizeWindow()
@@ -1013,8 +1074,13 @@ class AppInfoProvider {
     }
     
     func closeApp(uuid: String) {
-        if let app = apps.first(where: { $0.appUUID == uuid }),
-           let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+        guard let app = apps.first(where: { $0.appUUID == uuid }) else { return }
+        
+        if app.isInternalPage {
+            app.view?.removeFromSuperview()
+            internalPageControllers[uuid] = nil
+            removeRunningApp(uuid)
+        } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
             vc.closeWindow()
         }
     }
@@ -1028,10 +1094,14 @@ class AppInfoProvider {
             guard let self = self else { return }
             let appsToClose = self.apps
             for app in appsToClose {
-                if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                if app.isInternalPage {
+                    app.view?.removeFromSuperview()
+                    self.internalPageControllers[app.appUUID] = nil
+                } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
                     vc.closeWindow()
                 }
             }
+            self.apps.removeAll { $0.isInternalPage }
             self.isClosingAll = false
             self.isAppSwitcherOpen = false
             if let overlay = self.switcherOverlayController {
@@ -1130,6 +1200,11 @@ struct SwitcherBarContentView: View {
         if let cached = IconCacheManager.shared.getIcon(for: cacheKey) {
             return cached
         }
+        // Internal pages use asset catalog icons
+        if let assetName = app.internalPageIconAssetName, let icon = UIImage(named: assetName) {
+            IconCacheManager.shared.setIcon(icon, for: cacheKey)
+            return icon
+        }
         // Try loading synchronously and cache it
         if let appInfo = app.appInfo {
             let darkMode = LCUtils.appGroupUserDefault.bool(forKey: "darkModeIcon")
@@ -1195,6 +1270,13 @@ struct FrontmostAppIconLabel: View {
         let cacheKey = "\(app.appName)_\(app.appUUID)"
         if let cached = IconCacheManager.shared.getIcon(for: cacheKey) {
             self.appIcon = cached
+            return
+        }
+        
+        // Internal pages use asset catalog icons
+        if let assetName = app.internalPageIconAssetName, let icon = UIImage(named: assetName) {
+            self.appIcon = icon
+            IconCacheManager.shared.setIcon(icon, for: cacheKey)
             return
         }
         
@@ -1289,6 +1371,14 @@ struct AppIconView: View {
         if let cachedIcon = IconCacheManager.shared.getIcon(for: cacheKey) {
             self.appIcon = cachedIcon
             self.isLoading = false
+            return
+        }
+        
+        // Internal pages use asset catalog icons
+        if let assetName = app.internalPageIconAssetName, let icon = UIImage(named: assetName) {
+            self.appIcon = icon
+            self.isLoading = false
+            IconCacheManager.shared.setIcon(icon, for: cacheKey)
             return
         }
         
@@ -1530,117 +1620,119 @@ struct AppSwitcherCard: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
             
-            // Customize expandable panel
-            VStack(spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isCustomizeExpanded.toggle()
+            // Customize expandable panel (guest apps only)
+            if !app.isInternalPage {
+                VStack(spacing: 0) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isCustomizeExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gear")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Customize")
+                                .font(.system(size: 13, weight: .medium))
+                            Image(systemName: isCustomizeExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .modifier(GlassCapsuleBackground())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "gear")
-                            .font(.system(size: 11, weight: .medium))
-                        Text("Customize")
-                            .font(.system(size: 13, weight: .medium))
-                        Image(systemName: isCustomizeExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .modifier(GlassCapsuleBackground())
-                }
-                .buttonStyle(.plain)
-                
-                if isCustomizeExpanded {
-                    VStack(spacing: 10) {
-                        // PID row
-                        HStack {
-                            if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                Text("PID: \(decoratedVC.appSceneVC.pid)")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.6))
+                    .buttonStyle(.plain)
+                    
+                    if isCustomizeExpanded {
+                        VStack(spacing: 10) {
+                            // PID row
+                            HStack {
+                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                    Text("PID: \(decoratedVC.appSceneVC.pid)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                Spacer()
+                                Button {
+                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                        UIPasteboard.general.string = "\(decoratedVC.appSceneVC.pid)"
+                                    }
+                                } label: {
+                                    Label("Copy", systemImage: "doc.on.doc")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            Spacer()
+                            
+                            Divider().background(Color.white.opacity(0.2))
+                            
+                            // PiP toggle
                             Button {
                                 if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                    UIPasteboard.general.string = "\(decoratedVC.appSceneVC.pid)"
-                                }
-                            } label: {
-                                Label("Copy", systemImage: "doc.on.doc")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        
-                        Divider().background(Color.white.opacity(0.2))
-                        
-                        // PiP toggle
-                        Button {
-                            if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                let pipManager = PiPManager.shared!
-                                if pipManager.isPiP(withVC: decoratedVC.appSceneVC) {
-                                    pipManager.stopPiP()
-                                } else {
-                                    pipManager.startPiP(withVC: decoratedVC.appSceneVC)
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
-                                   PiPManager.shared?.isPiP(withVC: decoratedVC.appSceneVC) == true {
-                                    Label("Disable PiP", systemImage: "pip.exit")
-                                } else {
-                                    Label("Enable PiP", systemImage: "pip.enter")
-                                }
-                                Spacer()
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Divider().background(Color.white.opacity(0.2))
-                        
-                        // UI Scale slider
-                        VStack(spacing: 6) {
-                            HStack {
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 11))
-                                Text("UI Scale")
-                                    .font(.system(size: 13, weight: .medium))
-                                Spacer()
-                                Text("\(Int(currentScale * 100))%")
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            }
-                            .foregroundColor(.white.opacity(0.7))
-                            
-                            Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
-                                .tint(.white.opacity(0.5))
-                                .onChange(of: currentScale) { newValue in
-                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                        decoratedVC.scaleRatio = newValue
-                                        decoratedVC.appSceneVC.scaleRatio = newValue
-                                        decoratedVC.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+                                    let pipManager = PiPManager.shared!
+                                    if pipManager.isPiP(withVC: decoratedVC.appSceneVC) {
+                                        pipManager.stopPiP()
+                                    } else {
+                                        pipManager.startPiP(withVC: decoratedVC.appSceneVC)
                                     }
                                 }
+                            } label: {
+                                HStack {
+                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
+                                       PiPManager.shared?.isPiP(withVC: decoratedVC.appSceneVC) == true {
+                                        Label("Disable PiP", systemImage: "pip.exit")
+                                    } else {
+                                        Label("Enable PiP", systemImage: "pip.enter")
+                                    }
+                                    Spacer()
+                                }
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Divider().background(Color.white.opacity(0.2))
+                            
+                            // UI Scale slider
+                            VStack(spacing: 6) {
+                                HStack {
+                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                        .font(.system(size: 11))
+                                    Text("UI Scale")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                    Text("\(Int(currentScale * 100))%")
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                }
+                                .foregroundColor(.white.opacity(0.7))
+                                
+                                Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
+                                    .tint(.white.opacity(0.5))
+                                    .onChange(of: currentScale) { newValue in
+                                        if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                                            decoratedVC.scaleRatio = newValue
+                                            decoratedVC.appSceneVC.scaleRatio = newValue
+                                            decoratedVC.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+                                        }
+                                    }
+                            }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .frame(width: cardWidth)
+                        .padding(.top, 6)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                    )
-                    .frame(width: cardWidth)
-                    .padding(.top, 6)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-            }
-            .onAppear {
-                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                    currentScale = decoratedVC.scaleRatio
+                .onAppear {
+                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                        currentScale = decoratedVC.scaleRatio
+                    }
                 }
             }
         }
