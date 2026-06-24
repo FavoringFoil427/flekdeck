@@ -1175,10 +1175,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         finalNewApp.installationDate = Date.now
         
-        DispatchQueue.main.async {
+        await MainActor.run {
             // Remove the installing card before adding the new app so that
             // homeItems never contains both .installing and the new .installed
             // item at the same time (which caused an empty grid slot).
+            // Using MainActor.run (not DispatchQueue.main.async) so this
+            // completes before installIpaFile returns – otherwise callers
+            // with a defer that clears installprogressVisible would remove
+            // the installing card one frame before the new app appears.
             self.installprogressVisible = false
 
             if let appToReplace {

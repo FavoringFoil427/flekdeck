@@ -19,9 +19,7 @@ struct FlekSearchView: View {
 
     @State private var query = ""
     @FocusState private var fieldFocused: Bool
-    @StateObject private var storeVM = FlekstoreAppsListViewModel()
-
-    private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
+    @StateObject private var repoSearch = MultiRepoSearchModel()
 
     private var results: [LCAppModel] {
         guard !query.isEmpty else { return [] }
@@ -45,12 +43,10 @@ struct FlekSearchView: View {
         }
         .onAppear {
             fieldFocused = true
-            storeVM.repository = .flekstore
-            Task { await storeVM.refreshSubscriptionStatus() }
+            repoSearch.setup()
         }
         .onChange(of: query) { q in
-            storeVM.searchQuery = q
-            storeVM.debounceSearch(q)
+            repoSearch.debounceSearch(q)
         }
     }
 
@@ -58,10 +54,15 @@ struct FlekSearchView: View {
     private var resultsArea: some View {
         if query.isEmpty {
             Spacer()
-        } else if results.isEmpty && storeVM.apps.isEmpty && !storeVM.isLoading {
+        } else if results.isEmpty && repoSearch.sections.isEmpty && !repoSearch.isLoading {
             Spacer()
-            Text("lc.flek.noResults".loc)
-                .foregroundStyle(.white.opacity(0.8))
+            VStack(spacing: 12) {
+                Image(systemName: "app.grid")
+                    .font(.system(size: 48, weight: .thin))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("lc.flek.noResults".loc)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
             Spacer()
         } else {
             ScrollView {
@@ -79,11 +80,13 @@ struct FlekSearchView: View {
                             }
                         }
                     }
-                    if !storeVM.apps.isEmpty {
-                        section(title: "FlekSt0re") {
-                            ForEach(storeVM.apps) { app in
+                    ForEach(repoSearch.sections) { repoSection in
+                        section(title: repoSection.name, iconUrl: repoSection.iconUrl) {
+                            ForEach(repoSection.apps) { app in
                                 Button {
-                                    FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                                    if repoSection.isFlekstore {
+                                        FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                                    }
                                     onInstallStoreApp(app)
                                     close()
                                 } label: {
@@ -93,7 +96,7 @@ struct FlekSearchView: View {
                             }
                         }
                     }
-                    if storeVM.isLoading {
+                    if repoSearch.isLoading {
                         ProgressView().frame(maxWidth: .infinity).padding()
                     }
                 }
@@ -105,11 +108,22 @@ struct FlekSearchView: View {
     }
 
     @ViewBuilder
-    private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(title: String, iconUrl: String? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.8))
+            HStack(spacing: 6) {
+                if let iconUrl, let url = URL(string: iconUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.clear
+                    }
+                    .frame(width: 18, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
             content()
         }
     }
@@ -128,13 +142,23 @@ struct FlekSearchView: View {
                     .submitLabel(.search)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.black.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
             .frame(height: 50)
             .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().fill(Color.white.opacity(0.45)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+            .overlay(Capsule().fill(Color.white.opacity(0.45)).allowsHitTesting(false))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
             .compositingGroup()
 
             // Clear + close button (returns to the home screen)
@@ -162,6 +186,102 @@ struct FlekSearchView: View {
         isPresented = false
     }
 }
+
+// MARK: - Multi-repo search model
+
+@MainActor
+private class MultiRepoSearchModel: ObservableObject {
+    struct RepoSection: Identifiable {
+        let id: String          // repo sourceURL
+        let name: String
+        let iconUrl: String
+        let isFlekstore: Bool
+        let apps: [FSAppModel]
+    }
+
+    @Published var sections: [RepoSection] = []
+    @Published var isLoading = false
+
+    private var repos: [AppRepository] = []
+    private var cachedApps: [String: [FSAppModel]] = [:] // keyed by sourceURL
+    private var flekstoreVM = FlekstoreAppsListViewModel()
+    private var searchTask: Task<Void, Never>?
+
+    func setup() {
+        repos = FlekInstallerView.loadRepos()
+        flekstoreVM.repository = .flekstore
+        Task { await flekstoreVM.refreshSubscriptionStatus() }
+    }
+
+    func debounceSearch(_ query: String) {
+        searchTask?.cancel()
+
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            sections = []
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            await performSearch(trimmed)
+        }
+    }
+
+    private func performSearch(_ query: String) async {
+        // Fetch custom repos that haven't been cached yet
+        await fetchCustomReposIfNeeded()
+
+        // Search FlekStore via API
+        flekstoreVM.searchQuery = query
+        await flekstoreVM.resetAndFetchApps()
+
+        guard !Task.isCancelled else { return }
+
+        var results: [RepoSection] = []
+        for repo in repos {
+            let isFS = FlekInstallerView.isFlekstore(repo)
+            if isFS {
+                if !flekstoreVM.apps.isEmpty {
+                    results.append(RepoSection(id: repo.sourceURL, name: "FlekSt0re", iconUrl: repo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps))
+                }
+            } else if let allApps = cachedApps[repo.sourceURL] {
+                let filtered = allApps.filter { $0.app_name.localizedCaseInsensitiveContains(query) }
+                if !filtered.isEmpty {
+                    results.append(RepoSection(id: repo.sourceURL, name: repo.name, iconUrl: repo.iconUrl, isFlekstore: false, apps: filtered))
+                }
+            }
+        }
+
+        if !Task.isCancelled {
+            sections = results
+            isLoading = false
+        }
+    }
+
+    private func fetchCustomReposIfNeeded() async {
+        await withTaskGroup(of: (String, [FSAppModel]).self) { group in
+            for repo in repos where !FlekInstallerView.isFlekstore(repo) && cachedApps[repo.sourceURL] == nil {
+                let url = repo.sourceURL
+                group.addTask { @MainActor in
+                    let vm = FlekstoreAppsListViewModel()
+                    vm.repository = .custom(url: url)
+                    await vm.fetchApps()
+                    return (url, vm.apps)
+                }
+            }
+            for await (url, apps) in group {
+                cachedApps[url] = apps
+            }
+        }
+    }
+}
+
+// MARK: - Row views
 
 private struct FlekSearchRow: View {
     let app: LCAppModel
@@ -216,9 +336,9 @@ private struct FlekStoreSearchRow: View {
                 }
             }
             Spacer(minLength: 4)
-            Image(systemName: "arrow.down.circle.fill")
+            Image(systemName: "arrow.down.circle")
                 .font(.system(size: 24))
-                .foregroundStyle(Color(red: 0/255, green: 117/255, blue: 255/255))
+                .foregroundStyle(.white)
         }
         .padding(.horizontal, 12)
         .frame(height: 68)
