@@ -140,6 +140,7 @@ class AppInfoProvider {
     @Published var frontmostAppUUID: String?
     @Published var isHomeState: Bool = false
     @Published var isAppSwitcherOpen: Bool = false
+    @Published var isClosingAll: Bool = false
     var appSnapshotViews: [String: UIView] = [:]
 
     @objc public var windowHostingView = VirtualWindowsHostView()
@@ -970,17 +971,21 @@ class AppInfoProvider {
         switcherOverlayController = hc
         
         hc.view.alpha = 0
+        hc.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
         keyWindow.addSubview(hc.view)
+        
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         // Hide the switcher bar while the overlay is shown
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
             delay: 0,
-            usingSpringWithDamping: 1.0,
+            usingSpringWithDamping: 0.85,
             initialSpringVelocity: 0,
             options: .curveEaseOut
         ) {
             hc.view.alpha = 1
+            hc.view.transform = .identity
             self.hostingController?.view.alpha = 0
         }
     }
@@ -997,11 +1002,13 @@ class AppInfoProvider {
             options: .curveEaseIn
         ) {
             overlay.view.alpha = 0
+            overlay.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
             if self.isSwitcherBarVisible {
                 self.hostingController?.view.alpha = 1
             }
         } completion: { _ in
             overlay.view.removeFromSuperview()
+            overlay.view.transform = .identity
         }
     }
     
@@ -1013,22 +1020,25 @@ class AppInfoProvider {
     }
     
     func closeAllApps() {
-        let appsToClose = apps
-        for app in appsToClose {
-            if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                vc.closeWindow()
+        isClosingAll = true
+        
+        let totalDelay = 0.3 + Double(apps.count) * 0.05
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + totalDelay) { [weak self] in
+            guard let self = self else { return }
+            let appsToClose = self.apps
+            for app in appsToClose {
+                if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                    vc.closeWindow()
+                }
             }
-        }
-        // Dismiss overlay without restoring bar (since we're hiding dock)
-        isAppSwitcherOpen = false
-        if let overlay = switcherOverlayController {
-            UIView.animate(withDuration: Constants.shortAnimationDuration1, delay: 0, options: .curveEaseIn) {
-                overlay.view.alpha = 0
-            } completion: { _ in
+            self.isClosingAll = false
+            self.isAppSwitcherOpen = false
+            if let overlay = self.switcherOverlayController {
                 overlay.view.removeFromSuperview()
             }
+            self.hideDock()
         }
-        hideDock()
     }
     
     // MARK: - Multitask Mode Check
@@ -1325,9 +1335,10 @@ extension View {
 @available(iOS 16.0, *)
 struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
+    @State private var isPresented = false
     
     private let cardCornerRadius: CGFloat = 24
-    private let cardSpacing: CGFloat = 12
+    private let cardSpacing: CGFloat = 16
     
     // Card dimensions — proportional to screen like iOS app switcher
     private var cardWidth: CGFloat {
@@ -1340,8 +1351,8 @@ struct AppSwitcherOverlay: View {
     var body: some View {
         ZStack {
             // Blurred dark background
-            Color.black.opacity(0.5)
-                .background(.ultraThinMaterial)
+            Color.black.opacity(0.55)
+                .background(.thinMaterial)
                 .environment(\.colorScheme, .dark)
                 .onTapGesture {
                     dockManager.dismissAppSwitcher()
@@ -1352,23 +1363,13 @@ struct AppSwitcherOverlay: View {
                 
                 // Horizontal scrolling app cards
                 ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: cardSpacing) {
-                            ForEach(dockManager.apps) { app in
-                                AppSwitcherCard(
-                                    app: app,
-                                    cardWidth: cardWidth,
-                                    cardHeight: cardHeight,
-                                    cornerRadius: cardCornerRadius
-                                )
-                                .id(app.appUUID)
-                            }
-                        }
-                        .padding(.horizontal, (UIScreen.main.bounds.width - cardWidth) / 2)
-                    }
+                    cardScrollView
                     .onAppear {
                         if let uuid = dockManager.frontmostAppUUID {
                             proxy.scrollTo(uuid, anchor: .center)
+                        }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                            isPresented = true
                         }
                     }
                 }
@@ -1414,6 +1415,45 @@ struct AppSwitcherOverlay: View {
         }
         .ignoresSafeArea()
     }
+    
+    // MARK: - Card Scroll View (with iOS 17+ snapping)
+    @ViewBuilder
+    private var cardScrollView: some View {
+        if #available(iOS 17.0, *) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                cardHStack
+                    .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                cardHStack
+            }
+        }
+    }
+    
+    private var cardHStack: some View {
+        HStack(spacing: cardSpacing) {
+            ForEach(Array(dockManager.apps.enumerated()), id: \.element.appUUID) { pair in
+                AppSwitcherCard(
+                    app: pair.element,
+                    cardWidth: cardWidth,
+                    cardHeight: cardHeight,
+                    cornerRadius: cardCornerRadius,
+                    cardIndex: pair.offset
+                )
+                .id(pair.element.appUUID)
+                .scaleEffect(isPresented ? 1.0 : 0.85)
+                .opacity(isPresented ? 1.0 : 0)
+                .animation(
+                    .spring(response: 0.4, dampingFraction: 0.82)
+                    .delay(Double(pair.offset) * 0.03),
+                    value: isPresented
+                )
+            }
+        }
+        .padding(.horizontal, (UIScreen.main.bounds.width - cardWidth) / 2)
+    }
 }
 
 // MARK: - App Switcher Card (with swipe-up-to-close)
@@ -1424,10 +1464,14 @@ struct AppSwitcherCard: View {
     let cardHeight: CGFloat
     let cornerRadius: CGFloat
     
+    let cardIndex: Int
+    
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var dragOffset: CGFloat = 0
     @State private var isDismissing = false
     @State private var isVerticalDrag = false
+    @State private var hasPassedThreshold = false
+    @State private var closeAllOffset: CGFloat = 0
     @State private var isCustomizeExpanded = false
     @State private var currentScale: CGFloat = 1.0
     
@@ -1600,7 +1644,8 @@ struct AppSwitcherCard: View {
                 }
             }
         }
-        .offset(y: dragOffset)
+        .offset(y: dragOffset + closeAllOffset)
+        .scaleEffect(dragOffset < 0 ? max(0.7, 1 + dragOffset / 500) : 1.0)
         .opacity(isDismissing ? 0 : (dragOffset < 0 ? Double(1 + dragOffset / 300) : 1))
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
@@ -1616,6 +1661,16 @@ struct AppSwitcherCard: View {
                     // Only track upward vertical drags
                     if isVerticalDrag && h < 0 {
                         dragOffset = h
+                        
+                        // Haptic feedback when crossing the dismiss threshold
+                        let pastThreshold = h < dismissThreshold
+                        if pastThreshold && !hasPassedThreshold {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            hasPassedThreshold = true
+                        } else if !pastThreshold && hasPassedThreshold {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            hasPassedThreshold = false
+                        }
                     }
                 }
                 .onEnded { value in
@@ -1636,12 +1691,20 @@ struct AppSwitcherCard: View {
                         }
                     }
                     isVerticalDrag = false
+                    hasPassedThreshold = false
                 }
         )
         .onTapGesture {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             dockManager.dismissAppSwitcher()
             let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+        }
+        .onChange(of: dockManager.isClosingAll) { closing in
+            if closing {
+                withAnimation(.easeIn(duration: 0.3).delay(Double(cardIndex) * 0.05)) {
+                    closeAllOffset = -UIScreen.main.bounds.height
+                }
+            }
         }
     }
 }

@@ -602,7 +602,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if mode == nil, isGame(app) {
                 gameWarningTarget = FlekGameWarningTarget(app: app)
             } else {
-                Task { await launchHomeApp(app, parallel: mode == .parallel) }
+                let parallel = mode != nil ? (mode == .parallel) : app.shouldLaunchInMultitaskMode
+                Task { await launchHomeApp(app, parallel: parallel) }
             }
         case .installing:
             break

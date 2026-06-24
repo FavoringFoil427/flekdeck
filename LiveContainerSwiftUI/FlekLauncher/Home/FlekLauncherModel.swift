@@ -75,7 +75,7 @@ struct FlekInstallState {
 /// Per-app launch mode chosen from the home screen context menu. "Single"
 /// launches the app on its own (full screen); "Parallel" uses the existing
 /// multitasking window engine. A `nil` value means the user never picked one
-/// (treated as single, and not badged).
+/// (uses the global default from settings, not badged).
 enum FlekLaunchMode: String {
     case single
     case parallel
