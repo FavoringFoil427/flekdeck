@@ -1177,6 +1177,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         finalNewApp.installationDate = Date.now
         
         DispatchQueue.main.async {
+            // Remove the installing card before adding the new app so that
+            // homeItems never contains both .installing and the new .installed
+            // item at the same time (which caused an empty grid slot).
+            self.installprogressVisible = false
+
             if let appToReplace {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
                 
@@ -1198,8 +1203,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         .addObjects(from: urlSchemes as! [Any])
                 }
             }
-            
-            self.installprogressVisible = false
         }
     }
     
