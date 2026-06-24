@@ -185,12 +185,12 @@ class AppInfoProvider {
 
     public struct Constants {
         // MARK: - Switcher Bar Layout
-        static let barHeight: CGFloat = 52.0
+        static let barHeight: CGFloat = 40.0
         static let barIconSize: CGFloat = 36.0
         static let barButtonSize: CGFloat = 36.0
         static let barSpacing: CGFloat = 10.0
         static let barHPadding: CGFloat = 12.0
-        static let barVPadding: CGFloat = 8.0
+        static let barVPadding: CGFloat = 4.0
         static let barCornerRadius: CGFloat = 26.0
         static let barBottomMargin: CGFloat = 16.0
         
@@ -1153,7 +1153,7 @@ struct SwitcherBarContentView: View {
     var body: some View {
         activeBarContent
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        .padding(.vertical, MultitaskDockManager.Constants.barVPadding)
+        .padding(.top, MultitaskDockManager.Constants.barVPadding)
         .frame(maxWidth: .infinity)
     }
     
@@ -1282,7 +1282,7 @@ struct FrontmostAppIconLabel: View {
                 .font(.system(size: 10, weight: .semibold))
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .frame(height: MultitaskDockManager.Constants.barButtonSize)
         .onAppear { loadIcon() }
         .onChange(of: dockManager.frontmostAppUUID) { _ in loadIcon() }
         .onChange(of: dockManager.apps.count) { _ in loadIcon() }
