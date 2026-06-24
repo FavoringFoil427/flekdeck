@@ -168,6 +168,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         onDelete: { item in
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
+                        onMove: { dragged, target in moveHomeItem(dragged, target) },
                         installState: homeInstallState,
                         onCancelInstall: { cancelHomeInstall() },
                         contextMenu: { item in homeContextMenu(for: item) }
@@ -660,9 +661,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
               let dId = sharedAppSortManager.getUniqueIdentifier(for: dApp),
               let tId = sharedAppSortManager.getUniqueIdentifier(for: tApp) else { return }
         var order = sortedApps.compactMap { sharedAppSortManager.getUniqueIdentifier(for: $0) }
-        guard let from = order.firstIndex(of: dId), order.contains(tId), from != order.firstIndex(of: tId) else { return }
+        guard let from = order.firstIndex(of: dId),
+              let to = order.firstIndex(of: tId),
+              from != to else { return }
         order.remove(at: from)
-        let insertAt = order.firstIndex(of: tId) ?? order.count
+        let targetIdx = order.firstIndex(of: tId) ?? order.count
+        // When moving down, insert after the target; when moving up, insert before it
+        let insertAt = from < to ? targetIdx + 1 : targetIdx
         order.insert(dId, at: insertAt)
         if sharedAppSortManager.appSortType != .custom {
             sharedAppSortManager.appSortType = .custom
