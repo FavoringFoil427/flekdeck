@@ -245,7 +245,7 @@ struct FlekInstallerView: View {
     }
 
     private var defaultBottomBar: some View {
-        HStack {
+        HStack(spacing: 12) {
             Menu {
                 Button {
                     choosingIPA = true
@@ -260,26 +260,41 @@ struct FlekInstallerView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "square.and.arrow.down")
-                    Text("lc.flek.importIpa".loc).font(.system(size: 16))
+                        .font(.system(size: 16, weight: .medium))
+                    Text("lc.flek.importIpa".loc)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
                 }
-                .foregroundStyle(.primary.opacity(0.75))
-                .padding(12)
-                .frame(height: 50)
-                .background(Capsule().fill(Color(.secondarySystemGroupedBackground)).shadow(color: .black.opacity(0.25), radius: 20, y: 4))
+                .foregroundStyle(.primary.opacity(0.85))
+                .padding(.horizontal, 16)
+                .frame(height: 48)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                )
             }
 
             Spacer()
 
-            FlekGlassCircleButton(systemImage: "chevron.down", size: 44, iconScale: 0.42) {
-                onClose()
-            }
-
-            Spacer()
-
-            FlekGlassCircleButton(systemImage: "magnifyingglass", size: 50, iconScale: 0.5) {
+            Button {
                 withAnimation { searchActive = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { searchFocused = true }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.7))
+                    .frame(width: 48, height: 48)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                    )
             }
+            .buttonStyle(.plain)
         }
     }
 
