@@ -190,7 +190,7 @@ struct FlekSearchView: View {
 // MARK: - Multi-repo search model
 
 @MainActor
-private class MultiRepoSearchModel: ObservableObject {
+class MultiRepoSearchModel: ObservableObject {
     struct RepoSection: Identifiable {
         let id: String          // repo sourceURL
         let name: String
@@ -275,7 +275,9 @@ private class MultiRepoSearchModel: ObservableObject {
                 }
             }
             for await (url, apps) in group {
-                cachedApps[url] = apps
+                if !apps.isEmpty {
+                    cachedApps[url] = apps
+                }
             }
         }
     }

@@ -23,6 +23,7 @@ struct FlekInstallerView: View {
 
     @EnvironmentObject private var sharedModel: SharedModel
     @StateObject private var viewModel = FlekstoreAppsListViewModel()
+    @StateObject private var repoSearch = MultiRepoSearchModel()
 
     @State private var repos: [AppRepository] = []
     @State private var selectedRepoID: UUID?
@@ -59,6 +60,7 @@ struct FlekInstallerView: View {
             }
         }
         .task {
+            repoSearch.setup()
             repos = Self.loadRepos()
             if preselectFlekstore, let flek = repos.first(where: { Self.isFlekstore($0) }) {
                 selectedRepoID = flek.id
@@ -179,6 +181,8 @@ struct FlekInstallerView: View {
         if viewModel.isBanned {
             AccessBlockedView(reason: viewModel.banReason, message: viewModel.banMessage)
                 .frame(maxHeight: .infinity)
+        } else if searchActive {
+            searchContent
         } else if viewModel.apps.isEmpty && viewModel.isLoading {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.errorMessage, viewModel.apps.isEmpty {
@@ -188,16 +192,6 @@ struct FlekInstallerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
-        } else if viewModel.visibleApps.isEmpty && searchActive && !viewModel.searchQuery.isEmpty && !viewModel.isLoading {
-            VStack(spacing: 12) {
-                Image(systemName: "square.dashed")
-                    .font(.system(size: 56))
-                    .foregroundStyle(Color(.systemGray3))
-                Text("Nothing found")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color(.systemGray))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -228,6 +222,59 @@ struct FlekInstallerView: View {
                 .padding(.bottom, 80)
             }
             .refreshable { await viewModel.resetAndFetchApps() }
+        }
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        if viewModel.searchQuery.isEmpty {
+            Spacer()
+        } else if repoSearch.sections.isEmpty && !repoSearch.isLoading {
+            VStack(spacing: 12) {
+                Image(systemName: "square.dashed")
+                    .font(.system(size: 56))
+                    .foregroundStyle(Color(.systemGray3))
+                Text("Nothing found")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color(.systemGray))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(repoSearch.sections) { repoSection in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                FlekRemoteIcon(url: repoSection.iconUrl, size: 20, corner: 5)
+                                Text(repoSection.name)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                            .padding(.horizontal, 4)
+
+                            ForEach(repoSection.apps) { app in
+                                FlekInstallerRow(
+                                    app: app,
+                                    accent: Self.flekBlue,
+                                    installState: sharedModel.installingURL == app.install_url
+                                        ? FlekInstallState(name: app.app_name, iconURL: app.app_icon,
+                                                           fraction: sharedModel.installFraction,
+                                                           indeterminate: sharedModel.installIndeterminate)
+                                        : nil,
+                                    onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
+                                    onCancel: { sharedModel.cancelInstallRequested = true }
+                                )
+                            }
+                        }
+                    }
+                    if repoSearch.isLoading {
+                        ProgressView().frame(maxWidth: .infinity).padding()
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 80)
+            }
         }
     }
 
@@ -310,7 +357,7 @@ struct FlekInstallerView: View {
                 .textInputAutocapitalization(.never)
                 .focused($searchFocused)
                 .onChange(of: viewModel.searchQuery) { q in
-                    viewModel.debounceSearch(q)
+                    repoSearch.debounceSearch(q)
                 }
 
             if !viewModel.searchQuery.isEmpty {
@@ -364,6 +411,20 @@ struct FlekInstallerView: View {
         sharedModel.installingURL = app.install_url
         sharedModel.urlToInstall = app.install_url
         if viewModel.repository == .flekstore {
+            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+        }
+    }
+
+    private func installSearchResult(_ app: FSAppModel, fromFlekstore: Bool) {
+        if !fromFlekstore && !viewModel.hasSubscription {
+            showPremium = true
+            return
+        }
+        sharedModel.installingName = app.app_name
+        sharedModel.installingIconURL = app.app_icon
+        sharedModel.installingURL = app.install_url
+        sharedModel.urlToInstall = app.install_url
+        if fromFlekstore {
             FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
         }
     }
