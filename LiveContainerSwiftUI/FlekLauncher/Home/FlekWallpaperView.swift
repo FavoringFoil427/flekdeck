@@ -27,6 +27,12 @@ enum FlekWallpaper: Identifiable, Equatable {
 
     static let collection: [FlekWallpaper] = [
         .asset("FlekWallpaperDefault"),
+        .asset("wallpaper1"),
+        .asset("wallpaper2"),
+        .asset("wallpaper3"),
+        .asset("wallpaper4"),
+        .asset("wallpaper5"),
+        .asset("wallpaper6"),
         .gradient("sunset", [Color(red: 1.0, green: 0.45, blue: 0.45), Color(red: 0.6, green: 0.2, blue: 0.6)]),
         .gradient("ocean", [Color(red: 0.20, green: 0.55, blue: 0.95), Color(red: 0.05, green: 0.20, blue: 0.45)]),
         .gradient("mint", [Color(red: 0.35, green: 0.85, blue: 0.70), Color(red: 0.10, green: 0.45, blue: 0.55)]),
