@@ -360,6 +360,11 @@ class AppInfoProvider {
             self.isVisible = true
             self.isSwitcherBarVisible = true
             
+            // Apply bottom inset to internal pages for the dock bar
+            for (_, controller) in self.internalPageControllers {
+                controller.additionalSafeAreaInsets.bottom = Constants.barHeight
+            }
+            
             if hostingController.view.superview == nil {
                 keyWindow.addSubview(hostingController.view)
             }
@@ -387,6 +392,11 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.isVisible = false
+            
+            // Remove bottom inset from internal pages
+            for (_, controller) in self.internalPageControllers {
+                controller.additionalSafeAreaInsets.bottom = 0
+            }
             
             // Also remove nav assist if visible
             self.navAssistButton?.removeFromSuperview()
@@ -462,6 +472,13 @@ class AppInfoProvider {
             self.isSwitcherBarVisible = false
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
+            // Remove bottom inset from internal pages so they stretch to full screen
+            for (_, controller) in self.internalPageControllers {
+                UIView.animate(withDuration: Constants.standardAnimationDuration) {
+                    controller.additionalSafeAreaInsets.bottom = 0
+                }
+            }
+            
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
                 delay: 0,
@@ -499,6 +516,13 @@ class AppInfoProvider {
             self.isSwitcherBarVisible = true
             self.updateDockFrame(animated: false)
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+            
+            // Restore bottom inset on internal pages to account for dock bar
+            for (_, controller) in self.internalPageControllers {
+                UIView.animate(withDuration: Constants.standardAnimationDuration) {
+                    controller.additionalSafeAreaInsets.bottom = Constants.barHeight
+                }
+            }
             
             hostingController.view.isHidden = false
             hostingController.view.alpha = 0
@@ -923,6 +947,9 @@ class AppInfoProvider {
         let hostVC = UIHostingController(rootView: AnyView(content()))
         hostVC.view.frame = windowHostingView.bounds
         hostVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        if isSwitcherBarVisible {
+            hostVC.additionalSafeAreaInsets.bottom = Constants.barHeight
+        }
         windowHostingView.addSubview(hostVC.view)
         
         internalPageControllers[uuid] = hostVC
