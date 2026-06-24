@@ -558,7 +558,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     var homeItems: [FlekHomeItem] {
         var items: [FlekHomeItem] = [
-            .defaultApp(.flekstore),
             .defaultApp(.settings),
             .defaultApp(.installer)
         ]
