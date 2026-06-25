@@ -427,7 +427,8 @@ struct LCSettingsView: View {
                     }
                 }
             }
-            .navigationBarTitle("lc.tabView.settings".loc)
+            .navigationTitle("lc.tabView.settings".loc)
+            .navigationBarTitleDisplayMode(.large)
             .onAppear {
                 loadEncryptedUDIDFromPlist()
                 hydrateSubscriptionStateFromStorage()

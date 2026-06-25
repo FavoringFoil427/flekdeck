@@ -1550,7 +1550,7 @@ struct AppSwitcherOverlay: View {
     }
     
     private var cardHStack: some View {
-        HStack(spacing: cardSpacing) {
+        HStack(alignment: .top, spacing: cardSpacing) {
             ForEach(Array(dockManager.apps.enumerated()), id: \.element.appUUID) { pair in
                 AppSwitcherCard(
                     app: pair.element,

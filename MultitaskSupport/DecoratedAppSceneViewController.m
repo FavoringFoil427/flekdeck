@@ -448,7 +448,7 @@ void UIKitFixesInit(void) {
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
     if(MultitaskDockManager.shared.barVisible) {
         // Leave space at bottom for the static switcher bar (content + safe area)
-        CGFloat barContentHeight = 52.0;
+        CGFloat barContentHeight = 40.0;
         CGFloat bottomBarSpace = barContentHeight + self.view.window.safeAreaInsets.bottom;
         maxFrame.size.height -= bottomBarSpace;
     }
