@@ -15,6 +15,8 @@ struct LCTabView: View {
     @State var errorShow = false
     @State var crashReportShow = false
     @State var errorInfo = ""
+    @State private var isiOSBeta = false
+    @AppStorage("LCBetaBannerOverride", store: LCUtils.appGroupUserDefault) private var betaBannerOverride: Int = 0
     
     @State var previousSelectedTab : LCTabIdentifier = .apps
     @State private var isBlocked = false
@@ -108,6 +110,7 @@ struct LCTabView: View {
             checkBundleId()
             checkGetTaskAllow()
             checkPrivateContainerBookmark()
+            checkiOSBeta()
             processPendingURLIfNeeded()
         }
         .onReceive(pub) { out in
@@ -121,6 +124,9 @@ struct LCTabView: View {
             if newValue != LCTabIdentifier.search {
                 previousSelectedTab = newValue
             }
+        }
+        .onChange(of: betaBannerOverride) { _ in
+            updateBetaOverlay()
         }
         .onOpenURL { url in
             dispatchURL(url: url)
@@ -381,6 +387,33 @@ struct LCTabView: View {
         guard !trimmed.isEmpty else { return "Your access has been limited by the service." }
 
         return trimmed
+    }
+
+    func checkiOSBeta() {
+        // Beta iOS builds have a build version ending with a lowercase letter (e.g. 22A5307f)
+        if let buildVersion = UIDevice.current.buildVersion,
+           let lastChar = buildVersion.last,
+           lastChar.isLowercase {
+            isiOSBeta = true
+        }
+        updateBetaOverlay()
+    }
+
+    private func updateBetaOverlay() {
+        let shouldShow: Bool
+        switch betaBannerOverride {
+        case 1: shouldShow = true
+        case 2: shouldShow = false
+        default: shouldShow = isiOSBeta
+        }
+
+        if let scene = sceneDelegate.window?.windowScene {
+            if shouldShow {
+                BetaOverlayManager.shared.show(on: scene)
+            } else {
+                BetaOverlayManager.shared.hide()
+            }
+        }
     }
 
     func checkPrivateContainerBookmark() {

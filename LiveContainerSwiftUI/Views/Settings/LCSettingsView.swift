@@ -105,6 +105,8 @@ struct LCSettingsView: View {
     @AppStorage("FSSubscriptionInitialized")
     private var subscriptionInitialized: Bool = false
     
+    @AppStorage("LCBetaBannerOverride", store: LCUtils.appGroupUserDefault) private var betaBannerOverride: Int = 0
+
     @EnvironmentObject private var sharedModel : SharedModel
     
     @State private var isViewAppeared = false
@@ -339,7 +341,26 @@ struct LCSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .background(Color(UIColor.systemGroupedBackground))
                 .listRowInsets(EdgeInsets())
-                
+
+                if isBetaiOS {
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .font(.title3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("iOS Beta Detected")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.red)
+                                Text("Beta versions of iOS may cause certificate revocation. Apps and features may not work correctly. Please roll back to the stable release version.")
+                                    .font(.caption)
+                                    .foregroundStyle(.red.opacity(0.8))
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
                 if sharedModel.developerMode {
                     Section {
                         Toggle(isOn: $injectToLCItelf) {
@@ -512,6 +533,12 @@ struct LCSettingsView: View {
         }
     }
 
+    private var isBetaiOS: Bool {
+        guard let buildVersion = UIDevice.current.buildVersion,
+              let lastChar = buildVersion.last else { return false }
+        return lastChar.isLowercase
+    }
+
     @ViewBuilder
     private func categoryRow(_ title: String, _ systemImage: String, _ color: Color) -> some View {
         Label {
@@ -544,7 +571,8 @@ struct LCSettingsView: View {
                 }
                 
         }
-        .navigationTitle("lc.flek.cat.launch".loc)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.flek.cat.launch".loc).font(.headline) } }
     }
 
     @ViewBuilder private var multitaskPage: some View {
@@ -611,7 +639,8 @@ struct LCSettingsView: View {
                 }
                 
         }
-        .navigationTitle("lc.flek.cat.multitask".loc)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.flek.cat.multitask".loc).font(.headline) } }
     }
 
     @ViewBuilder private var jitPage: some View {
@@ -674,7 +703,8 @@ struct LCSettingsView: View {
                 
                 
         }
-        .navigationTitle("lc.flek.cat.jit".loc)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.flek.cat.jit".loc).font(.headline) } }
     }
 
     @ViewBuilder private var contentRestrictionsPage: some View {
@@ -698,7 +728,8 @@ struct LCSettingsView: View {
                 }
                 
         }
-        .navigationTitle("lc.flek.cat.content".loc)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.flek.cat.content".loc).font(.headline) } }
     }
 
     @ViewBuilder private var signingPage: some View {
@@ -747,7 +778,8 @@ struct LCSettingsView: View {
                     }
                 }
         }
-        .navigationTitle("lc.flek.cat.signing".loc)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.flek.cat.signing".loc).font(.headline) } }
     }
 
     

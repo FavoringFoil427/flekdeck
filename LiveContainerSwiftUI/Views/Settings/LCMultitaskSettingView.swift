@@ -86,7 +86,7 @@ struct LCMultitaskSettingView: View {
                 }
             }
         }
-        .navigationTitle("lc.appBanner.multitask".loc)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.appBanner.multitask".loc).font(.headline) } }
     }
 }

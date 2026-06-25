@@ -79,8 +79,8 @@ struct LCEntitlementView : View {
                         .font(.system(.subheadline, design: .monospaced))
                 }
             }
-            .navigationTitle("lc.jielessDiag.entitlement".loc)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .principal) { Text("lc.jielessDiag.entitlement".loc).font(.headline) } }
         } else {
             Text("lc.common.loading".loc)
                 .onAppear() {

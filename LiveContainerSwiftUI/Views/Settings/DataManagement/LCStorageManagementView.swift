@@ -15,8 +15,8 @@ struct LCStorageManagementView: View {
             )
             LCInstalledAppsSection(breakdown: model.breakdown)
         }
-        .navigationTitle("lc.settings.storageManagement".loc)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.settings.storageManagement".loc).font(.headline) } }
         .task {
             if !refreshed {
                 await refresh()

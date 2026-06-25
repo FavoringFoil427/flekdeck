@@ -50,9 +50,11 @@ struct FlekWallpaperCollectionView: View {
                 }
                 .padding(16)
             }
-            .navigationTitle("lc.flek.wallpapers".loc)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("lc.flek.wallpapers".loc).font(.headline)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("lc.common.done".loc) { dismiss() }
                 }

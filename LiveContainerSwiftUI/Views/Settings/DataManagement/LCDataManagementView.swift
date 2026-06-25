@@ -122,8 +122,8 @@ struct LCDataManagementView : View {
                 }
             }
         }
-        .navigationTitle("lc.settings.dataManagement".loc)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.settings.dataManagement".loc).font(.headline) } }
         .alert("lc.common.error".loc, isPresented: $errorShow){
         } message: {
             Text(errorInfo)

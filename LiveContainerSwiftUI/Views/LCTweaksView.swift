@@ -119,8 +119,11 @@ struct LCTweakFolderView : View {
             }
 
         }
-        .navigationTitle(isRoot ? "lc.tabView.tweaks".loc : baseUrl.lastPathComponent)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(isRoot ? "lc.tabView.tweaks".loc : baseUrl.lastPathComponent).font(.headline)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if !isTweakSigning && LCSharedUtils.certificatePassword() != nil {
                     Button {

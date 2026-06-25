@@ -364,8 +364,8 @@ private struct LCAppStorageDetailView: View {
                 }
             }
         }
-        .navigationTitle(appItem.appModel.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text(appItem.appModel.displayName).font(.headline) } }
     }
 }
 

@@ -11,6 +11,9 @@ import SwiftUI
 import PhotosUI
 
 struct FlekPersonalizationView: View {
+    @AppStorage("LCBetaBannerOverride", store: LCUtils.appGroupUserDefault) private var betaBannerOverride: Int = 0
+    // 0 = auto (show on beta), 1 = force on, 2 = force off
+
     @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
     private var wallpaperDescriptor: String = FlekWallpaper.defaultDescriptor
     @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
@@ -81,8 +84,17 @@ struct FlekPersonalizationView: View {
             .padding(16)
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("lc.flek.personalization".loc)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("lc.flek.personalization".loc)
+                    .font(.headline)
+                    .onTapGesture(count: 10) {
+                        betaBannerOverride = (betaBannerOverride + 1) % 3
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
+            }
+        }
         .sheet(isPresented: $showCollection) {
             FlekWallpaperCollectionView(selectedDescriptor: $wallpaperDescriptor, photoWallpaper: $wallpaperPhoto)
         }

@@ -102,6 +102,65 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate, ObservableObject { // Make
     
 }
 
+/// Manages a passthrough overlay window that shows the iOS beta warning badge
+/// above all app content, including sheets and full-screen covers.
+class BetaOverlayManager {
+    static let shared = BetaOverlayManager()
+    private var overlayWindow: UIWindow?
+
+    func show(on scene: UIWindowScene) {
+        guard overlayWindow == nil else { return }
+
+        let window = PassthroughWindow(windowScene: scene)
+        window.windowLevel = .alert + 1
+        window.backgroundColor = .clear
+        window.isHidden = false
+
+        let hosting = UIHostingController(rootView: BetaBadgeView())
+        hosting.view.backgroundColor = .clear
+        window.rootViewController = hosting
+        overlayWindow = window
+    }
+
+    func hide() {
+        overlayWindow?.isHidden = true
+        overlayWindow = nil
+    }
+}
+
+/// A UIWindow subclass that passes through all touches so the badge
+/// doesn't block interaction with the app underneath.
+private class PassthroughWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // Return nil so all touches pass through to the window below.
+        return nil
+    }
+}
+
+/// Watermark-style overlay shown in the bottom-right corner, like "Activate Windows".
+private struct BetaBadgeView: View {
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("iOS Beta Detected")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Beta versions of iOS may cause certificate revocation.\nApps and features may not work correctly.\nPlease roll back to the stable release version.")
+                        .font(.system(size: 11))
+                        .multilineTextAlignment(.trailing)
+                }
+                .foregroundStyle(.white.opacity(0.55))
+                .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
+                .padding(.trailing, 16)
+                .padding(.bottom, 90)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 public class ViewAppIntentHandler: NSObject, ViewAppIntentHandling
 {
     public func provideAppOptionsCollection(for intent: ViewAppIntent, with completion: @escaping (INObjectCollection<App>?, Error?) -> Void)

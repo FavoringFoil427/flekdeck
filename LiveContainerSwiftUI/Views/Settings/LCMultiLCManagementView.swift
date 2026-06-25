@@ -142,8 +142,8 @@ struct LCMultiLCManagementView : View, InstallAnotherLCButtonDelegate {
                 ActivityViewController(activityItems: [shareURL])
             }
         }
-        .navigationTitle("lc.settings.multiLC".loc)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .principal) { Text("lc.settings.multiLC".loc).font(.headline) } }
     }
     
     private func isInstalled(scheme: String) -> Bool {
