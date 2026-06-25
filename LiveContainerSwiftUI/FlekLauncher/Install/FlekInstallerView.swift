@@ -34,6 +34,7 @@ struct FlekInstallerView: View {
     @FocusState private var searchFocused: Bool
     @StateObject private var importUrlHelper = InputHelper()
     @State private var choosingIPA = false
+    @State private var switcherBarVisible = true
 
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
     private static let screenBG = Color(.systemGroupedBackground)
@@ -56,8 +57,14 @@ struct FlekInstallerView: View {
             .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 25)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, switcherBarVisible ? 12 : -20)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .multitaskBarVisibilityChanged)) { _ in
+            updateSwitcherBarState()
+        }
+        .onAppear {
+            updateSwitcherBarState()
         }
         .task {
             repoSearch.setup()
@@ -311,7 +318,7 @@ struct FlekInstallerView: View {
                     Text("lc.flek.importIpa".loc)
                         .font(.system(size: 15, weight: .medium, design: .rounded))
                 }
-                .foregroundStyle(.primary.opacity(0.85))
+                .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .frame(height: 48)
                 .background(
@@ -435,6 +442,16 @@ struct FlekInstallerView: View {
         searchFocused = false
         viewModel.repository = Self.source(for: repo)
         await viewModel.resetAndFetchApps()
+    }
+
+    private func updateSwitcherBarState() {
+        if #available(iOS 16.0, *) {
+            let mgr = MultitaskDockManager.shared
+            // Only override the default when the dock is actually set up;
+            // keeps the safe default (true → 12pt padding) during setup.
+            guard mgr.isVisible else { return }
+            switcherBarVisible = mgr.isSwitcherBarVisible
+        }
     }
 
     // MARK: Repo helpers
