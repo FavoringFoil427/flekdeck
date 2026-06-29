@@ -2,10 +2,9 @@
 //  FlekSpringboardView.swift
 //  LiveContainerSwiftUI
 //
-//  The iOS-style home screen grid of app cards. Uses Dragula for smooth
-//  UIKit-backed drag-and-drop reordering of all cards (including built-in
-//  apps like Settings and Installer). Paginated in normal mode, scrollable
-//  in edit mode for full drag support.
+//  iOS-style paged home screen grid. Uses Dragula's DraggableView for smooth
+//  UIKit-backed drag interactions. Supports cross-page icon movement via
+//  edge auto-scroll zones (0.7 s timer, mirroring real SpringBoard).
 //
 
 import SwiftUI
@@ -25,7 +24,8 @@ struct FlekSpringboardView<Menu: View>: View {
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var currentPage = 0
-    @State private var draggedItems: [FlekHomeItem] = []
+    @State private var draggedItem: FlekHomeItem?
+    @State private var edgeScrollTimer: Timer?
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: FlekTheme.gridSpacing),
@@ -42,71 +42,170 @@ struct FlekSpringboardView<Menu: View>: View {
             let rows = max(5, fitRows)
             let cardHeight = min(FlekTheme.cardHeight, (available - CGFloat(rows - 1) * spacing) / CGFloat(rows))
             let perPage = max(1, rows * FlekTheme.gridColumns)
+            let pages = paginatedItems(perPage: perPage)
 
-            if isEditing {
-                // Scrollable grid during edit mode for Dragula drag-and-drop
-                ScrollView {
-                    LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
-                        DragulaView(items: $items) { item in
-                            editCard(for: item, cardHeight: cardHeight)
-                        } dropView: { item in
-                            cardDropPlaceholder(cardHeight: cardHeight)
-                        } dropCompleted: {
-                            onDropCompleted()
-                        }
-                    }
-                    .padding(.horizontal, FlekTheme.screenHPadding)
-                }
-                .environment(\.dragPreviewCornerRadius, FlekTheme.cardCorner)
-            } else {
-                // Paginated grid for normal browsing
-                let pages = chunk(items, size: perPage)
-
-                VStack(spacing: 8) {
-                    TabView(selection: $currentPage) {
-                        ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
+            VStack(spacing: 8) {
+                TabView(selection: $currentPage) {
+                    ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
+                        ZStack {
                             LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
                                 ForEach(pageItems) { item in
-                                    cardButton(for: item, cardHeight: cardHeight)
+                                    if isEditing {
+                                        editCardWithDrag(for: item, cardHeight: cardHeight)
+                                    } else {
+                                        cardButton(for: item, cardHeight: cardHeight)
+                                    }
                                 }
                             }
                             .padding(.horizontal, FlekTheme.screenHPadding)
                             .frame(maxHeight: .infinity, alignment: .top)
-                            .tag(index)
-                        }
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
 
-                    if pages.count > 1 {
-                        FlekPageIndicator(count: pages.count, current: currentPage)
-                            .padding(.bottom, 4)
+                            // Edge drop zones for cross-page auto-scroll
+                            if isEditing {
+                                edgeZones(pageIndex: index, pageCount: pages.count)
+                            }
+                        }
+                        .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+
+                if pages.count > 1 || isEditing {
+                    FlekPageIndicator(count: pages.count, current: currentPage)
+                        .padding(.bottom, 4)
+                }
+            }
+            .onChange(of: isEditing) { editing in
+                if !editing {
+                    // Exiting edit mode: clean up empty trailing pages
+                    edgeScrollTimer?.invalidate()
+                    edgeScrollTimer = nil
+                    draggedItem = nil
+                    // Clamp page if empty pages were removed
+                    let newPages = chunk(items, size: perPage)
+                    if currentPage >= newPages.count {
+                        currentPage = max(0, newPages.count - 1)
                     }
                 }
             }
         }
     }
 
-    // MARK: - Edit Mode Card (used by DragulaView)
+    // MARK: - Pagination
 
+    /// Chunks items into pages. In edit mode, ensures an empty trailing page
+    /// exists so the user can drag icons to create a new screen.
+    private func paginatedItems(perPage: Int) -> [[FlekHomeItem]] {
+        var pages = chunk(items, size: perPage)
+        if isEditing {
+            if pages.isEmpty || (pages.last?.count ?? 0) > 0 {
+                pages.append([])
+            }
+        }
+        return pages
+    }
+
+    // MARK: - Edge Auto-Scroll Zones
+
+    /// Invisible drop targets at the left/right edges of each page that
+    /// trigger timed auto-scroll to adjacent pages during drag, mirroring
+    /// iOS SpringBoard's 0.7 s edge dwell behaviour.
     @ViewBuilder
-    private func editCard(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
-        if case .installing = item {
-            FlekInstallingCard(state: installState, cardHeight: cardHeight)
-        } else {
-            FlekAppCard(
-                title: title(for: item),
-                isNew: newDot(for: item),
-                showsSingleModeBadge: singleBadge(for: item),
-                isEditing: true,
-                canDelete: canDelete(item),
-                cardHeight: cardHeight,
-                onDelete: { onDelete(item) },
-                icon: { iconView(for: item) }
-            )
+    private func edgeZones(pageIndex: Int, pageCount: Int) -> some View {
+        HStack(spacing: 0) {
+            // Left edge
+            Color.clear
+                .frame(width: 36)
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.text], delegate: EdgeScrollDelegate(
+                    direction: -1,
+                    currentPage: $currentPage,
+                    maxPage: pageCount,
+                    onStartTimer: { dir in startEdgeTimer(direction: dir) },
+                    onCancelTimer: { cancelEdgeTimer() }
+                ))
+
+            Spacer()
+
+            // Right edge
+            Color.clear
+                .frame(width: 36)
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.text], delegate: EdgeScrollDelegate(
+                    direction: 1,
+                    currentPage: $currentPage,
+                    maxPage: pageCount,
+                    onStartTimer: { dir in startEdgeTimer(direction: dir) },
+                    onCancelTimer: { cancelEdgeTimer() }
+                ))
         }
     }
 
-    /// Ghost placeholder shown in the original position while a card is being dragged.
+    private func startEdgeTimer(direction: Int) {
+        guard edgeScrollTimer == nil else { return }
+        edgeScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { _ in
+            let nextPage = currentPage + direction
+            guard nextPage >= 0 else { edgeScrollTimer = nil; return }
+            withAnimation {
+                currentPage = nextPage
+            }
+            edgeScrollTimer = nil
+        }
+    }
+
+    private func cancelEdgeTimer() {
+        edgeScrollTimer?.invalidate()
+        edgeScrollTimer = nil
+    }
+
+    // MARK: - Edit Mode Card (DraggableView-backed)
+
+    @ViewBuilder
+    private func editCardWithDrag(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
+        if case .installing = item {
+            FlekInstallingCard(state: installState, cardHeight: cardHeight)
+        } else if item.isDraggable {
+            editCard(for: item, cardHeight: cardHeight)
+                .hidden()
+                .overlay {
+                    DraggableView(
+                        preview: { editCard(for: item, cardHeight: cardHeight) },
+                        dropView: { cardDropPlaceholder(cardHeight: cardHeight) },
+                        itemProvider: { item.getItemProvider() },
+                        onDragWillBegin: { draggedItem = item },
+                        onDragWillEnd: {
+                            draggedItem = nil
+                            cancelEdgeTimer()
+                            onDropCompleted()
+                        }
+                    )
+                }
+                .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
+                    item: item,
+                    items: $items,
+                    draggedItem: $draggedItem
+                ))
+                .environment(\.dragPreviewCornerRadius, FlekTheme.cardCorner)
+        } else {
+            editCard(for: item, cardHeight: cardHeight)
+        }
+    }
+
+    @ViewBuilder
+    private func editCard(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
+        FlekAppCard(
+            title: title(for: item),
+            isNew: newDot(for: item),
+            showsSingleModeBadge: singleBadge(for: item),
+            isEditing: true,
+            canDelete: canDelete(item),
+            cardHeight: cardHeight,
+            onDelete: { onDelete(item) },
+            icon: { iconView(for: item) }
+        )
+    }
+
+    /// Ghost placeholder shown in the original position while a card is dragged.
     @ViewBuilder
     private func cardDropPlaceholder(cardHeight: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: FlekTheme.cardCorner, style: .continuous)
@@ -118,7 +217,7 @@ struct FlekSpringboardView<Menu: View>: View {
             .frame(height: cardHeight)
     }
 
-    // MARK: - Normal Mode Card (tappable with context menu)
+    // MARK: - Normal Mode Card
 
     @ViewBuilder
     private func cardButton(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
@@ -191,7 +290,7 @@ struct FlekSpringboardView<Menu: View>: View {
 
     private func canDelete(_ item: FlekHomeItem) -> Bool {
         if case .installed = item { return true }
-        return false // built-in apps cannot be removed
+        return false
     }
 
     private func chunk<T>(_ array: [T], size: Int) -> [[T]] {
@@ -200,6 +299,68 @@ struct FlekSpringboardView<Menu: View>: View {
         return stride(from: 0, to: array.count, by: size).map {
             Array(array[$0 ..< min($0 + size, array.count)])
         }
+    }
+}
+
+// MARK: - Drop Delegates
+
+/// Reorders items in the flat array as one is dragged over another.
+/// Works across pages since both items are looked up by ID in the full array.
+struct SpringboardReorderDelegate: DropDelegate {
+    let item: FlekHomeItem
+    @Binding var items: [FlekHomeItem]
+    @Binding var draggedItem: FlekHomeItem?
+
+    private let generator = UIImpactFeedbackGenerator(style: .rigid)
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedItem, dragged.id != item.id else { return }
+        guard let fromIndex = items.firstIndex(where: { $0.id == dragged.id }),
+              let toIndex = items.firstIndex(where: { $0.id == item.id }) else { return }
+
+        withAnimation(.spring) {
+            items.move(fromOffsets: IndexSet(integer: fromIndex),
+                       toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+
+        generator.prepare()
+        generator.impactOccurred()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem != nil
+    }
+}
+
+/// Detects drag-dwell at the left/right screen edge and triggers timed
+/// auto-scroll to the adjacent page (0.7 s, matching iOS SpringBoard).
+struct EdgeScrollDelegate: DropDelegate {
+    let direction: Int
+    @Binding var currentPage: Int
+    let maxPage: Int
+    let onStartTimer: (Int) -> Void
+    let onCancelTimer: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        let nextPage = currentPage + direction
+        guard nextPage >= 0 && nextPage < maxPage else { return }
+        onStartTimer(direction)
+    }
+
+    func dropExited(info: DropInfo) {
+        onCancelTimer()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        false
     }
 }
 

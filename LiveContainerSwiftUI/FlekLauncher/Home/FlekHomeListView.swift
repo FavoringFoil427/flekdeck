@@ -22,19 +22,15 @@ struct FlekHomeListView<Menu: View>: View {
     var onCancelInstall: () -> Void = {}
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
+    @State private var draggedItem: FlekHomeItem?
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                if isEditing {
-                    DragulaView(items: $items) { item in
-                        editRow(for: item)
-                    } dropView: { item in
-                        rowDropPlaceholder()
-                    } dropCompleted: {
-                        onDropCompleted()
-                    }
-                } else {
-                    ForEach(items) { item in
+                ForEach(items) { item in
+                    if isEditing {
+                        editRowWithDrag(for: item)
+                    } else {
                         rowButton(for: item)
                     }
                 }
@@ -44,24 +40,50 @@ struct FlekHomeListView<Menu: View>: View {
         }
     }
 
-    // MARK: - Edit Mode Row (used by DragulaView)
+    // MARK: - Edit Mode Row (DraggableView-backed)
+
+    @ViewBuilder
+    private func editRowWithDrag(for item: FlekHomeItem) -> some View {
+        if case .installing = item {
+            FlekInstallRow(state: installState)
+        } else if item.isDraggable {
+            editRow(for: item)
+                .hidden()
+                .overlay {
+                    DraggableView(
+                        preview: { editRow(for: item) },
+                        dropView: { rowDropPlaceholder() },
+                        itemProvider: { item.getItemProvider() },
+                        onDragWillBegin: { draggedItem = item },
+                        onDragWillEnd: {
+                            draggedItem = nil
+                            onDropCompleted()
+                        }
+                    )
+                }
+                .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
+                    item: item,
+                    items: $items,
+                    draggedItem: $draggedItem
+                ))
+                .environment(\.dragPreviewCornerRadius, 20)
+        } else {
+            editRow(for: item)
+        }
+    }
 
     @ViewBuilder
     private func editRow(for item: FlekHomeItem) -> some View {
-        if case .installing = item {
-            FlekInstallRow(state: installState)
-        } else {
-            FlekAppRow(
-                title: title(for: item),
-                subtitle: subtitle(for: item),
-                isNew: newDot(for: item),
-                isEditing: true,
-                canDelete: canDelete(item),
-                onRun: {},
-                onDelete: { onDelete(item) },
-                icon: { iconView(for: item) }
-            )
-        }
+        FlekAppRow(
+            title: title(for: item),
+            subtitle: subtitle(for: item),
+            isNew: newDot(for: item),
+            isEditing: true,
+            canDelete: canDelete(item),
+            onRun: {},
+            onDelete: { onDelete(item) },
+            icon: { iconView(for: item) }
+        )
     }
 
     /// Placeholder shown while a row is being dragged.

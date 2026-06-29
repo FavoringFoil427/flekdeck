@@ -24,6 +24,8 @@ struct FlekAppCard<Icon: View>: View {
     @ViewBuilder var icon: () -> Icon
 
     @State private var wigglePhase = false
+    /// Random delay so each card wiggles at a different phase, like real iOS.
+    @State private var wiggleDelay: Double = 0
 
     private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }
 
@@ -80,14 +82,21 @@ struct FlekAppCard<Icon: View>: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
-        .rotationEffect(.degrees(isEditing ? (wigglePhase ? 1.4 : -1.4) : 0))
+        // iOS-authentic jiggle: ~2° rotation + 1px position jitter, random phase
+        // per card (reverse-engineered from real SpringBoard, 0.25s cycle).
+        .rotationEffect(.degrees(isEditing ? (wigglePhase ? 2.0 : -2.0) : 0))
+        .offset(x: isEditing ? (wigglePhase ? -1 : 1) : 0,
+                y: isEditing ? (wigglePhase ? -1 : 0) : 0)
         .animation(isEditing
-                   ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true)
+                   ? .linear(duration: 0.125).repeatForever(autoreverses: true).delay(wiggleDelay)
                    : .default,
                    value: wigglePhase)
         .onChange(of: isEditing) { editing in
             wigglePhase = editing
         }
-        .onAppear { if isEditing { wigglePhase = true } }
+        .onAppear {
+            wiggleDelay = Double.random(in: 0...0.24)
+            if isEditing { wigglePhase = true }
+        }
     }
 }

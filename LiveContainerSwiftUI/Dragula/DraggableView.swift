@@ -107,6 +107,29 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        disableAncestorClipping()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        disableAncestorClipping()
+    }
+
+    /// Walk up the view hierarchy and disable clipping on SwiftUI-managed
+    /// wrapper views so that content extending beyond cell bounds (delete
+    /// buttons, wiggle rotation, badges) is never cut off.
+    private func disableAncestorClipping() {
+        var v: UIView? = superview
+        while let parent = v {
+            if parent.clipsToBounds {
+                parent.clipsToBounds = false
+            }
+            v = parent.superview
+        }
+    }
+
     // MARK: - UIDragInteractionDelegate
 
     func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
