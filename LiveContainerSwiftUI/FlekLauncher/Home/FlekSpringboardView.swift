@@ -2,29 +2,30 @@
 //  FlekSpringboardView.swift
 //  LiveContainerSwiftUI
 //
-//  The iOS-style paged home screen grid of app cards. Built-in apps come
-//  first, followed by installed guest apps. When the apps overflow a page a
-//  new horizontal page is created with a page indicator, mirroring iOS.
+//  The iOS-style home screen grid of app cards. Uses Dragula for smooth
+//  UIKit-backed drag-and-drop reordering of all cards (including built-in
+//  apps like Settings and Installer). Paginated in normal mode, scrollable
+//  in edit mode for full drag support.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct FlekSpringboardView<Menu: View>: View {
-    let items: [FlekHomeItem]
+    @Binding var items: [FlekHomeItem]
     let darkModeIcon: Bool
     @Binding var isEditing: Bool
     var isNew: (LCAppModel) -> Bool
     var isSingleMode: (LCAppModel) -> Bool
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
-    var onMove: (FlekHomeItem, FlekHomeItem) -> Void = { _, _ in }
+    var onDropCompleted: () -> Void = {}
     var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
     var onCancelInstall: () -> Void = {}
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var currentPage = 0
-    @State private var dragging: FlekHomeItem?
+    @State private var draggedItems: [FlekHomeItem] = []
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: FlekTheme.gridSpacing),
@@ -34,42 +35,90 @@ struct FlekSpringboardView<Menu: View>: View {
     var body: some View {
         GeometryReader { geo in
             let spacing = FlekTheme.gridSpacing
-            // Reserve room for the page indicator + VStack spacing so the last
-            // row never gets clipped when there are multiple pages.
             let reserve: CGFloat = 34
             let available = max(FlekTheme.cardHeight, geo.size.height - reserve)
-            // Always show at least 5 rows; if more fit at full size use them.
             let baseRow = FlekTheme.cardHeight + spacing
             let fitRows = max(1, Int((available + spacing) / baseRow))
             let rows = max(5, fitRows)
-            // Card height fitted so `rows` rows occupy the available height
-            // exactly (never larger than the design height).
             let cardHeight = min(FlekTheme.cardHeight, (available - CGFloat(rows - 1) * spacing) / CGFloat(rows))
             let perPage = max(1, rows * FlekTheme.gridColumns)
-            let pages = chunk(items, size: perPage)
 
-            VStack(spacing: 8) {
-                TabView(selection: $currentPage) {
-                    ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
-                        LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
-                            ForEach(pageItems) { item in
-                                cardButton(for: item, cardHeight: cardHeight)
-                            }
+            if isEditing {
+                // Scrollable grid during edit mode for Dragula drag-and-drop
+                ScrollView {
+                    LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
+                        DragulaView(items: $items) { item in
+                            editCard(for: item, cardHeight: cardHeight)
+                        } dropView: { item in
+                            cardDropPlaceholder(cardHeight: cardHeight)
+                        } dropCompleted: {
+                            onDropCompleted()
                         }
-                        .padding(.horizontal, FlekTheme.screenHPadding)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .tag(index)
                     }
+                    .padding(.horizontal, FlekTheme.screenHPadding)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .environment(\.dragPreviewCornerRadius, FlekTheme.cardCorner)
+            } else {
+                // Paginated grid for normal browsing
+                let pages = chunk(items, size: perPage)
 
-                if pages.count > 1 {
-                    FlekPageIndicator(count: pages.count, current: currentPage)
-                        .padding(.bottom, 4)
+                VStack(spacing: 8) {
+                    TabView(selection: $currentPage) {
+                        ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
+                            LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
+                                ForEach(pageItems) { item in
+                                    cardButton(for: item, cardHeight: cardHeight)
+                                }
+                            }
+                            .padding(.horizontal, FlekTheme.screenHPadding)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .tag(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+
+                    if pages.count > 1 {
+                        FlekPageIndicator(count: pages.count, current: currentPage)
+                            .padding(.bottom, 4)
+                    }
                 }
             }
         }
     }
+
+    // MARK: - Edit Mode Card (used by DragulaView)
+
+    @ViewBuilder
+    private func editCard(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
+        if case .installing = item {
+            FlekInstallingCard(state: installState, cardHeight: cardHeight)
+        } else {
+            FlekAppCard(
+                title: title(for: item),
+                isNew: newDot(for: item),
+                showsSingleModeBadge: singleBadge(for: item),
+                isEditing: true,
+                canDelete: canDelete(item),
+                cardHeight: cardHeight,
+                onDelete: { onDelete(item) },
+                icon: { iconView(for: item) }
+            )
+        }
+    }
+
+    /// Ghost placeholder shown in the original position while a card is being dragged.
+    @ViewBuilder
+    private func cardDropPlaceholder(cardHeight: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: FlekTheme.cardCorner, style: .continuous)
+            .fill(Color.white.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: FlekTheme.cardCorner, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 1, antialiased: true)
+            )
+            .frame(height: cardHeight)
+    }
+
+    // MARK: - Normal Mode Card (tappable with context menu)
 
     @ViewBuilder
     private func cardButton(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
@@ -87,7 +136,7 @@ struct FlekSpringboardView<Menu: View>: View {
                 title: title(for: item),
                 isNew: newDot(for: item),
                 showsSingleModeBadge: singleBadge(for: item),
-                isEditing: isEditing,
+                isEditing: false,
                 canDelete: canDelete(item),
                 cardHeight: cardHeight,
                 onDelete: { onDelete(item) },
@@ -95,26 +144,16 @@ struct FlekSpringboardView<Menu: View>: View {
             )
 
             Button {
-                if isEditing { return }
                 onTap(item)
             } label: {
                 card
             }
             .buttonStyle(.plain)
             .contextMenu { contextMenu(item) }
-            .apply { v in
-                if isEditing, case .installed = item {
-                    v.onDrag {
-                        dragging = item
-                        return NSItemProvider(object: item.id as NSString)
-                    }
-                    .onDrop(of: [UTType.text], delegate: FlekReorderDropDelegate(item: item, dragging: $dragging, onMove: onMove))
-                } else {
-                    v
-                }
-            }
         }
     }
+
+    // MARK: - Helpers
 
     @ViewBuilder
     private func iconView(for item: FlekHomeItem) -> some View {
@@ -161,23 +200,6 @@ struct FlekSpringboardView<Menu: View>: View {
         return stride(from: 0, to: array.count, by: size).map {
             Array(array[$0 ..< min($0 + size, array.count)])
         }
-    }
-}
-
-/// Reorders installed app cards live as one is dragged over another.
-struct FlekReorderDropDelegate: DropDelegate {
-    let item: FlekHomeItem
-    @Binding var dragging: FlekHomeItem?
-    let onMove: (FlekHomeItem, FlekHomeItem) -> Void
-
-    func dropEntered(info: DropInfo) {
-        guard let dragging, dragging.id != item.id else { return }
-        if case .installed = item { onMove(dragging, item) }
-    }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool {
-        dragging = nil
-        return true
     }
 }
 

@@ -4,59 +4,38 @@
 //
 //  The "List" home screen layout (Personalization → Home Screen Layout → List).
 //  Shows the same items as the springboard as glass rows with a RUN button.
+//  Uses Dragula for smooth drag-and-drop reordering in edit mode.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct FlekHomeListView<Menu: View>: View {
-    let items: [FlekHomeItem]
+    @Binding var items: [FlekHomeItem]
     let darkModeIcon: Bool
     @Binding var isEditing: Bool
     var isNew: (LCAppModel) -> Bool
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
-    var onMove: (FlekHomeItem, FlekHomeItem) -> Void = { _, _ in }
+    var onDropCompleted: () -> Void = {}
     var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
     var onCancelInstall: () -> Void = {}
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
-    @State private var dragging: FlekHomeItem?
-
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(items) { item in
-                    if case .installing = item {
-                        FlekInstallRow(state: installState)
-                            .contextMenu {
-                                Button(role: .destructive) { onCancelInstall() } label: {
-                                    Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
-                                }
-                            }
-                    } else {
-                        FlekAppRow(
-                            title: title(for: item),
-                            subtitle: subtitle(for: item),
-                            isNew: newDot(for: item),
-                            isEditing: isEditing,
-                            canDelete: canDelete(item),
-                            onRun: { onTap(item) },
-                            onDelete: { onDelete(item) },
-                            icon: { iconView(for: item) }
-                        )
-                        .contextMenu { contextMenu(item) }
-                        .apply { v in
-                            if isEditing, case .installed = item {
-                                v.onDrag {
-                                    dragging = item
-                                    return NSItemProvider(object: item.id as NSString)
-                                }
-                                .onDrop(of: [UTType.text], delegate: FlekReorderDropDelegate(item: item, dragging: $dragging, onMove: onMove))
-                            } else {
-                                v
-                            }
-                        }
+                if isEditing {
+                    DragulaView(items: $items) { item in
+                        editRow(for: item)
+                    } dropView: { item in
+                        rowDropPlaceholder()
+                    } dropCompleted: {
+                        onDropCompleted()
+                    }
+                } else {
+                    ForEach(items) { item in
+                        rowButton(for: item)
                     }
                 }
             }
@@ -64,6 +43,66 @@ struct FlekHomeListView<Menu: View>: View {
             .padding(.top, 8)
         }
     }
+
+    // MARK: - Edit Mode Row (used by DragulaView)
+
+    @ViewBuilder
+    private func editRow(for item: FlekHomeItem) -> some View {
+        if case .installing = item {
+            FlekInstallRow(state: installState)
+        } else {
+            FlekAppRow(
+                title: title(for: item),
+                subtitle: subtitle(for: item),
+                isNew: newDot(for: item),
+                isEditing: true,
+                canDelete: canDelete(item),
+                onRun: {},
+                onDelete: { onDelete(item) },
+                icon: { iconView(for: item) }
+            )
+        }
+    }
+
+    /// Placeholder shown while a row is being dragged.
+    @ViewBuilder
+    private func rowDropPlaceholder() -> some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(Color.white.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 1, antialiased: true)
+            )
+            .frame(height: 68)
+    }
+
+    // MARK: - Normal Mode Row (tappable with context menu)
+
+    @ViewBuilder
+    private func rowButton(for item: FlekHomeItem) -> some View {
+        if case .installing = item {
+            FlekInstallRow(state: installState)
+                .contextMenu {
+                    Button(role: .destructive) { onCancelInstall() } label: {
+                        Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
+                    }
+                }
+        } else {
+            FlekAppRow(
+                title: title(for: item),
+                subtitle: subtitle(for: item),
+                isNew: newDot(for: item),
+                isEditing: false,
+                canDelete: canDelete(item),
+                onRun: { onTap(item) },
+                onDelete: { onDelete(item) },
+                icon: { iconView(for: item) }
+            )
+            .contextMenu { contextMenu(item) }
+        }
+    }
+
+    // MARK: - Helpers
 
     @ViewBuilder
     private func iconView(for item: FlekHomeItem) -> some View {

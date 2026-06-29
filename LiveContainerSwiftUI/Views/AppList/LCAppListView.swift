@@ -100,6 +100,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @StateObject private var homeUninstallFolderAlert = YesNoHelper()
     @State private var homeRefreshToggle = false
     @State private var gameWarningTarget: FlekGameWarningTarget?
+    @State private var orderedHomeItems: [FlekHomeItem] = []
 
     @EnvironmentObject private var sharedModel : SharedModel
     @EnvironmentObject private var sharedAppSortManager : LCAppSortManager
@@ -160,7 +161,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Group {
                 if homeLayout == FlekHomeLayout.list.rawValue {
                     FlekHomeListView(
-                        items: homeItems,
+                        items: $orderedHomeItems,
                         darkModeIcon: darkModeIcon,
                         isEditing: $isEditing,
                         isNew: { FlekLaunchTracker.shared.isNew($0) },
@@ -168,14 +169,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         onDelete: { item in
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
-                        onMove: { dragged, target in moveHomeItem(dragged, target) },
+                        onDropCompleted: { persistHomeOrder() },
                         installState: homeInstallState,
                         onCancelInstall: { cancelHomeInstall() },
                         contextMenu: { item in homeContextMenu(for: item) }
                     )
                 } else {
                     FlekSpringboardView(
-                        items: homeItems,
+                        items: $orderedHomeItems,
                         darkModeIcon: darkModeIcon,
                         isEditing: $isEditing,
                         isNew: { FlekLaunchTracker.shared.isNew($0) },
@@ -184,7 +185,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         onDelete: { item in
                             if case .installed(let app) = item { Task { await requestUninstall(app) } }
                         },
-                        onMove: { dragged, target in moveHomeItem(dragged, target) },
+                        onDropCompleted: { persistHomeOrder() },
                         installState: homeInstallState,
                         onCancelInstall: { cancelHomeInstall() },
                         contextMenu: { item in homeContextMenu(for: item) }
@@ -337,6 +338,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     await MainActor.run { flekstoreSharedModel.appInstallURL = "" }
                 }
             }
+            rebuildOrderedHomeItems()
+        }
+        .onChange(of: sharedAppSortManager.sortedApps.count) { _ in
+            rebuildOrderedHomeItems()
+        }
+        .onChange(of: installprogressVisible) { _ in
+            rebuildOrderedHomeItems()
+        }
+        .onReceive(sharedAppSortManager.$sortedApps) { _ in
+            rebuildOrderedHomeItems()
         }
         .onReceive({
             if #available(iOS 16.0, *) {
@@ -556,16 +567,75 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     // MARK: - FlekLauncher springboard
 
-    var homeItems: [FlekHomeItem] {
-        var items: [FlekHomeItem] = [
-            .defaultApp(.settings),
-            .defaultApp(.installer)
-        ]
-        if installprogressVisible {
-            items.append(.installing)
+    /// Rebuilds `orderedHomeItems` from persisted order + current app list.
+    /// Uses the stored home screen order only when the sort type is `.custom`
+    /// (i.e. the user has manually dragged cards). For other sort types, the
+    /// default-app positions fall back to the front of the list.
+    func rebuildOrderedHomeItems() {
+        let storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekLauncherKeys.homeScreenOrder) ?? []
+        let useStoredOrder = !storedOrder.isEmpty && sharedAppSortManager.appSortType == .custom
+
+        // Build a lookup of all available items by ID
+        var available: [String: FlekHomeItem] = [:]
+        for kind in [FlekDefaultAppKind.settings, .installer] {
+            let item = FlekHomeItem.defaultApp(kind)
+            available[item.id] = item
         }
-        items.append(contentsOf: sortedApps.map { .installed($0) })
-        return items
+        for app in sortedApps {
+            let item = FlekHomeItem.installed(app)
+            available[item.id] = item
+        }
+
+        var result: [FlekHomeItem] = []
+
+        if useStoredOrder {
+            // Respect the full user-defined order (default apps + installed apps)
+            for id in storedOrder {
+                if let item = available.removeValue(forKey: id) {
+                    result.append(item)
+                }
+            }
+            // Append any new items not yet in the stored order
+            let remainingDefaults = available.values.compactMap { item -> FlekHomeItem? in
+                if case .defaultApp = item { return item }
+                return nil
+            }
+            let remainingInstalled = available.values.compactMap { item -> FlekHomeItem? in
+                if case .installed = item { return item }
+                return nil
+            }
+            result.append(contentsOf: remainingDefaults)
+            result.append(contentsOf: remainingInstalled)
+        } else {
+            // Default layout: settings + installer at the front, then sorted apps
+            result = [.defaultApp(.settings), .defaultApp(.installer)]
+            result.append(contentsOf: sortedApps.map { .installed($0) })
+        }
+
+        // Append the installing indicator at the end if active
+        if installprogressVisible {
+            result.append(.installing)
+        }
+
+        orderedHomeItems = result
+    }
+
+    /// Persists the current home screen order after a drag-and-drop reorder.
+    func persistHomeOrder() {
+        let ids = orderedHomeItems.compactMap { item -> String? in
+            if case .installing = item { return nil }
+            return item.id
+        }
+        LCUtils.appGroupUserDefault.set(ids, forKey: FlekLauncherKeys.homeScreenOrder)
+        // Also update the app sort manager for installed app order
+        let appIds = orderedHomeItems.compactMap { item -> String? in
+            guard case .installed(let app) = item else { return nil }
+            return sharedAppSortManager.getUniqueIdentifier(for: app)
+        }
+        if sharedAppSortManager.appSortType != .custom {
+            sharedAppSortManager.appSortType = .custom
+        }
+        sharedAppSortManager.customSortOrder = appIds
     }
 
     var homeInstallState: FlekInstallState {
@@ -655,24 +725,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
 
-    func moveHomeItem(_ dragged: FlekHomeItem, _ target: FlekHomeItem) {
-        guard case .installed(let dApp) = dragged, case .installed(let tApp) = target,
-              let dId = sharedAppSortManager.getUniqueIdentifier(for: dApp),
-              let tId = sharedAppSortManager.getUniqueIdentifier(for: tApp) else { return }
-        var order = sortedApps.compactMap { sharedAppSortManager.getUniqueIdentifier(for: $0) }
-        guard let from = order.firstIndex(of: dId),
-              let to = order.firstIndex(of: tId),
-              from != to else { return }
-        order.remove(at: from)
-        let targetIdx = order.firstIndex(of: tId) ?? order.count
-        // When moving down, insert after the target; when moving up, insert before it
-        let insertAt = from < to ? targetIdx + 1 : targetIdx
-        order.insert(dId, at: insertAt)
-        if sharedAppSortManager.appSortType != .custom {
-            sharedAppSortManager.appSortType = .custom
-        }
-        sharedAppSortManager.customSortOrder = order
-    }
+    // moveHomeItem is no longer needed — Dragula handles reordering
+    // directly via the bound items array, and persistHomeOrder() saves
+    // the result on drop completion.
 
     func isGame(_ app: LCAppModel) -> Bool {
         if let info = app.appInfo.info(), let cat = info["LSApplicationCategoryType"] as? String {

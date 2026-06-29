@@ -14,6 +14,7 @@ enum FlekLauncherKeys {
     static let wallpaperPhoto = "FlekWallpaperPhoto" // file name of a user-picked photo wallpaper
     static let homeLayout = "FlekHomeLayout"         // "grid" | "list"
     static let launchedApps = "FlekLaunchedApps"     // bundle paths that have been opened at least once
+    static let homeScreenOrder = "FlekHomeScreenOrder" // ordered IDs of all home screen items (default apps + installed)
 }
 
 /// Home screen layout chosen on the Personalization page.
@@ -50,7 +51,7 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
 
 /// One tile on the springboard: a built-in app, an installed guest app, or the
 /// app currently being installed (download/sign in progress).
-enum FlekHomeItem: Identifiable {
+enum FlekHomeItem: Identifiable, DragulaItem {
     case defaultApp(FlekDefaultAppKind)
     case installed(LCAppModel)
     case installing
@@ -61,6 +62,16 @@ enum FlekHomeItem: Identifiable {
         case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? UUID().uuidString)"
         case .installing: return "installing"
         }
+    }
+
+    /// The installing card cannot be dragged.
+    var isDraggable: Bool {
+        if case .installing = self { return false }
+        return true
+    }
+
+    func getItemProvider() -> NSItemProvider {
+        NSItemProvider(object: id as NSString)
     }
 }
 
