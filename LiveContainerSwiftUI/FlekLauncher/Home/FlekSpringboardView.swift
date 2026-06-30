@@ -70,10 +70,14 @@ struct FlekSpringboardView<Menu: View>: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
-                if pages.count > 1 || isEditing {
-                    FlekPageIndicator(count: pages.count, current: currentPage)
-                        .padding(.bottom, 4)
+                Group {
+                    if pages.count > 1 || isEditing {
+                        FlekPageIndicator(count: pages.count, current: currentPage)
+                            .padding(.bottom, 4)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: isEditing)
             }
             .onChange(of: isEditing) { editing in
                 if !editing {
@@ -169,7 +173,19 @@ struct FlekSpringboardView<Menu: View>: View {
                 .hidden()
                 .overlay {
                     DraggableView(
-                        preview: { editCard(for: item, cardHeight: cardHeight) },
+                        preview: {
+                            // Pass canDelete: false so the delete button is never
+                            // part of the DraggableView's snapshot.
+                            FlekAppCard(
+                                title: title(for: item),
+                                isNew: newDot(for: item),
+                                showsSingleModeBadge: singleBadge(for: item),
+                                isEditing: true,
+                                canDelete: false,
+                                cardHeight: cardHeight,
+                                icon: { iconView(for: item) }
+                            )
+                        },
                         dropView: { cardDropPlaceholder(cardHeight: cardHeight) },
                         itemProvider: { item.getItemProvider() },
                         onDragWillBegin: { draggedItem = item },
@@ -179,6 +195,25 @@ struct FlekSpringboardView<Menu: View>: View {
                             onDropCompleted()
                         }
                     )
+                }
+                // Delete button rendered outside DraggableView so it never
+                // appears in the drag snapshot.
+                .overlay(alignment: .topLeading) {
+                    if canDelete(item) && draggedItem == nil {
+                        Button {
+                            onDelete(item)
+                        } label: {
+                            Image(systemName: "minus")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.black)
+                                .frame(width: 24, height: 24)
+                                .background(Circle().fill(Color(white: 0.85)))
+                                .overlay(Circle().strokeBorder(Color.black.opacity(0.15), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: -6, y: -6)
+                        .transition(.scale.combined(with: .opacity))
+                    }
                 }
                 .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
                     item: item,

@@ -202,7 +202,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Spacer()
                 if isEditing {
                     Button {
-                        withAnimation { isEditing = false }
+                        isEditing = false
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "checkmark")
@@ -767,7 +767,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // Built-in apps: only the "arrange" action is offered (they can be
             // moved but not removed, have no launch mode / settings / uninstall).
             Button {
-                withAnimation { isEditing = true }
+                isEditing = true
             } label: {
                 Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
             }
@@ -833,7 +833,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
 
         Button {
-            withAnimation { isEditing = true }
+            isEditing = true
         } label: {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }
