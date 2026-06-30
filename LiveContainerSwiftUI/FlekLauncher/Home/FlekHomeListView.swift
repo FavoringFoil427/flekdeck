@@ -27,11 +27,29 @@ struct FlekHomeListView<Menu: View>: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(items) { item in
-                    if isEditing {
+                if isEditing {
+                    ForEach(items) { item in
                         editRowWithDrag(for: item)
-                    } else {
+                    }
+                } else {
+                    // Installed/default app rows via ForEach
+                    ForEach(items.filter { item in
+                        if case .installing = item { return false }
+                        return true
+                    }) { item in
                         rowButton(for: item)
+                    }
+                    // Installing row rendered outside ForEach — uses UIKit
+                    // UIContextMenuInteraction instead of SwiftUI .contextMenu
+                    // to avoid cross-contamination with installed app menus.
+                    if items.contains(where: { item in
+                        if case .installing = item { return true }
+                        return false
+                    }) {
+                        FlekInstallRow(state: installState)
+                            .overlay {
+                                CancelInstallContextMenu { onCancelInstall() }
+                            }
                     }
                 }
             }
@@ -102,26 +120,17 @@ struct FlekHomeListView<Menu: View>: View {
 
     @ViewBuilder
     private func rowButton(for item: FlekHomeItem) -> some View {
-        if case .installing = item {
-            FlekInstallRow(state: installState)
-                .contextMenu {
-                    Button(role: .destructive) { onCancelInstall() } label: {
-                        Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
-                    }
-                }
-        } else {
-            FlekAppRow(
-                title: title(for: item),
-                subtitle: subtitle(for: item),
-                isNew: newDot(for: item),
-                isEditing: false,
-                canDelete: canDelete(item),
-                onRun: { onTap(item) },
-                onDelete: { onDelete(item) },
-                icon: { iconView(for: item) }
-            )
-            .contextMenu { contextMenu(item) }
-        }
+        FlekAppRow(
+            title: title(for: item),
+            subtitle: subtitle(for: item),
+            isNew: newDot(for: item),
+            isEditing: false,
+            canDelete: canDelete(item),
+            onRun: { onTap(item) },
+            onDelete: { onDelete(item) },
+            icon: { iconView(for: item) }
+        )
+        .contextMenu { contextMenu(item) }
     }
 
     // MARK: - Helpers
@@ -248,6 +257,52 @@ struct FlekAppRow<Icon: View>: View {
                 )
                 .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
         }
+    }
+}
+
+/// UIKit-based context menu for the installing row. Uses
+/// `UIContextMenuInteraction` directly instead of SwiftUI's `.contextMenu`
+/// to avoid cross-contamination with installed app context menus.
+private struct CancelInstallContextMenu: UIViewRepresentable {
+    var onCancel: () -> Void
+
+    class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var onCancel: () -> Void
+
+        init(onCancel: @escaping () -> Void) {
+            self.onCancel = onCancel
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction,
+            configurationForMenuAtLocation location: CGPoint
+        ) -> UIContextMenuConfiguration? {
+            let cancel = self.onCancel
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+                UIMenu(title: "", children: [
+                    UIAction(
+                        title: "lc.flek.cancelInstall".loc,
+                        image: UIImage(systemName: "xmark.circle"),
+                        attributes: .destructive
+                    ) { _ in cancel() }
+                ])
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCancel: onCancel)
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onCancel = onCancel
     }
 }
 

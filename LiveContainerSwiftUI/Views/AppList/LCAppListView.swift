@@ -341,12 +341,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             rebuildOrderedHomeItems()
         }
         .onChange(of: sharedAppSortManager.sortedApps.count) { _ in
+            // Skip rebuilds while an install is in progress so the
+            // ForEach identity stays stable and context menus don't
+            // get cross-contaminated between items.
+            guard !installprogressVisible else { return }
             rebuildOrderedHomeItems()
         }
         .onChange(of: installprogressVisible) { _ in
             rebuildOrderedHomeItems()
         }
         .onReceive(sharedAppSortManager.$sortedApps) { _ in
+            // Skip rebuilds while an install is in progress so the
+            // installing card's context menu isn't disrupted.
+            guard !installprogressVisible else { return }
             rebuildOrderedHomeItems()
         }
         .onReceive({

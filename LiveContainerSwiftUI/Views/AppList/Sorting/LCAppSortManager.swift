@@ -61,7 +61,7 @@ class LCAppSortManager: ObservableObject {
     
     static var shared: LCAppSortManager = LCAppSortManager()
     
-    @AppStorage("LCAppSortType", store: LCUtils.appGroupUserDefault) var appSortType: AppSortType = .defaultOrder {
+    @AppStorage("LCAppSortType", store: LCUtils.appGroupUserDefault) var appSortType: AppSortType = .installationDate {
         didSet {
             self.sortedApps = self.getSortedApps(DataManager.shared.model.apps, sortType: self.appSortType, customSortOrder: self.customSortOrder)
             if DataManager.shared.model.isHiddenAppUnlocked {
@@ -163,14 +163,14 @@ class LCAppSortManager: ObservableObject {
                 guard let installationDate = app.appInfo.installationDate else { return nil }
                 return (app, installationDate)
             }
-            .sorted { $0.1 > $1.1 } // Sort by date, newest first
+            .sorted { $0.1 < $1.1 } // Sort by date, oldest first (newest last)
             .map { $0.0 } // Extract just the app models
 
             let appsWithoutInstallationDate = appList.filter { app in
                 return app.appInfo.installationDate == nil
             }
             
-            return appsWithinstallationDate + appsWithoutInstallationDate
+            return appsWithoutInstallationDate + appsWithinstallationDate
         case .custom:
             return sortByCustomOrder(appList, customSortOrder: customSortOrder)
         }
