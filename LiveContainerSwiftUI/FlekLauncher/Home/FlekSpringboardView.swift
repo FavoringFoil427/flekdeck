@@ -66,6 +66,7 @@ struct FlekSpringboardView<Menu: View>: View {
                             }
                         }
                         .tag(index)
+                        .background(ClipDisabler())
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -414,5 +415,33 @@ struct FlekPageIndicator: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+}
+
+/// Invisible helper that walks up the UIKit view hierarchy and disables
+/// `clipsToBounds` on every ancestor, preventing the TabView's internal
+/// page container from clipping content that extends beyond cell bounds
+/// (context menu lift, delete buttons, jiggle rotation, etc.).
+private struct ClipDisabler: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async { disableClipping(from: view) }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async { disableClipping(from: uiView) }
+    }
+
+    private func disableClipping(from view: UIView) {
+        var v: UIView? = view.superview
+        while let parent = v {
+            if parent.clipsToBounds {
+                parent.clipsToBounds = false
+            }
+            v = parent.superview
+        }
     }
 }
