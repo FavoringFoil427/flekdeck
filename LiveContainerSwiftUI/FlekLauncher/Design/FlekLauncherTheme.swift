@@ -58,8 +58,13 @@ struct FlekGlassBackground: View {
 
 extension View {
     /// Applies the standard frosted card surface.
+    @ViewBuilder
     func flekGlassCard(cornerRadius: CGFloat = FlekTheme.cardCorner, tint: Double = 0.22) -> some View {
-        background(FlekGlassBackground(cornerRadius: cornerRadius, tint: tint))
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            self.background(FlekGlassBackground(cornerRadius: cornerRadius, tint: tint))
+        }
     }
 }
 

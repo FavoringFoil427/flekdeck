@@ -82,13 +82,10 @@ struct FlekAppCard<Icon: View>: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
-        // iOS-authentic jiggle: ~2° rotation + 1px position jitter, random phase
-        // per card (reverse-engineered from real SpringBoard, 0.25s cycle).
-        .rotationEffect(.degrees(isEditing ? (wigglePhase ? 2.0 : -2.0) : 0))
-        .offset(x: isEditing ? (wigglePhase ? -1 : 1) : 0,
-                y: isEditing ? (wigglePhase ? -1 : 0) : 0)
+        // Gentle jiggle: small rotation, no position offset to avoid cards touching.
+        .rotationEffect(.degrees(isEditing ? (wigglePhase ? 0.5 : -0.5) : 0))
         .animation(isEditing
-                   ? .linear(duration: 0.125).repeatForever(autoreverses: true).delay(wiggleDelay)
+                   ? .easeInOut(duration: 0.2).repeatForever(autoreverses: true).delay(wiggleDelay)
                    : .default,
                    value: wigglePhase)
         .onChange(of: isEditing) { editing in
