@@ -318,7 +318,7 @@ struct FlekInstallerView: View {
                     Text("lc.flek.importIpa".loc)
                         .font(.system(size: 15, weight: .medium, design: .rounded))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(.label))
                 .padding(.horizontal, 16)
                 .frame(height: 48)
                 .background(
