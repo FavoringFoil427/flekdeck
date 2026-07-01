@@ -79,7 +79,7 @@ struct FlekHomeListView<Menu: View>: View {
                         }
                     )
                 }
-                .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
+                .onDrop(of: [UTType.text], delegate: ListReorderDelegate(
                     item: item,
                     items: $items,
                     draggedItem: $draggedItem

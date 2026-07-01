@@ -54,7 +54,7 @@ struct FlekAppCard<Icon: View>: View {
                 }
                 Text(title)
                     .font(.system(size: FlekTheme.labelSize * scale, weight: .medium))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }

@@ -15,6 +15,7 @@ enum FlekLauncherKeys {
     static let homeLayout = "FlekHomeLayout"         // "grid" | "list"
     static let launchedApps = "FlekLaunchedApps"     // bundle paths that have been opened at least once
     static let homeScreenOrder = "FlekHomeScreenOrder" // ordered IDs of all home screen items (default apps + installed)
+    static let homeScreenPageSizes = "FlekHomeScreenPageSizes" // per-page item counts for custom page layouts
 }
 
 /// Home screen layout chosen on the Personalization page.

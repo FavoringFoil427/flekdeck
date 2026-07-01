@@ -26,6 +26,13 @@ struct FlekSpringboardView<Menu: View>: View {
     @State private var currentPage = 0
     @State private var draggedItem: FlekHomeItem?
     @State private var edgeScrollTimer: Timer?
+    /// Page-based item model used during edit mode. Each sub-array
+    /// is one page, allowing items to live on pages independently
+    /// of the flat array's chunk boundaries.
+    @State private var editPages: [[FlekHomeItem]] = []
+    /// Persisted per-page item counts so page boundaries survive
+    /// exiting edit mode and app restarts.
+    @State private var customPageSizes: [Int] = []
 
     private var columns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: FlekTheme.gridSpacing),
@@ -42,16 +49,41 @@ struct FlekSpringboardView<Menu: View>: View {
             let rows = max(5, fitRows)
             let cardHeight = min(FlekTheme.cardHeight, (available - CGFloat(rows - 1) * spacing) / CGFloat(rows))
             let perPage = max(1, rows * FlekTheme.gridColumns)
-            let pages = paginatedItems(perPage: perPage)
+
+            // During edit mode, use the page-based model so items
+            // can live on any page independently of flat-array chunking.
+            let displayPages: [[FlekHomeItem]] = {
+                if isEditing && !editPages.isEmpty {
+                    var p = editPages
+                    // Always ensure a trailing empty page exists
+                    if p.isEmpty || (p.last?.count ?? 0) > 0 {
+                        p.append([])
+                    }
+                    return p
+                }
+                return paginatedItems(perPage: perPage)
+            }()
 
             VStack(spacing: 8) {
                 TabView(selection: $currentPage) {
-                    ForEach(Array(pages.enumerated()), id: \.offset) { index, pageItems in
+                    ForEach(Array(displayPages.enumerated()), id: \.offset) { index, pageItems in
                         ZStack {
+                            // Background drop zone catches drops on empty
+                            // page areas (including entirely empty pages).
+                            if isEditing {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onDrop(of: [UTType.text], delegate: PageBackgroundDropDelegate(
+                                        pageIndex: index,
+                                        pages: $editPages,
+                                        draggedItem: $draggedItem
+                                    ))
+                            }
+
                             LazyVGrid(columns: columns, alignment: .center, spacing: spacing) {
                                 if isEditing {
                                     ForEach(pageItems) { item in
-                                        editCardWithDrag(for: item, cardHeight: cardHeight)
+                                        editCardWithDrag(for: item, cardHeight: cardHeight, pageIndex: index)
                                     }
                                 } else {
                                     // Installed/default app cards via ForEach
@@ -80,7 +112,7 @@ struct FlekSpringboardView<Menu: View>: View {
 
                             // Edge drop zones for cross-page auto-scroll
                             if isEditing {
-                                edgeZones(pageIndex: index, pageCount: pages.count)
+                                edgeZones(pageIndex: index, pageCount: displayPages.count)
                             }
                         }
                         .tag(index)
@@ -90,22 +122,34 @@ struct FlekSpringboardView<Menu: View>: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 Group {
-                    if pages.count > 1 || isEditing {
-                        FlekPageIndicator(count: pages.count, current: currentPage)
+                    if displayPages.count > 1 || isEditing {
+                        FlekPageIndicator(count: displayPages.count, current: currentPage)
                             .padding(.bottom, 4)
                             .transition(.opacity)
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: isEditing)
             }
+            .onAppear { loadPageSizes() }
             .onChange(of: isEditing) { editing in
-                if !editing {
-                    // Exiting edit mode: clean up empty trailing pages
+                if editing {
+                    // Entering edit mode: use custom page sizes if available,
+                    // otherwise fall back to uniform chunking
+                    if !customPageSizes.isEmpty {
+                        editPages = paginateWithSizes(items, sizes: customPageSizes, fallbackSize: perPage)
+                    } else {
+                        editPages = chunk(items, size: perPage)
+                    }
+                } else {
+                    // Exiting edit mode: save page sizes, then flatten
+                    savePageSizes(from: editPages)
+                    items = editPages.flatMap { $0 }
+                    editPages = []
                     edgeScrollTimer?.invalidate()
                     edgeScrollTimer = nil
                     draggedItem = nil
-                    // Clamp page if empty pages were removed
-                    let newPages = chunk(items, size: perPage)
+                    // Clamp page if pages were removed
+                    let newPages = paginatedItems(perPage: perPage)
                     if currentPage >= newPages.count {
                         currentPage = max(0, newPages.count - 1)
                     }
@@ -116,14 +160,14 @@ struct FlekSpringboardView<Menu: View>: View {
 
     // MARK: - Pagination
 
-    /// Chunks items into pages. In edit mode, ensures an empty trailing page
-    /// exists so the user can drag icons to create a new screen.
+    /// Chunks items into pages using custom page sizes if available,
+    /// otherwise falls back to uniform chunking.
     private func paginatedItems(perPage: Int) -> [[FlekHomeItem]] {
-        var pages = chunk(items, size: perPage)
-        if isEditing {
-            if pages.isEmpty || (pages.last?.count ?? 0) > 0 {
-                pages.append([])
-            }
+        let pages: [[FlekHomeItem]]
+        if !customPageSizes.isEmpty {
+            pages = paginateWithSizes(items, sizes: customPageSizes, fallbackSize: perPage)
+        } else {
+            pages = chunk(items, size: perPage)
         }
         return pages
     }
@@ -184,7 +228,7 @@ struct FlekSpringboardView<Menu: View>: View {
     // MARK: - Edit Mode Card (DraggableView-backed)
 
     @ViewBuilder
-    private func editCardWithDrag(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
+    private func editCardWithDrag(for item: FlekHomeItem, cardHeight: CGFloat, pageIndex: Int) -> some View {
         if case .installing = item {
             FlekInstallingCard(state: installState, cardHeight: cardHeight)
         } else if item.isDraggable {
@@ -211,6 +255,9 @@ struct FlekSpringboardView<Menu: View>: View {
                         onDragWillEnd: {
                             draggedItem = nil
                             cancelEdgeTimer()
+                            // Save page sizes and sync back to flat array
+                            savePageSizes(from: editPages)
+                            items = editPages.flatMap { $0 }
                             onDropCompleted()
                         }
                     )
@@ -236,7 +283,8 @@ struct FlekSpringboardView<Menu: View>: View {
                 }
                 .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
                     item: item,
-                    items: $items,
+                    pageIndex: pageIndex,
+                    pages: $editPages,
                     draggedItem: $draggedItem
                 ))
                 .environment(\.dragPreviewCornerRadius, FlekTheme.cardCorner)
@@ -341,13 +389,144 @@ struct FlekSpringboardView<Menu: View>: View {
             Array(array[$0 ..< min($0 + size, array.count)])
         }
     }
+
+    /// Distributes items across pages using the given per-page sizes.
+    /// Any items beyond the sum of `sizes` are chunked into additional
+    /// pages of `fallbackSize` (handles newly installed apps).
+    private func paginateWithSizes<T>(_ array: [T], sizes: [Int], fallbackSize: Int) -> [[T]] {
+        guard !array.isEmpty else { return [[]] }
+        var result: [[T]] = []
+        var offset = 0
+        for size in sizes where offset < array.count {
+            let end = min(offset + size, array.count)
+            result.append(Array(array[offset ..< end]))
+            offset = end
+        }
+        // Remaining items (new installs) go into additional pages
+        while offset < array.count {
+            let end = min(offset + fallbackSize, array.count)
+            result.append(Array(array[offset ..< end]))
+            offset = end
+        }
+        return result
+    }
+
+    /// Saves the current page sizes to UserDefaults.
+    private func savePageSizes(from pages: [[FlekHomeItem]]) {
+        // Strip trailing empty pages before saving
+        var sizes = pages.map { $0.count }
+        while sizes.last == 0 { sizes.removeLast() }
+        customPageSizes = sizes
+        LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+    }
+
+    /// Loads page sizes from UserDefaults.
+    private func loadPageSizes() {
+        if let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int],
+           !sizes.isEmpty {
+            customPageSizes = sizes
+        }
+    }
 }
 
 // MARK: - Drop Delegates
 
-/// Reorders items in the flat array as one is dragged over another.
-/// Works across pages since both items are looked up by ID in the full array.
+/// Catches drops on empty page areas (including entirely empty trailing
+/// pages). Moves the dragged item to the target page.
+struct PageBackgroundDropDelegate: DropDelegate {
+    let pageIndex: Int
+    @Binding var pages: [[FlekHomeItem]]
+    @Binding var draggedItem: FlekHomeItem?
+
+    private let generator = UIImpactFeedbackGenerator(style: .rigid)
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedItem else { return }
+
+        // Find the item across all pages
+        var fromPage = -1, fromIdx = -1
+        for (pi, page) in pages.enumerated() {
+            if let idx = page.firstIndex(where: { $0.id == dragged.id }) {
+                fromPage = pi
+                fromIdx = idx
+                break
+            }
+        }
+        guard fromPage >= 0, fromIdx >= 0, fromPage != pageIndex else { return }
+
+        withAnimation(.spring) {
+            let moved = pages[fromPage].remove(at: fromIdx)
+            if pageIndex < pages.count {
+                pages[pageIndex].append(moved)
+            } else {
+                pages.append([moved])
+            }
+        }
+
+        generator.prepare()
+        generator.impactOccurred()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem != nil
+    }
+}
+
+/// Reorders items within or across pages as one is dragged over another.
 struct SpringboardReorderDelegate: DropDelegate {
+    let item: FlekHomeItem
+    let pageIndex: Int
+    @Binding var pages: [[FlekHomeItem]]
+    @Binding var draggedItem: FlekHomeItem?
+
+    private let generator = UIImpactFeedbackGenerator(style: .rigid)
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedItem, dragged.id != item.id else { return }
+
+        // Find the dragged item across all pages
+        var fromPage = -1, fromIdx = -1
+        for (pi, page) in pages.enumerated() {
+            if let idx = page.firstIndex(where: { $0.id == dragged.id }) {
+                fromPage = pi
+                fromIdx = idx
+                break
+            }
+        }
+        guard fromPage >= 0, fromIdx >= 0 else { return }
+        guard let toIdx = pages[pageIndex].firstIndex(where: { $0.id == item.id }) else { return }
+
+        withAnimation(.spring) {
+            if fromPage == pageIndex {
+                // Same page: reorder within
+                pages[pageIndex].move(fromOffsets: IndexSet(integer: fromIdx),
+                                      toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
+            } else {
+                // Cross-page: remove from source, insert at target position
+                let moved = pages[fromPage].remove(at: fromIdx)
+                pages[pageIndex].insert(moved, at: toIdx)
+            }
+        }
+
+        generator.prepare()
+        generator.impactOccurred()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedItem != nil
+    }
+}
+
+/// Flat-array reorder delegate used by the list layout (no pages).
+struct ListReorderDelegate: DropDelegate {
     let item: FlekHomeItem
     @Binding var items: [FlekHomeItem]
     @Binding var draggedItem: FlekHomeItem?
