@@ -172,6 +172,9 @@ struct FlekSpringboardView<Menu: View>: View {
                 // content is rebuilt; capture the page now (before UIKit
                 // processes layout) and restore it on the next run-loop.
                 let savedPage = currentPage
+                // Reload page sizes in case the parent trimmed empty
+                // trailing pages from UserDefaults.
+                loadPageSizes()
                 DispatchQueue.main.async {
                     let newPages = paginatedItems(perPage: perPage)
                     let pageCount = newPages.count

@@ -647,6 +647,37 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             result.append(contentsOf: sortedApps.map { .installed($0) })
         }
 
+        // When a deletion left the last page(s) all-placeholder, trim them
+        // and update the persisted page sizes so the empty page disappears.
+        // Skip during edit mode – editPages is the source of truth there,
+        // and the exit-edit-mode handler already trims trailing empty pages.
+        if didReplaceDeleted && !isEditing {
+            var sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
+            if !sizes.isEmpty {
+                var trimmed = false
+                while sizes.count > 1 {
+                    let lastPageStart = sizes.dropLast().reduce(0, +)
+                    let lastPageEnd = min(lastPageStart + sizes.last!, result.count)
+                    guard lastPageStart < result.count else {
+                        sizes.removeLast()
+                        trimmed = true
+                        continue
+                    }
+                    let lastPage = result[lastPageStart..<lastPageEnd]
+                    if !lastPage.contains(where: { !$0.isPlaceholder }) {
+                        result.removeSubrange(lastPageStart..<lastPageEnd)
+                        sizes.removeLast()
+                        trimmed = true
+                    } else {
+                        break
+                    }
+                }
+                if trimmed {
+                    LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+                }
+            }
+        }
+
         // Place the installing indicator at the first placeholder slot
         var scrollIdx: Int?
         if installprogressVisible {
