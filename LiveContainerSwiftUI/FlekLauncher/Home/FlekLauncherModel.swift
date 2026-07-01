@@ -50,25 +50,36 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
     }
 }
 
-/// One tile on the springboard: a built-in app, an installed guest app, or the
-/// app currently being installed (download/sign in progress).
+/// One tile on the springboard: a built-in app, an installed guest app, the
+/// app currently being installed, or an empty grid slot (placeholder).
 enum FlekHomeItem: Identifiable, DragulaItem {
     case defaultApp(FlekDefaultAppKind)
     case installed(LCAppModel)
     case installing
+    /// Empty grid slot that preserves an item's position on the grid.
+    case placeholder(String)
 
     var id: String {
         switch self {
         case .defaultApp(let kind): return "default.\(kind.rawValue)"
         case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? UUID().uuidString)"
         case .installing: return "installing"
+        case .placeholder(let uid): return "placeholder.\(uid)"
         }
     }
 
-    /// The installing card cannot be dragged.
+    /// Only real app items can be dragged.
     var isDraggable: Bool {
-        if case .installing = self { return false }
-        return true
+        switch self {
+        case .installing, .placeholder: return false
+        default: return true
+        }
+    }
+
+    /// Whether this item is an empty grid slot.
+    var isPlaceholder: Bool {
+        if case .placeholder = self { return true }
+        return false
     }
 
     func getItemProvider() -> NSItemProvider {

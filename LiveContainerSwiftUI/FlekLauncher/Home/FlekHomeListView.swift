@@ -28,14 +28,14 @@ struct FlekHomeListView<Menu: View>: View {
         ScrollView {
             LazyVStack(spacing: 10) {
                 if isEditing {
-                    ForEach(items) { item in
+                    ForEach(items.filter { !$0.isPlaceholder }) { item in
                         editRowWithDrag(for: item)
                     }
                 } else {
-                    // Installed/default app rows via ForEach
+                    // Installed/default app rows via ForEach (skip placeholders + installing)
                     ForEach(items.filter { item in
                         if case .installing = item { return false }
-                        return true
+                        return item.isPlaceholder == false
                     }) { item in
                         rowButton(for: item)
                     }
@@ -142,7 +142,7 @@ struct FlekHomeListView<Menu: View>: View {
             Image(kind.iconAssetName).resizable().scaledToFill()
         case .installed(let app):
             Image(uiImage: app.appInfo.iconIsDarkIcon(darkModeIcon)).resizable().scaledToFill()
-        case .installing:
+        case .installing, .placeholder:
             Color.clear
         }
     }
@@ -152,6 +152,7 @@ struct FlekHomeListView<Menu: View>: View {
         case .defaultApp(let kind): return kind.title
         case .installed(let app): return app.appInfo.displayName() ?? "?"
         case .installing: return installState.name ?? ""
+        case .placeholder: return ""
         }
     }
 

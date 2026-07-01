@@ -55,9 +55,10 @@ struct FlekSpringboardView<Menu: View>: View {
             let displayPages: [[FlekHomeItem]] = {
                 if isEditing && !editPages.isEmpty {
                     var p = editPages
-                    // Always ensure a trailing empty page exists
-                    if p.isEmpty || (p.last?.count ?? 0) > 0 {
-                        p.append([])
+                    // Always ensure a trailing empty page of placeholders
+                    let lastHasReal = p.last?.contains(where: { !$0.isPlaceholder }) ?? false
+                    if p.isEmpty || lastHasReal {
+                        p.append(padPage([], toSize: perPage))
                     }
                     return p
                 }
@@ -86,12 +87,16 @@ struct FlekSpringboardView<Menu: View>: View {
                                         editCardWithDrag(for: item, cardHeight: cardHeight, pageIndex: index)
                                     }
                                 } else {
-                                    // Installed/default app cards via ForEach
+                                    // App cards + invisible placeholder spacers
                                     ForEach(pageItems.filter { item in
                                         if case .installing = item { return false }
                                         return true
                                     }) { item in
-                                        cardButton(for: item, cardHeight: cardHeight)
+                                        if item.isPlaceholder {
+                                            Color.clear.frame(height: cardHeight)
+                                        } else {
+                                            cardButton(for: item, cardHeight: cardHeight)
+                                        }
                                     }
                                     // Installing card rendered outside ForEach so its
                                     // context menu can never cross-contaminate with
@@ -133,17 +138,24 @@ struct FlekSpringboardView<Menu: View>: View {
             .onAppear { loadPageSizes() }
             .onChange(of: isEditing) { editing in
                 if editing {
-                    // Entering edit mode: use custom page sizes if available,
-                    // otherwise fall back to uniform chunking
+                    // Entering edit mode: paginate and pad each page to perPage with placeholders
+                    let raw: [[FlekHomeItem]]
                     if !customPageSizes.isEmpty {
-                        editPages = paginateWithSizes(items, sizes: customPageSizes, fallbackSize: perPage)
+                        raw = paginateWithSizes(items, sizes: customPageSizes, fallbackSize: perPage)
                     } else {
-                        editPages = chunk(items, size: perPage)
+                        raw = chunk(items, size: perPage)
                     }
+                    editPages = raw.map { padPage($0, toSize: perPage) }
                 } else {
-                    // Exiting edit mode: save page sizes, then flatten
-                    savePageSizes(from: editPages)
-                    items = editPages.flatMap { $0 }
+                    // Exiting edit mode: trim trailing all-placeholder pages, save, flatten
+                    var pages = editPages
+                    while pages.count > 1,
+                          let last = pages.last,
+                          last.allSatisfy(\.isPlaceholder) {
+                        pages.removeLast()
+                    }
+                    savePageSizes(from: pages)
+                    items = pages.flatMap { $0 }
                     editPages = []
                     edgeScrollTimer?.invalidate()
                     edgeScrollTimer = nil
@@ -229,7 +241,17 @@ struct FlekSpringboardView<Menu: View>: View {
 
     @ViewBuilder
     private func editCardWithDrag(for item: FlekHomeItem, cardHeight: CGFloat, pageIndex: Int) -> some View {
-        if case .installing = item {
+        if item.isPlaceholder {
+            // Invisible drop target for empty grid slots
+            Color.clear.frame(height: cardHeight)
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.text], delegate: SpringboardReorderDelegate(
+                    item: item,
+                    pageIndex: pageIndex,
+                    pages: $editPages,
+                    draggedItem: $draggedItem
+                ))
+        } else if case .installing = item {
             FlekInstallingCard(state: installState, cardHeight: cardHeight)
         } else if item.isDraggable {
             editCard(for: item, cardHeight: cardHeight)
@@ -354,7 +376,7 @@ struct FlekSpringboardView<Menu: View>: View {
             Image(uiImage: app.appInfo.iconIsDarkIcon(darkModeIcon))
                 .resizable()
                 .scaledToFill()
-        case .installing:
+        case .installing, .placeholder:
             Color.clear
         }
     }
@@ -364,6 +386,7 @@ struct FlekSpringboardView<Menu: View>: View {
         case .defaultApp(let kind): return kind.title
         case .installed(let app): return app.appInfo.displayName() ?? "?"
         case .installing: return installState.name ?? ""
+        case .placeholder: return ""
         }
     }
 
@@ -380,6 +403,12 @@ struct FlekSpringboardView<Menu: View>: View {
     private func canDelete(_ item: FlekHomeItem) -> Bool {
         if case .installed = item { return true }
         return false
+    }
+
+    /// Pads a page with placeholder items to fill it to the given size.
+    private func padPage(_ page: [FlekHomeItem], toSize size: Int) -> [FlekHomeItem] {
+        guard page.count < size else { return Array(page.prefix(size)) }
+        return page + (0 ..< (size - page.count)).map { _ in .placeholder(UUID().uuidString) }
     }
 
     private func chunk<T>(_ array: [T], size: Int) -> [[T]] {
@@ -431,8 +460,8 @@ struct FlekSpringboardView<Menu: View>: View {
 
 // MARK: - Drop Delegates
 
-/// Catches drops on empty page areas (including entirely empty trailing
-/// pages). Moves the dragged item to the target page.
+/// Catches drops on empty page background areas. Swaps the dragged item
+/// with the first available placeholder on the target page.
 struct PageBackgroundDropDelegate: DropDelegate {
     let pageIndex: Int
     @Binding var pages: [[FlekHomeItem]]
@@ -442,8 +471,9 @@ struct PageBackgroundDropDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let dragged = draggedItem else { return }
+        guard pageIndex < pages.count else { return }
 
-        // Find the item across all pages
+        // Find the dragged item across all pages
         var fromPage = -1, fromIdx = -1
         for (pi, page) in pages.enumerated() {
             if let idx = page.firstIndex(where: { $0.id == dragged.id }) {
@@ -454,13 +484,12 @@ struct PageBackgroundDropDelegate: DropDelegate {
         }
         guard fromPage >= 0, fromIdx >= 0, fromPage != pageIndex else { return }
 
+        // Find first placeholder on the target page to swap with
+        guard let targetIdx = pages[pageIndex].firstIndex(where: { $0.isPlaceholder }) else { return }
+
         withAnimation(.spring) {
-            let moved = pages[fromPage].remove(at: fromIdx)
-            if pageIndex < pages.count {
-                pages[pageIndex].append(moved)
-            } else {
-                pages.append([moved])
-            }
+            pages[pageIndex][targetIdx] = pages[fromPage][fromIdx]
+            pages[fromPage][fromIdx] = .placeholder(UUID().uuidString)
         }
 
         generator.prepare()
@@ -476,7 +505,8 @@ struct PageBackgroundDropDelegate: DropDelegate {
     }
 }
 
-/// Reorders items within or across pages as one is dragged over another.
+/// Swaps two items' grid positions when one is dragged over the other.
+/// Works with both real items and placeholders (empty grid slots).
 struct SpringboardReorderDelegate: DropDelegate {
     let item: FlekHomeItem
     let pageIndex: Int
@@ -501,15 +531,10 @@ struct SpringboardReorderDelegate: DropDelegate {
         guard let toIdx = pages[pageIndex].firstIndex(where: { $0.id == item.id }) else { return }
 
         withAnimation(.spring) {
-            if fromPage == pageIndex {
-                // Same page: reorder within
-                pages[pageIndex].move(fromOffsets: IndexSet(integer: fromIdx),
-                                      toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
-            } else {
-                // Cross-page: remove from source, insert at target position
-                let moved = pages[fromPage].remove(at: fromIdx)
-                pages[pageIndex].insert(moved, at: toIdx)
-            }
+            // Swap: each item takes the other's grid position
+            let temp = pages[pageIndex][toIdx]
+            pages[pageIndex][toIdx] = pages[fromPage][fromIdx]
+            pages[fromPage][fromIdx] = temp
         }
 
         generator.prepare()

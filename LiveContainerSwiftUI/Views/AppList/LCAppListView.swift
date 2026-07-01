@@ -596,9 +596,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         var result: [FlekHomeItem] = []
 
         if useStoredOrder {
-            // Respect the full user-defined order (default apps + installed apps)
+            // Respect the full user-defined order (default apps + installed apps).
+            // "__empty__" markers are restored as placeholder items to preserve
+            // the user's custom grid layout (free-placement of icons).
             for id in storedOrder {
-                if let item = available.removeValue(forKey: id) {
+                if id == "__empty__" {
+                    result.append(.placeholder(UUID().uuidString))
+                } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
                 }
             }
@@ -628,9 +632,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     /// Persists the current home screen order after a drag-and-drop reorder.
+    /// Placeholders are saved as `"__empty__"` markers to preserve grid positions.
     func persistHomeOrder() {
         let ids = orderedHomeItems.compactMap { item -> String? in
             if case .installing = item { return nil }
+            if item.isPlaceholder { return "__empty__" }
             return item.id
         }
         LCUtils.appGroupUserDefault.set(ids, forKey: FlekLauncherKeys.homeScreenOrder)
@@ -692,7 +698,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 let parallel = mode != nil ? (mode == .parallel) : app.shouldLaunchInMultitaskMode
                 Task { await launchHomeApp(app, parallel: parallel) }
             }
-        case .installing:
+        case .installing, .placeholder:
             break
         }
     }
@@ -780,7 +786,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installed(let app):
             installedContextMenu(app)
-        case .installing:
+        case .installing, .placeholder:
             EmptyView()
         }
     }
