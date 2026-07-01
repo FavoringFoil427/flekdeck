@@ -53,6 +53,10 @@ struct FlekSpringboardView<Menu: View>: View {
             let cardHeight = min(FlekTheme.cardHeight, (available - CGFloat(rows - 1) * spacing) / CGFloat(rows))
             let perPage = max(1, rows * FlekTheme.gridColumns)
 
+            // IDs of real (non-placeholder) items, used to detect confirmed
+            // deletions while in edit mode.
+            let realItemIds = items.filter { !$0.isPlaceholder }.map(\.id)
+
             // During edit mode, use the page-based model so items
             // can live on any page independently of flat-array chunking.
             let displayPages: [[FlekHomeItem]] = {
@@ -159,6 +163,52 @@ struct FlekSpringboardView<Menu: View>: View {
                     let newPages = paginatedItems(perPage: perPage)
                     if currentPage >= newPages.count {
                         currentPage = max(0, newPages.count - 1)
+                    }
+                }
+            }
+            .onChange(of: items.count) { _ in
+                // Preserve the current page when items change (e.g. after
+                // deletion). The paged TabView can reset to page 0 when its
+                // content is rebuilt; capture the page now (before UIKit
+                // processes layout) and restore it on the next run-loop.
+                let savedPage = currentPage
+                DispatchQueue.main.async {
+                    let newPages = paginatedItems(perPage: perPage)
+                    let pageCount = newPages.count
+
+                    if savedPage >= pageCount {
+                        // Page no longer exists – go to last valid page
+                        currentPage = max(0, pageCount - 1)
+                    } else if savedPage == pageCount - 1 && savedPage > 0 {
+                        // On the last page – if it's now all placeholders,
+                        // move to the previous page
+                        let pageItems = newPages[savedPage]
+                        if !pageItems.contains(where: { !$0.isPlaceholder }) {
+                            currentPage = savedPage - 1
+                        } else {
+                            currentPage = savedPage
+                        }
+                    } else {
+                        // Stay on same page
+                        currentPage = savedPage
+                    }
+                }
+            }
+            .onChange(of: realItemIds) { newIds in
+                // A real item was removed (confirmed deletion) while in
+                // edit mode – replace it with a placeholder in editPages
+                // so the icon disappears immediately.
+                guard isEditing, !editPages.isEmpty else { return }
+                let idSet = Set(newIds)
+                for pi in editPages.indices {
+                    for ii in editPages[pi].indices {
+                        let editItem = editPages[pi][ii]
+                        guard !editItem.isPlaceholder else { continue }
+                        if !idSet.contains(editItem.id) {
+                            withAnimation {
+                                editPages[pi][ii] = .placeholder(UUID().uuidString)
+                            }
+                        }
                     }
                 }
             }

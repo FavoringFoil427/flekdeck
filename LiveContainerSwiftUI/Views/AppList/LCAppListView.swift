@@ -604,6 +604,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         var result: [FlekHomeItem] = []
         var lastNewIdx: Int?
+        var didReplaceDeleted = false
 
         if useStoredOrder {
             // Respect the full user-defined order (default apps + installed apps).
@@ -614,6 +615,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     result.append(.placeholder(UUID().uuidString))
                 } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
+                } else {
+                    // Deleted app – keep its grid slot as a placeholder so
+                    // surrounding icons don't shift position.
+                    result.append(.placeholder(UUID().uuidString))
+                    didReplaceDeleted = true
                 }
             }
             // Place new items at the first available placeholder slot
@@ -655,9 +661,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         orderedHomeItems = result
 
-        // Persist immediately when new items were placed at placeholder slots
-        // so subsequent rebuilds don't re-shuffle them
-        if lastNewIdx != nil {
+        // Persist immediately when the grid changed (new items placed at
+        // placeholder slots, or deleted apps replaced with placeholders) so
+        // subsequent rebuilds produce a stable layout.
+        if lastNewIdx != nil || didReplaceDeleted {
             persistHomeOrder()
         }
 
