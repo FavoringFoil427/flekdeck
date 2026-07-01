@@ -21,6 +21,9 @@ struct FlekSpringboardView<Menu: View>: View {
     var onDropCompleted: () -> Void = {}
     var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
     var onCancelInstall: () -> Void = {}
+    /// Set by the parent to request scrolling to a specific page.
+    /// Resets to nil after the scroll is performed.
+    var scrollToPage: Binding<Int?> = .constant(nil)
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var currentPage = 0
@@ -87,28 +90,18 @@ struct FlekSpringboardView<Menu: View>: View {
                                         editCardWithDrag(for: item, cardHeight: cardHeight, pageIndex: index)
                                     }
                                 } else {
-                                    // App cards + invisible placeholder spacers
-                                    ForEach(pageItems.filter { item in
-                                        if case .installing = item { return false }
-                                        return true
-                                    }) { item in
+                                    // App cards, installing card, and invisible placeholder spacers
+                                    ForEach(pageItems) { item in
                                         if item.isPlaceholder {
                                             Color.clear.frame(height: cardHeight)
+                                        } else if case .installing = item {
+                                            FlekInstallingCard(state: installState, cardHeight: cardHeight)
+                                                .overlay {
+                                                    CancelInstallContextMenu { onCancelInstall() }
+                                                }
                                         } else {
                                             cardButton(for: item, cardHeight: cardHeight)
                                         }
-                                    }
-                                    // Installing card rendered outside ForEach so its
-                                    // context menu can never cross-contaminate with
-                                    // installed app context menus.
-                                    if pageItems.contains(where: { item in
-                                        if case .installing = item { return true }
-                                        return false
-                                    }) {
-                                        FlekInstallingCard(state: installState, cardHeight: cardHeight)
-                                            .overlay {
-                                                CancelInstallContextMenu { onCancelInstall() }
-                                            }
                                     }
                                 }
                             }
@@ -156,6 +149,8 @@ struct FlekSpringboardView<Menu: View>: View {
                     }
                     savePageSizes(from: pages)
                     items = pages.flatMap { $0 }
+                    // Persist order so placeholder positions survive rebuilds
+                    onDropCompleted()
                     editPages = []
                     edgeScrollTimer?.invalidate()
                     edgeScrollTimer = nil
@@ -166,6 +161,11 @@ struct FlekSpringboardView<Menu: View>: View {
                         currentPage = max(0, newPages.count - 1)
                     }
                 }
+            }
+            .onChange(of: scrollToPage.wrappedValue) { page in
+                guard let page else { return }
+                withAnimation { currentPage = page }
+                scrollToPage.wrappedValue = nil
             }
         }
     }
@@ -471,6 +471,12 @@ struct PageBackgroundDropDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let dragged = draggedItem else { return }
+
+        // Materialize trailing placeholder page if it only exists in displayPages
+        if pageIndex >= pages.count {
+            let perPage = pages.first?.count ?? 1
+            pages.append((0 ..< perPage).map { _ in .placeholder(UUID().uuidString) })
+        }
         guard pageIndex < pages.count else { return }
 
         // Find the dragged item across all pages
@@ -517,6 +523,13 @@ struct SpringboardReorderDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let dragged = draggedItem, dragged.id != item.id else { return }
+
+        // Materialize trailing placeholder page if it only exists in displayPages
+        if pageIndex >= pages.count {
+            let perPage = pages.first?.count ?? 1
+            pages.append((0 ..< perPage).map { _ in .placeholder(UUID().uuidString) })
+        }
+        guard pageIndex < pages.count else { return }
 
         // Find the dragged item across all pages
         var fromPage = -1, fromIdx = -1

@@ -55,6 +55,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     // ipa installing stuff
     @State var installprogressVisible = false
+    @State private var homeScrollToPage: Int?
     @State var installProgressPercentage : Float = 0.0
     @State var installObserver : NSKeyValueObservation?
     
@@ -158,40 +159,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         ZStack {
             FlekWallpaperView()
 
-            Group {
-                if homeLayout == FlekHomeLayout.list.rawValue {
-                    FlekHomeListView(
-                        items: $orderedHomeItems,
-                        darkModeIcon: darkModeIcon,
-                        isEditing: $isEditing,
-                        isNew: { FlekLaunchTracker.shared.isNew($0) },
-                        onTap: { handleHomeTap($0) },
-                        onDelete: { item in
-                            if case .installed(let app) = item { Task { await requestUninstall(app) } }
-                        },
-                        onDropCompleted: { persistHomeOrder() },
-                        installState: homeInstallState,
-                        onCancelInstall: { cancelHomeInstall() },
-                        contextMenu: { item in homeContextMenu(for: item) }
-                    )
-                } else {
-                    FlekSpringboardView(
-                        items: $orderedHomeItems,
-                        darkModeIcon: darkModeIcon,
-                        isEditing: $isEditing,
-                        isNew: { FlekLaunchTracker.shared.isNew($0) },
-                        isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
-                        onTap: { handleHomeTap($0) },
-                        onDelete: { item in
-                            if case .installed(let app) = item { Task { await requestUninstall(app) } }
-                        },
-                        onDropCompleted: { persistHomeOrder() },
-                        installState: homeInstallState,
-                        onCancelInstall: { cancelHomeInstall() },
-                        contextMenu: { item in homeContextMenu(for: item) }
-                    )
-                }
-            }
+            homeContentView
             .padding(.top, 8)
             .padding(.bottom, 84)
             .id(homeRefreshToggle)
@@ -574,6 +542,47 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     // MARK: - FlekLauncher springboard
 
+    /// Extracted to a separate computed property to help the Swift type-checker
+    /// with the complex view body expression.
+    @ViewBuilder
+    private var homeContentView: some View {
+        Group {
+            if homeLayout == FlekHomeLayout.list.rawValue {
+                FlekHomeListView(
+                    items: $orderedHomeItems,
+                    darkModeIcon: darkModeIcon,
+                    isEditing: $isEditing,
+                    isNew: { FlekLaunchTracker.shared.isNew($0) },
+                    onTap: { handleHomeTap($0) },
+                    onDelete: { item in
+                        if case .installed(let app) = item { Task { await requestUninstall(app) } }
+                    },
+                    onDropCompleted: { persistHomeOrder() },
+                    installState: homeInstallState,
+                    onCancelInstall: { cancelHomeInstall() },
+                    contextMenu: { item in homeContextMenu(for: item) }
+                )
+            } else {
+                FlekSpringboardView(
+                    items: $orderedHomeItems,
+                    darkModeIcon: darkModeIcon,
+                    isEditing: $isEditing,
+                    isNew: { FlekLaunchTracker.shared.isNew($0) },
+                    isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
+                    onTap: { handleHomeTap($0) },
+                    onDelete: { item in
+                        if case .installed(let app) = item { Task { await requestUninstall(app) } }
+                    },
+                    onDropCompleted: { persistHomeOrder() },
+                    installState: homeInstallState,
+                    onCancelInstall: { cancelHomeInstall() },
+                    scrollToPage: $homeScrollToPage,
+                    contextMenu: { item in homeContextMenu(for: item) }
+                )
+            }
+        }
+    }
+
     /// Rebuilds `orderedHomeItems` from persisted order + current app list.
     /// Uses the stored home screen order only when the sort type is `.custom`
     /// (i.e. the user has manually dragged cards). For other sort types, the
@@ -594,6 +603,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
 
         var result: [FlekHomeItem] = []
+        var lastNewIdx: Int?
 
         if useStoredOrder {
             // Respect the full user-defined order (default apps + installed apps).
@@ -606,7 +616,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     result.append(item)
                 }
             }
-            // Append any new items not yet in the stored order
+            // Place new items at the first available placeholder slot
+            // instead of appending at the end
             let remainingDefaults = available.values.compactMap { item -> FlekHomeItem? in
                 if case .defaultApp = item { return item }
                 return nil
@@ -615,27 +626,54 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if case .installed = item { return item }
                 return nil
             }
-            result.append(contentsOf: remainingDefaults)
-            result.append(contentsOf: remainingInstalled)
+            for newItem in remainingDefaults + remainingInstalled {
+                if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
+                    result[placeholderIdx] = newItem
+                    lastNewIdx = placeholderIdx
+                } else {
+                    lastNewIdx = result.count
+                    result.append(newItem)
+                }
+            }
         } else {
             // Default layout: settings + installer at the front, then sorted apps
             result = [.defaultApp(.settings), .defaultApp(.installer)]
             result.append(contentsOf: sortedApps.map { .installed($0) })
         }
 
-        // Append the installing indicator at the end if active
+        // Place the installing indicator at the first placeholder slot
+        var scrollIdx: Int?
         if installprogressVisible {
-            result.append(.installing)
+            if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
+                result[placeholderIdx] = .installing
+                scrollIdx = placeholderIdx
+            } else {
+                scrollIdx = result.count
+                result.append(.installing)
+            }
         }
 
         orderedHomeItems = result
+
+        // Persist immediately when new items were placed at placeholder slots
+        // so subsequent rebuilds don't re-shuffle them
+        if lastNewIdx != nil {
+            persistHomeOrder()
+        }
+
+        // Auto-scroll to the page containing the installing/new app
+        if let idx = scrollIdx ?? lastNewIdx {
+            homeScrollToPage = pageForIndex(idx)
+        }
     }
 
     /// Persists the current home screen order after a drag-and-drop reorder.
     /// Placeholders are saved as `"__empty__"` markers to preserve grid positions.
     func persistHomeOrder() {
         let ids = orderedHomeItems.compactMap { item -> String? in
-            if case .installing = item { return nil }
+            // Save the installing card's slot as __empty__ so the new app
+            // takes the exact same position once install finishes
+            if case .installing = item { return "__empty__" }
             if item.isPlaceholder { return "__empty__" }
             return item.id
         }
@@ -649,6 +687,29 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             sharedAppSortManager.appSortType = .custom
         }
         sharedAppSortManager.customSortOrder = appIds
+    }
+
+    /// Returns the page index for a given flat-array position using
+    /// the persisted page sizes (or uniform chunking as fallback).
+    private func pageForIndex(_ index: Int) -> Int {
+        let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
+        if !sizes.isEmpty {
+            var offset = 0
+            for (page, size) in sizes.enumerated() {
+                offset += size
+                if index < offset { return page }
+            }
+            return sizes.count
+        }
+        // Fallback: no custom sizes, can't compute page
+        return 0
+    }
+
+    /// Scrolls the springboard to the page containing the given item.
+    private func scrollToItem(_ item: FlekHomeItem) {
+        guard let idx = orderedHomeItems.firstIndex(where: { $0.id == item.id }) else { return }
+        let page = pageForIndex(idx)
+        homeScrollToPage = page
     }
 
     var homeInstallState: FlekInstallState {
