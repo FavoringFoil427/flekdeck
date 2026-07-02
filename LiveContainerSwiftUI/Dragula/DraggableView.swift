@@ -14,17 +14,24 @@ struct DraggableView<Preview: View, DropView: View>: UIViewRepresentable {
     let itemProvider: () -> NSItemProvider
     let onDragWillBegin: (() -> Void)?
     let onDragWillEnd: (() -> Void)?
+    /// When true, the view shows the drop placeholder instead of the full
+    /// preview. This is needed for cross-page drags: SwiftUI destroys and
+    /// recreates the DraggableView when the item moves to a different page's
+    /// ForEach, so the UIKit visibility state from willAnimateLiftWith is lost.
+    let isBeingDragged: Bool
 
     init(
         @ViewBuilder preview: @escaping () -> Preview,
         @ViewBuilder dropView: @escaping () -> DropView,
         itemProvider: @escaping () -> NSItemProvider,
+        isBeingDragged: Bool = false,
         onDragWillBegin: (() -> Void)? = nil,
         onDragWillEnd: (() -> Void)? = nil
     ) {
         self.preview = preview
         self.dropView = dropView
         self.itemProvider = itemProvider
+        self.isBeingDragged = isBeingDragged
         self.onDragWillBegin = onDragWillBegin
         self.onDragWillEnd = onDragWillEnd
     }
@@ -42,6 +49,7 @@ struct DraggableView<Preview: View, DropView: View>: UIViewRepresentable {
 
     func updateUIView(_ uiView: DraggableUIView<Preview, DropView>, context: Context) {
         uiView.cornerRadius = context.environment.dragPreviewCornerRadius
+        uiView.setDraggedAppearance(isBeingDragged)
     }
 }
 
@@ -56,6 +64,11 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
 
     private var previewHostingController: UIHostingController<Preview>?
     private var dropViewHostingController: UIHostingController<DropView>?
+
+    /// Whether this view instance has an active local drag (i.e. it was the
+    /// view that initiated the UIDragInteraction). Prevents updateUIView from
+    /// interfering with the normal drag lifecycle on the original view.
+    private var hasLocalDrag = false
 
     init(
         preview: @escaping () -> Preview,
@@ -101,6 +114,16 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
 
         let dragInteraction = UIDragInteraction(delegate: self)
         addInteraction(dragInteraction)
+    }
+
+    /// Called from updateUIView to show the drop placeholder for items that
+    /// are currently being dragged but were recreated on a different page.
+    func setDraggedAppearance(_ dragged: Bool) {
+        // Don't override if this view instance owns the active drag session –
+        // the normal willAnimateLiftWith / willEndWith callbacks handle it.
+        guard !hasLocalDrag else { return }
+        previewHostingController?.view.isHidden = dragged
+        dropViewHostingController?.view.isHidden = !dragged
     }
 
     required init?(coder: NSCoder) {
@@ -153,6 +176,7 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
     }
 
     func dragInteraction(_ interaction: UIDragInteraction, willAnimateLiftWith animator: UIDragAnimating, session: UIDragSession) {
+        hasLocalDrag = true
         onDragWillBegin?()
         animator.addCompletion { position in
             if position == .end {
@@ -178,12 +202,14 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
 
     func dragInteraction(_ interaction: UIDragInteraction, willAnimateCancelWith animator: UIDragAnimating) {
         animator.addCompletion { _ in
+            self.hasLocalDrag = false
             self.previewHostingController?.view.isHidden = false
             self.dropViewHostingController?.view.isHidden = true
         }
     }
 
     func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession, willEndWith operation: UIDropOperation) {
+        hasLocalDrag = false
         previewHostingController?.view.isHidden = false
         dropViewHostingController?.view.isHidden = true
         onDragWillEnd?()

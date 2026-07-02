@@ -326,6 +326,7 @@ struct FlekSpringboardView<Menu: View>: View {
                         },
                         dropView: { cardDropPlaceholder(cardHeight: cardHeight) },
                         itemProvider: { item.getItemProvider() },
+                        isBeingDragged: draggedItem?.id == item.id,
                         onDragWillBegin: { draggedItem = item },
                         onDragWillEnd: {
                             draggedItem = nil
