@@ -116,8 +116,10 @@ struct FlekSpringboardView<Menu: View>: View {
                             .padding(.horizontal, FlekTheme.screenHPadding)
                             .frame(maxHeight: .infinity, alignment: .top)
 
-                            // Edge drop zones for cross-page auto-scroll
-                            if isEditing {
+                            // Edge drop zones for cross-page auto-scroll.
+                            // Only shown while a drag is active so they don't
+                            // block taps on delete buttons along the edges.
+                            if isEditing && draggedItem != nil {
                                 edgeZones(pageIndex: index, pageCount: displayPages.count)
                             }
                         }

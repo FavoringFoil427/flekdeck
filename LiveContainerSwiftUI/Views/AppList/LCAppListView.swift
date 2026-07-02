@@ -319,12 +319,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         .onChange(of: installprogressVisible) { _ in
             rebuildOrderedHomeItems()
         }
-        .onReceive(sharedAppSortManager.$sortedApps) { _ in
-            // Skip rebuilds while an install is in progress so the
-            // installing card's context menu isn't disrupted.
-            guard !installprogressVisible else { return }
-            rebuildOrderedHomeItems()
-        }
         .onReceive({
             if #available(iOS 16.0, *) {
                 return MultitaskDockManager.shared.$isHomeState.eraseToAnyPublisher()
@@ -611,15 +605,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // Respect the full user-defined order (default apps + installed apps).
             // "__empty__" markers are restored as placeholder items to preserve
             // the user's custom grid layout (free-placement of icons).
-            for id in storedOrder {
+            for (slotIndex, id) in storedOrder.enumerated() {
                 if id == "__empty__" {
-                    result.append(.placeholder(UUID().uuidString))
+                    result.append(.placeholder("slot.\(slotIndex)"))
                 } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
                 } else {
                     // Deleted app – keep its grid slot as a placeholder so
                     // surrounding icons don't shift position.
-                    result.append(.placeholder(UUID().uuidString))
+                    result.append(.placeholder("slot.\(slotIndex)"))
                     didReplaceDeleted = true
                 }
             }

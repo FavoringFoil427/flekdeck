@@ -63,7 +63,7 @@ enum FlekHomeItem: Identifiable, DragulaItem {
     var id: String {
         switch self {
         case .defaultApp(let kind): return "default.\(kind.rawValue)"
-        case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? UUID().uuidString)"
+        case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? "unknown")"
         case .installing: return "installing"
         case .placeholder(let uid): return "placeholder.\(uid)"
         }
