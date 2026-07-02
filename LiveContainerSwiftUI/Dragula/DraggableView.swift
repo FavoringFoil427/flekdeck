@@ -70,6 +70,11 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
     /// interfering with the normal drag lifecycle on the original view.
     private var hasLocalDrag = false
 
+    /// True while the drop-end animation is in flight. Prevents
+    /// `setDraggedAppearance` (called from updateUIView) from stomping
+    /// on the smooth crossfade.
+    private var isAnimatingDrop = false
+
     init(
         preview: @escaping () -> Preview,
         dropView: @escaping () -> DropView,
@@ -119,9 +124,9 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
     /// Called from updateUIView to show the drop placeholder for items that
     /// are currently being dragged but were recreated on a different page.
     func setDraggedAppearance(_ dragged: Bool) {
-        // Don't override if this view instance owns the active drag session –
-        // the normal willAnimateLiftWith / willEndWith callbacks handle it.
-        guard !hasLocalDrag else { return }
+        // Don't override if this view instance owns the active drag session
+        // or if a drop animation is in progress.
+        guard !hasLocalDrag, !isAnimatingDrop else { return }
         previewHostingController?.view.isHidden = dragged
         dropViewHostingController?.view.isHidden = !dragged
     }
@@ -210,8 +215,33 @@ class DraggableUIView<Preview: View, DropView: View>: UIView, UIDragInteractionD
 
     func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession, willEndWith operation: UIDropOperation) {
         hasLocalDrag = false
-        previewHostingController?.view.isHidden = false
-        dropViewHostingController?.view.isHidden = true
+        isAnimatingDrop = true
+
+        let previewView = previewHostingController?.view
+        let dropView = dropViewHostingController?.view
+
+        // Start the real icon scaled down and invisible, then spring it in
+        // while crossfading out the ghost placeholder.
+        previewView?.alpha = 0
+        previewView?.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        previewView?.isHidden = false
+
+        UIView.animate(
+            withDuration: 0.35,
+            delay: 0.04,
+            usingSpringWithDamping: 0.78,
+            initialSpringVelocity: 0.4,
+            options: [.allowUserInteraction]
+        ) {
+            previewView?.alpha = 1
+            previewView?.transform = .identity
+            dropView?.alpha = 0
+        } completion: { _ in
+            dropView?.isHidden = true
+            dropView?.alpha = 1 // reset for future drags
+            self.isAnimatingDrop = false
+        }
+
         onDragWillEnd?()
     }
 
