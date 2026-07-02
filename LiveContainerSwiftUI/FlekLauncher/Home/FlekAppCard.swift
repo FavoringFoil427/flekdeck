@@ -105,6 +105,14 @@ struct FlekAppCard<Icon: View>: View {
         .onChange(of: isEditing) { editing in
             wigglePhase = editing
         }
+        .onChange(of: isGlassMode) { _ in
+            // Restart the wobble so the newly-active rotation effect
+            // picks up the repeating animation.
+            if isEditing {
+                wigglePhase = false
+                DispatchQueue.main.async { wigglePhase = true }
+            }
+        }
         .onAppear {
             wiggleDelay = Double.random(in: 0...0.24)
             if isEditing { wigglePhase = true }

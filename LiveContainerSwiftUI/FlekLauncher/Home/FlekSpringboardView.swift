@@ -223,6 +223,8 @@ struct FlekSpringboardView<Menu: View>: View {
                 guard let page else { return }
                 // Clear the request immediately so it doesn't re-trigger.
                 scrollToPage.wrappedValue = nil
+                // Already on the target page – nothing to animate.
+                guard page != currentPage else { return }
                 // Dispatch the animated page change to a later run loop
                 // iteration so it doesn't compete with the layout
                 // transaction that rebuilt the grid content.
