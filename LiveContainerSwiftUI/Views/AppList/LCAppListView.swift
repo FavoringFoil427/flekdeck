@@ -874,7 +874,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // Built-in apps: only the "arrange" action is offered (they can be
             // moved but not removed, have no launch mode / settings / uninstall).
             Button {
-                isEditing = true
+                // Delay so the context menu dismissal animation finishes
+                // before the view switches to edit mode.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    isEditing = true
+                }
             } label: {
                 Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
             }
@@ -940,7 +944,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
 
         Button {
-            isEditing = true
+            // Delay so the context menu dismissal animation finishes
+            // before the view switches to edit mode.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                isEditing = true
+            }
         } label: {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }

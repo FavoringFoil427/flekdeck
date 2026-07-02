@@ -254,7 +254,7 @@ private extension UIView {
     func snapshot() -> UIImage? {
         let renderer = UIGraphicsImageRenderer(size: bounds.size)
         return renderer.image { _ in
-            layer.render(in: UIGraphicsGetCurrentContext()!)
+            drawHierarchy(in: bounds, afterScreenUpdates: false)
         }
     }
 }
