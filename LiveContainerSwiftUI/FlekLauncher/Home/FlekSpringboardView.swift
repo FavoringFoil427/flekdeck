@@ -413,6 +413,11 @@ struct FlekSpringboardView<Menu: View>: View {
 
     // MARK: - Normal Mode Card
 
+    /// Whether an app is currently being installed.
+    private var isInstalling: Bool {
+        items.contains { if case .installing = $0 { return true }; return false }
+    }
+
     @ViewBuilder
     private func cardButton(for item: FlekHomeItem, cardHeight: CGFloat) -> some View {
         Button {
@@ -430,7 +435,11 @@ struct FlekSpringboardView<Menu: View>: View {
             )
         }
         .buttonStyle(.plain)
-        .contextMenu { contextMenu(item) }
+        .contextMenu {
+            if !isInstalling {
+                contextMenu(item)
+            }
+        }
     }
 
     // MARK: - Helpers
