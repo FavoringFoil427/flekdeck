@@ -221,8 +221,16 @@ struct FlekSpringboardView<Menu: View>: View {
             }
             .onChange(of: scrollToPage.wrappedValue) { page in
                 guard let page else { return }
-                withAnimation { currentPage = page }
+                // Clear the request immediately so it doesn't re-trigger.
                 scrollToPage.wrappedValue = nil
+                // Dispatch the animated page change to a later run loop
+                // iteration so it doesn't compete with the layout
+                // transaction that rebuilt the grid content.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation(.smooth(duration: 0.45)) {
+                        currentPage = page
+                    }
+                }
             }
         }
     }
@@ -694,7 +702,7 @@ struct FlekPageIndicator: View {
                     .frame(width: 7, height: 7)
                     .contentShape(Circle().scale(3))
                     .onTapGesture {
-                        withAnimation {
+                        withAnimation(.smooth(duration: 0.45)) {
                             current = i
                         }
                     }
