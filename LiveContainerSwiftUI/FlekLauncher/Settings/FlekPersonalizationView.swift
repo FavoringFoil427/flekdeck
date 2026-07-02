@@ -24,6 +24,7 @@ struct FlekPersonalizationView: View {
     @AppStorage("dynamicColors", store: LCUtils.appGroupUserDefault) private var dynamicColors = true
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
     @AppStorage("LCFrameShortcutIcons", store: LCUtils.appGroupUserDefault) private var frameShortIcon = false
+    @AppStorage(FlekLauncherKeys.cardStyleGlass, store: LCUtils.appGroupUserDefault) private var cardStyleGlass = true
 
     @State private var showCollection = false
     @State private var showPhotoPicker = false
@@ -67,6 +68,11 @@ struct FlekPersonalizationView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader("lc.flek.appIcons".loc)
                     VStack(spacing: 0) {
+                        if #available(iOS 26.0, *) {
+                            Toggle("Liquid Glass", isOn: $cardStyleGlass)
+                                .padding(.horizontal, 16).padding(.vertical, 12)
+                            Divider().padding(.leading, 16)
+                        }
                         Toggle("lc.settings.dynamicColors".loc, isOn: $dynamicColors)
                             .padding(.horizontal, 16).padding(.vertical, 12)
                         if #available(iOS 18.0, *) {

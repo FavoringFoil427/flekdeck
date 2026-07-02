@@ -26,8 +26,20 @@ struct FlekAppCard<Icon: View>: View {
     @State private var wigglePhase = false
     /// Random delay so each card wiggles at a different phase, like real iOS.
     @State private var wiggleDelay: Double = 0
+    @AppStorage(FlekLauncherKeys.cardStyleGlass, store: LCUtils.appGroupUserDefault) private var cardStyleGlass: Bool = true
 
     private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }
+
+    /// Whether the glass background should stay still (content-only wobble).
+    private var isGlassMode: Bool {
+        if #available(iOS 26, *) { return cardStyleGlass }
+        return false
+    }
+
+    /// Current wobble rotation angle.
+    private var wiggleAngle: Double {
+        isEditing ? (wigglePhase ? 0.75 : -0.75) : 0
+    }
 
     var body: some View {
         VStack(spacing: FlekTheme.cardInnerSpacing * scale) {
@@ -64,6 +76,8 @@ struct FlekAppCard<Icon: View>: View {
         .padding(.horizontal, FlekTheme.cardHPadding)
         .frame(maxWidth: .infinity)
         .frame(height: cardHeight)
+        // Glass mode: wobble content before applying the glass background
+        .rotationEffect(.degrees(isGlassMode ? wiggleAngle : 0))
         .flekGlassCard(cornerRadius: FlekTheme.cardCorner * min(1, scale))
         .overlay(alignment: .topLeading) {
             if isEditing && canDelete {
@@ -82,10 +96,10 @@ struct FlekAppCard<Icon: View>: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
-        // Gentle jiggle: small rotation, no position offset to avoid cards touching.
-        .rotationEffect(.degrees(isEditing ? (wigglePhase ? 0.5 : -0.5) : 0))
+        // Thin material mode: wobble the whole card including background
+        .rotationEffect(.degrees(!isGlassMode ? wiggleAngle : 0))
         .animation(isEditing
-                   ? .easeInOut(duration: 0.2).repeatForever(autoreverses: true).delay(wiggleDelay)
+                   ? .easeInOut(duration: 0.1).repeatForever(autoreverses: true).delay(wiggleDelay)
                    : .default,
                    value: wigglePhase)
         .onChange(of: isEditing) { editing in

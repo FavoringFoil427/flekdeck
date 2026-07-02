@@ -58,9 +58,12 @@ struct FlekGlassBackground: View {
 
 extension View {
     /// Applies the standard frosted card surface.
+    /// Uses Liquid Glass on iOS 26+ when the user preference is enabled,
+    /// otherwise falls back to the thin-material style.
     @ViewBuilder
     func flekGlassCard(cornerRadius: CGFloat = FlekTheme.cardCorner, tint: Double = 0.22) -> some View {
-        if #available(iOS 26, *) {
+        let useGlass = LCUtils.appGroupUserDefault.object(forKey: FlekLauncherKeys.cardStyleGlass) as? Bool ?? true
+        if #available(iOS 26, *), useGlass {
             self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
             self.background(FlekGlassBackground(cornerRadius: cornerRadius, tint: tint))

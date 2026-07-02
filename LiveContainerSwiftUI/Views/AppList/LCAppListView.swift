@@ -95,6 +95,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
     @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
 
+
     @State private var homeSaveIconExporterShow = false
     @State private var homeSaveIconFile : ImageDocument?
     @StateObject private var homeUninstallAlert = YesNoHelper()
