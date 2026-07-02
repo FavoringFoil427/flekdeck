@@ -125,7 +125,7 @@ struct FlekSpringboardView<Menu: View>: View {
 
                 Group {
                     if displayPages.count > 1 || isEditing {
-                        FlekPageIndicator(count: displayPages.count, current: currentPage)
+                        FlekPageIndicator(count: displayPages.count, current: $currentPage, isEditing: isEditing)
                             .padding(.bottom, 4)
                             .transition(.opacity)
                     }
@@ -679,7 +679,8 @@ struct EdgeScrollDelegate: DropDelegate {
 /// Simple iOS-style page dots.
 struct FlekPageIndicator: View {
     let count: Int
-    let current: Int
+    @Binding var current: Int
+    var isEditing: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -687,10 +688,38 @@ struct FlekPageIndicator: View {
                 Circle()
                     .fill(Color.white.opacity(i == current ? 0.95 : 0.4))
                     .frame(width: 7, height: 7)
+                    .contentShape(Circle().scale(3))
+                    .onTapGesture {
+                        withAnimation {
+                            current = i
+                        }
+                    }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .modifier(GlassBackgroundModifier(isActive: isEditing))
+    }
+}
+
+/// Conditionally applies a Liquid Glass capsule background in edit mode.
+private struct GlassBackgroundModifier: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        if isActive {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular.interactive(false))
+            } else {
+                content
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                    )
+            }
+        } else {
+            content
+        }
     }
 }
 
