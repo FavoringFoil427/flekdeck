@@ -100,8 +100,12 @@ struct FlekSpringboardView<Menu: View>: View {
                                             Color.clear.frame(height: cardHeight)
                                         } else if case .installing = item {
                                             FlekInstallingCard(state: installState, cardHeight: cardHeight)
-                                                .overlay {
-                                                    CancelInstallContextMenu { onCancelInstall() }
+                                                .contextMenu {
+                                                    Button(role: .destructive) {
+                                                        onCancelInstall()
+                                                    } label: {
+                                                        Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
+                                                    }
                                                 }
                                         } else {
                                             cardButton(for: item, cardHeight: cardHeight)
@@ -720,52 +724,6 @@ private struct GlassBackgroundModifier: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-/// UIKit-based context menu for the installing card. Uses
-/// `UIContextMenuInteraction` directly instead of SwiftUI's `.contextMenu`
-/// to avoid cross-contamination with installed app context menus.
-private struct CancelInstallContextMenu: UIViewRepresentable {
-    var onCancel: () -> Void
-
-    class Coordinator: NSObject, UIContextMenuInteractionDelegate {
-        var onCancel: () -> Void
-
-        init(onCancel: @escaping () -> Void) {
-            self.onCancel = onCancel
-        }
-
-        func contextMenuInteraction(
-            _ interaction: UIContextMenuInteraction,
-            configurationForMenuAtLocation location: CGPoint
-        ) -> UIContextMenuConfiguration? {
-            let cancel = self.onCancel
-            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
-                UIMenu(title: "", children: [
-                    UIAction(
-                        title: "lc.flek.cancelInstall".loc,
-                        image: UIImage(systemName: "xmark.circle"),
-                        attributes: .destructive
-                    ) { _ in cancel() }
-                ])
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onCancel: onCancel)
-    }
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .clear
-        view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.onCancel = onCancel
     }
 }
 
