@@ -269,7 +269,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         if visible {
             deleteButton.isHidden = false
             if animated {
-                UIView.animate(withDuration: 0.2) {
+                UIView.animate(withDuration: 0.25) {
                     self.deleteButton.alpha = 1
                 }
             } else {
@@ -277,7 +277,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             }
         } else {
             if animated {
-                UIView.animate(withDuration: 0.2, animations: {
+                UIView.animate(withDuration: 0.25, animations: {
                     self.deleteButton.alpha = 0
                 }, completion: { _ in
                     self.deleteButton.isHidden = true
@@ -329,6 +329,51 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         contentView.transform = .identity
     }
 
+    // MARK: - Custom snapshot (mirrors jSpringBoard's HomeItemCell.snapshotView())
+
+    /// Creates a snapshot by individually snapshotting each subview and
+    /// reconstructing them in a custom container. This avoids the dark/black
+    /// artefact that `UIView.snapshotView(afterScreenUpdates:)` produces
+    /// when capturing `UIVisualEffectView` blur/glass backgrounds.
+    func dragSnapshotView() -> LCIconCellSnapshotView {
+        let container = LCIconCellSnapshotView(frame: bounds)
+        container.clipsToBounds = false
+
+        // 1. Card background
+        if let glass = glassBackgroundView,
+           let snap = glass.snapshotView(afterScreenUpdates: true) {
+            snap.frame = glass.frame
+            container.addSubview(snap)
+        }
+
+        // 2. Icon
+        if let snap = iconImageView.snapshotView(afterScreenUpdates: true) {
+            snap.frame = iconImageView.frame
+            container.addSubview(snap)
+        }
+
+        // 3. Name label
+        if let snap = nameLabel.snapshotView(afterScreenUpdates: true) {
+            snap.frame = nameLabel.frame
+            container.addSubview(snap)
+        }
+
+        // 4. Delete button — capture with identity transform, then restore
+        let originalTransform = deleteButton.transform
+        deleteButton.transform = .identity
+        if let snap = deleteButton.snapshotView(afterScreenUpdates: true) {
+            snap.frame = deleteButton.frame
+            snap.transform = originalTransform
+            snap.alpha = deleteButton.alpha
+            snap.isHidden = deleteButton.isHidden
+            container.addSubview(snap)
+            container.deleteButtonSnapshot = snap
+        }
+        deleteButton.transform = originalTransform
+
+        return container
+    }
+
     // MARK: - Actions
 
     @objc private func deleteTapped() {
@@ -338,4 +383,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     @objc private func cellTapped() {
         onTap?()
     }
+}
+
+// MARK: - Snapshot container (mirrors jSpringBoard's HomeItemCellSnapshotView)
+
+final class LCIconCellSnapshotView: UIView {
+    /// Reference to the delete button snapshot for animate-in during drag.
+    var deleteButtonSnapshot: UIView?
 }

@@ -152,11 +152,11 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
             cell.setDeleteButtonVisible(false, animated: false)
         }
 
-        // Hide cell entirely if it's being dragged
+        // Hide cell's contentView if it's being dragged (jSpringBoard pattern)
         if let dragId = draggedItemId, item.id == dragId {
-            cell.isHidden = true
+            cell.contentView.isHidden = true
         } else if !cell.isPlaceholderCell {
-            cell.isHidden = false
+            cell.contentView.isHidden = false
         }
 
         // Callbacks

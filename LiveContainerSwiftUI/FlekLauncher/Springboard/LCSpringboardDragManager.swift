@@ -93,24 +93,30 @@ final class LCSpringboardDragManager {
             height: iconCell.center.y - touchInPage.y
         )
 
-        let snapshot = iconCell.snapshotView(afterScreenUpdates: true) ?? UIView(frame: iconCell.bounds)
+        // Custom per-subview snapshot (avoids dark blur artefact from whole-cell snapshot)
+        let snapshot = iconCell.dragSnapshotView()
         var snapshotCenter = touchInView
         snapshotCenter.x += dragOffset.width
         snapshotCenter.y += dragOffset.height
         snapshot.center = snapshotCenter
         vc.view.addSubview(snapshot)
 
-        iconCell.isHidden = true
+        // jSpringBoard hides contentView only (not the whole cell)
+        iconCell.contentView.isHidden = true
 
+        // jSpringBoard: haptic fires inside enterEditingMode(), not on every drag
         if !vc.isInEditMode {
+            feedbackGenerator.impactOccurred()
             vc.setEditing(true, fromDrag: true)
         }
 
-        feedbackGenerator.impactOccurred()
-
         UIView.animate(withDuration: 0.25) {
-            snapshot.transform = CGAffineTransform(scaleX: 1.3, y: 1.3)
+            snapshot.transform = CGAffineTransform.identity.scaledBy(x: 1.3, y: 1.3)
             snapshot.alpha = 0.8
+            // Animate delete button visible on the snapshot (jSpringBoard pattern)
+            snapshot.deleteButtonSnapshot?.transform = .identity
+            snapshot.deleteButtonSnapshot?.alpha = 1
+            snapshot.deleteButtonSnapshot?.isHidden = false
         }
 
         currentOperation = LCDragOperation(
@@ -125,6 +131,8 @@ final class LCSpringboardDragManager {
     }
 
     // MARK: - Update (within-page: moveItem only, no data model changes)
+    // Faithfully follows jSpringBoard's updateDragOperation including
+    // left/right half detection, same-line adjustment, and edge cell logic.
 
     private func updateDrag(_ gesture: UILongPressGestureRecognizer) {
         guard let vc = viewController, let op = currentOperation else { return }
@@ -142,53 +150,95 @@ final class LCSpringboardDragManager {
             return
         }
 
-        // Check edge zones for page scrolling
-        let outerCV = vc.outerCollectionView!
-        let touchInOuter = gesture.location(in: outerCV)
-        let pageWidth = outerCV.bounds.width
+        // Find current page cell
+        guard let pageCell = vc.visiblePageCell(forPage: op.currentPage) else { return }
+        let touchInPage = gesture.location(in: pageCell.collectionView)
+        guard let layout = pageCell.collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return }
 
-        let leftEdge = outerCV.contentOffset.x + edgeMargin
-        let rightEdge = outerCV.contentOffset.x + pageWidth - edgeMargin
+        let appsPerRow = LCSpringboardPageCell.columns
 
-        if touchInOuter.x < leftEdge && op.currentPage > 0 {
-            if pageScrollTimer == nil {
+        var destinationIndex: Int
+        var isEdgeCell = false
+
+        if let indexPath = pageCell.collectionView.indexPathForItem(at: touchInPage) {
+            // jSpringBoard: use cardFrame.midX to determine left/right half
+            guard let itemCell = pageCell.collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell else { return }
+
+            let convertedPoint = itemCell.convert(touchInPage, from: pageCell.collectionView)
+            let midX = itemCell.bounds.midX
+
+            if convertedPoint.x < midX {
+                destinationIndex = indexPath.item
+            } else {
+                // Right half: if at row edge (last column), stay on same index
+                if (indexPath.item + 1) % appsPerRow == 0 {
+                    destinationIndex = indexPath.item
+                    isEdgeCell = true
+                } else {
+                    destinationIndex = indexPath.item + 1
+                }
+            }
+        } else if touchInPage.x <= layout.sectionInset.left {
+            // Left edge — trigger page scroll
+            if !(pageScrollTimer?.isValid ?? false) {
                 startPageScrollTimer(direction: -1)
             }
             return
-        } else if touchInOuter.x > rightEdge && op.currentPage < vc.pages.count - 1 {
-            if pageScrollTimer == nil {
+        } else if touchInPage.x > pageCell.collectionView.frame.size.width - layout.sectionInset.right {
+            // Right edge — trigger page scroll
+            if !(pageScrollTimer?.isValid ?? false) {
                 startPageScrollTimer(direction: 1)
             }
             return
         } else {
-            cancelPageScrollTimer()
+            // Gap between cells — try with +15px offset (jSpringBoard pattern)
+            var adjustedPoint = touchInPage
+            adjustedPoint.x += 15
+            if let indexPath = pageCell.collectionView.indexPathForItem(at: adjustedPoint) {
+                destinationIndex = indexPath.item
+            } else {
+                cancelPageScrollTimer()
+                return
+            }
         }
 
-        // Find current page cell
-        guard let pageCell = vc.visiblePageCell(forPage: op.currentPage) else { return }
-        let touchInPage = gesture.location(in: pageCell.collectionView)
+        cancelPageScrollTimer()
 
-        // Hit-test destination
-        guard let destIndexPath = pageCell.collectionView.indexPathForItem(at: touchInPage) else { return }
+        // jSpringBoard: first/last item in row is an edge cell
+        if destinationIndex % appsPerRow == 0 {
+            isEdgeCell = true
+        }
 
-        let destIndex = destIndexPath.item
-        if destIndex == op.currentIndex { return }
+        // jSpringBoard "same line" adjustment:
+        // On the same line, the dragged app takes the place of the app on its left.
+        // On other lines it takes the place of the app on its right.
+        let destinationLine = destinationIndex / appsPerRow
+        let originalLine = op.originalIndex / appsPerRow
+        if destinationLine == originalLine && op.currentPage == op.originalPage && !isEdgeCell {
+            destinationIndex -= 1
+        }
+
+        // Boundary clamping (jSpringBoard pattern — clamp instead of returning)
+        let numberOfItems = pageCell.collectionView.numberOfItems(inSection: 0)
+        if destinationIndex >= numberOfItems && destinationIndex > 0 {
+            destinationIndex = numberOfItems - 1
+        } else if destinationIndex < 0 {
+            destinationIndex = 0
+        }
+
+        if destinationIndex == op.currentIndex { return }
 
         // Don't move onto a placeholder
-        if destIndex < pageCell.items.count && pageCell.items[destIndex].isPlaceholder { return }
+        if destinationIndex < pageCell.items.count && pageCell.items[destinationIndex].isPlaceholder { return }
 
-        let fromIP = IndexPath(item: op.currentIndex, section: 0)
-        let toIP = IndexPath(item: destIndex, section: 0)
-
-        let numberOfItems = pageCell.collectionView.numberOfItems(inSection: 0)
-        guard op.currentIndex < numberOfItems && destIndex < numberOfItems else { return }
+        // jSpringBoard pattern: only call moveItem if both indices are valid
+        guard op.currentIndex < numberOfItems && destinationIndex < numberOfItems else { return }
 
         // jSpringBoard pattern: only call moveItem, do NOT touch the data model.
         // The data model is synced at end-of-drag via updateState().
-        pageCell.collectionView.moveItem(at: fromIP, to: toIP)
-        op.currentIndex = destIndex
-
-        feedbackGenerator.impactOccurred(intensity: 0.5)
+        pageCell.collectionView.moveItem(at: IndexPath(item: op.currentIndex, section: 0),
+                                         to: IndexPath(item: destinationIndex, section: 0))
+        op.currentIndex = destinationIndex
     }
 
     // MARK: - End
@@ -215,10 +265,9 @@ final class LCSpringboardDragManager {
             let convertedFrame = pageCell.collectionView.convert(targetCell.frame, to: vc.view)
             UIView.animate(withDuration: 0.25, animations: {
                 op.placeholderView.transform = .identity
-                op.placeholderView.alpha = 1
                 op.placeholderView.frame = convertedFrame
             }, completion: { _ in
-                targetCell.isHidden = false
+                targetCell.contentView.isHidden = false
                 op.placeholderView.removeFromSuperview()
                 self.currentOperation = nil
                 pageCell.draggedItemId = nil
@@ -228,11 +277,19 @@ final class LCSpringboardDragManager {
             currentOperation = nil
         }
 
-        // Unhide all cells and refresh
+        // jSpringBoard "fixing possible inconsistencies" pattern:
+        // Reset nameLabel alpha and restart jiggle on all visible cells
         for cell in vc.outerCollectionView.visibleCells {
             guard let pageCell = cell as? LCSpringboardPageCell else { continue }
             pageCell.draggedItemId = nil
-            pageCell.collectionView.reloadData()
+            for iconCell in pageCell.collectionView.visibleCells {
+                guard let iconCell = iconCell as? LCSpringboardIconCell else { continue }
+                iconCell.nameLabel.alpha = 1
+                iconCell.contentView.isHidden = false
+                if vc.isInEditMode {
+                    iconCell.startJiggle()
+                }
+            }
         }
     }
 
@@ -325,7 +382,8 @@ final class LCSpringboardDragManager {
             currentPageCell.items = vc.pages[op.currentPage]
             op.needsUpdate = true
 
-            if vc.pages[op.currentPage].count < currentPageInitialCount {
+            // jSpringBoard: only batch-delete if we're still on the original page AND count decreased
+            if op.currentPage == op.originalPage && vc.pages[op.currentPage].count < currentPageInitialCount {
                 currentPageCell.collectionView.performBatchUpdates({
                     currentPageCell.collectionView.deleteItems(at: [IndexPath(item: currentIndex, section: 0)])
                 }, completion: nil)
@@ -344,6 +402,9 @@ final class LCSpringboardDragManager {
 
     /// Called by the VC when a page cell becomes visible during a drag (willDisplay).
     /// Matches jSpringBoard's willDisplay logic.
+    /// Called by the VC when a page cell becomes visible during a drag (willDisplay).
+    /// Matches jSpringBoard's willDisplay logic — sets items and currentIndex,
+    /// then lets the caller (willDisplay) handle reloadData.
     func adoptDragOnVisiblePage(_ pageCell: LCSpringboardPageCell, pageIndex: Int) {
         guard let vc = viewController,
               let op = currentOperation,
@@ -351,11 +412,8 @@ final class LCSpringboardDragManager {
               op.currentPage == pageIndex else { return }
 
         pageCell.items = vc.pages[pageIndex]
-        pageCell.draggedItemId = op.itemId
         // The dragged item was appended last, so its index is count - 1
         op.currentIndex = pageCell.collectionView(pageCell.collectionView, numberOfItemsInSection: 0) - 1
         op.needsUpdate = false
-
-        pageCell.collectionView.reloadData()
     }
 }
