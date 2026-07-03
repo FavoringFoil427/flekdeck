@@ -13,6 +13,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     @Binding var items: [FlekHomeItem]
     let darkModeIcon: Bool
     @Binding var isEditing: Bool
+    var installState: FlekInstallState
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onReorder: () -> Void
@@ -21,6 +22,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> LCSpringboardViewController {
         let vc = LCSpringboardViewController()
         vc.darkModeIcon = darkModeIcon
+        vc.installState = installState
         vc.onTap = onTap
         vc.onDelete = onDelete
         vc.onReorder = { [self] newItems in
@@ -55,6 +57,10 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
             vc.darkModeIcon = darkModeIcon
             vc.outerCollectionView?.reloadData()
         }
+
+        // Install state (progress updates frequently during download)
+        vc.installState = installState
+        vc.updateInstallProgress()
 
         // Closures that may have captured new state
         vc.onTap = onTap

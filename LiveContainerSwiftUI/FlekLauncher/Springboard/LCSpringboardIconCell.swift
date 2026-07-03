@@ -45,7 +45,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return btn
     }()
 
-    /// Dimming overlay + spinner for `.installing` state.
+    /// Dimming overlay for `.installing` state (covers icon).
     private let installOverlay: UIView = {
         let v = UIView()
         v.backgroundColor = UIColor.black.withAlphaComponent(0.5)
@@ -53,12 +53,40 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return v
     }()
 
+    /// Spinner for indeterminate install state.
     private let activityIndicator: UIActivityIndicatorView = {
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.color = .white
         spinner.hidesWhenStopped = true
         return spinner
     }()
+
+    /// Percentage label centered on icon during download.
+    private let progressLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .bold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.isHidden = true
+        return label
+    }()
+
+    /// Blue progress bar near bottom of icon.
+    private let progressTrack: UIView = {
+        let v = UIView()
+        v.backgroundColor = UIColor.white.withAlphaComponent(0.5)
+        v.isHidden = true
+        return v
+    }()
+
+    private let progressFill: UIView = {
+        let v = UIView()
+        v.backgroundColor = UIColor(red: 0/255, green: 117/255, blue: 255/255, alpha: 1)
+        return v
+    }()
+
+    /// Current icon URL loading task.
+    private var iconLoadTask: URLSessionDataTask?
 
     // MARK: - State
 
@@ -112,6 +140,9 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Install overlay on top of icon
         iconImageView.addSubview(installOverlay)
         installOverlay.addSubview(activityIndicator)
+        installOverlay.addSubview(progressLabel)
+        progressTrack.addSubview(progressFill)
+        installOverlay.addSubview(progressTrack)
 
         deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
 
@@ -168,7 +199,20 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         applySquircleMask()
 
         installOverlay.frame = iconImageView.bounds
+        installOverlay.layer.cornerRadius = Self.iconCornerRadius
+        installOverlay.clipsToBounds = true
         activityIndicator.center = CGPoint(x: iconS / 2, y: iconS / 2)
+        progressLabel.frame = CGRect(x: 0, y: 0, width: iconS, height: iconS)
+
+        // Progress bar near bottom of icon
+        let trackW = iconS * 0.78
+        let trackH: CGFloat = 14
+        let trackX = (iconS - trackW) / 2
+        let trackY = iconS - trackH - 6
+        progressTrack.frame = CGRect(x: trackX, y: trackY, width: trackW, height: trackH)
+        progressTrack.layer.cornerRadius = trackH / 2
+        progressTrack.clipsToBounds = true
+        updateProgressFillWidth()
 
         nameLabel.frame = CGRect(
             x: 4,
@@ -207,6 +251,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         deleteButton.alpha = 0
         installOverlay.isHidden = true
         activityIndicator.stopAnimating()
+        progressLabel.isHidden = true
+        progressTrack.isHidden = true
+        iconLoadTask?.cancel()
+        iconLoadTask = nil
+        currentFraction = 0
         contentView.alpha = 1
         contentView.isHidden = false
         glassBackgroundView?.isHidden = false
@@ -218,7 +267,10 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Configuration
 
-    func configure(with item: FlekHomeItem, darkMode: Bool) {
+    /// Current install fraction for progress fill layout.
+    private var currentFraction: Double = 0
+
+    func configure(with item: FlekHomeItem, darkMode: Bool, installState: FlekInstallState? = nil) {
         configuredItem = item
         switch item {
         case .defaultApp(let kind):
@@ -232,11 +284,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             isPlaceholderCell = false
 
         case .installing:
-            iconImageView.image = nil
-            nameLabel.text = "Installing..."
-            installOverlay.isHidden = false
-            activityIndicator.startAnimating()
             isPlaceholderCell = false
+            configureInstallState(installState)
 
         case .placeholder:
             iconImageView.image = nil
@@ -246,6 +295,62 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             isUserInteractionEnabled = false
             isPlaceholderCell = true
         }
+    }
+
+    /// Update just the install state (progress/icon) without full reconfigure.
+    func updateInstallState(_ state: FlekInstallState?) {
+        guard case .installing = configuredItem else { return }
+        configureInstallState(state)
+    }
+
+    private func configureInstallState(_ state: FlekInstallState?) {
+        // Name
+        nameLabel.text = state?.name ?? "Installing..."
+
+        // Icon from URL
+        if let urlStr = state?.iconURL, let url = URL(string: urlStr) {
+            if iconImageView.image == nil {
+                // Load icon asynchronously
+                iconLoadTask?.cancel()
+                iconLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+                    guard let data, let image = UIImage(data: data) else { return }
+                    DispatchQueue.main.async {
+                        self?.iconImageView.image = image
+                    }
+                }
+                iconLoadTask?.resume()
+            }
+        } else {
+            iconImageView.image = nil
+        }
+
+        // Show overlay
+        installOverlay.isHidden = false
+
+        if let state, !state.indeterminate {
+            // Determinate: show percentage + progress bar
+            activityIndicator.stopAnimating()
+            progressLabel.isHidden = false
+            progressLabel.text = "\(Int((state.fraction * 100).rounded()))%"
+            progressTrack.isHidden = false
+            currentFraction = state.fraction
+            updateProgressFillWidth()
+        } else {
+            // Indeterminate: show spinner
+            activityIndicator.startAnimating()
+            progressLabel.isHidden = true
+            progressTrack.isHidden = true
+            currentFraction = 0
+        }
+    }
+
+    private func updateProgressFillWidth() {
+        let trackW = progressTrack.bounds.width
+        let trackH = progressTrack.bounds.height
+        guard trackW > 0 else { return }
+        let fillW = max(trackH - 4, (trackW - 4) * currentFraction)
+        progressFill.frame = CGRect(x: 2, y: 2, width: fillW, height: trackH - 4)
+        progressFill.layer.cornerRadius = (trackH - 4) / 2
     }
 
     // MARK: - Edit mode

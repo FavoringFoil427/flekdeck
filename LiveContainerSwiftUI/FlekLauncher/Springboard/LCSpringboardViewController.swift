@@ -23,6 +23,7 @@ final class LCSpringboardViewController: UIViewController {
     private(set) var isInEditMode: Bool = false
 
     var darkModeIcon: Bool = false
+    var installState: FlekInstallState?
     
 
     // MARK: - Callbacks (set by Representable)
@@ -238,6 +239,20 @@ final class LCSpringboardViewController: UIViewController {
         }
     }
 
+    // MARK: - Install state update
+
+    /// Updates install progress on visible installing cells without full reload.
+    func updateInstallProgress() {
+        for cell in outerCollectionView.visibleCells {
+            guard let pageCell = cell as? LCSpringboardPageCell else { continue }
+            pageCell.installState = installState
+            for iconCell in pageCell.collectionView.visibleCells {
+                guard let ic = iconCell as? LCSpringboardIconCell else { continue }
+                ic.updateInstallState(installState)
+            }
+        }
+    }
+
     // MARK: - Scroll to page
 
     func scrollToPage(_ page: Int, animated: Bool = true) {
@@ -291,6 +306,7 @@ extension LCSpringboardViewController: UICollectionViewDataSource {
         cell.items = pages[indexPath.item]
         cell.delegate = self
         cell.darkModeIcon = darkModeIcon
+        cell.installState = installState
     
         cell.draggedItemId = dragManager.currentOperation?.itemId
         cell.collectionView.reloadData()
@@ -315,6 +331,7 @@ extension LCSpringboardViewController: UICollectionViewDelegate {
         // If a drag is in progress and needs to adopt this page
         dragManager.adoptDragOnVisiblePage(pageCell, pageIndex: indexPath.item)
 
+        pageCell.installState = installState
         pageCell.draggedItemId = dragManager.currentOperation?.itemId
         pageCell.collectionView.reloadData()
 
