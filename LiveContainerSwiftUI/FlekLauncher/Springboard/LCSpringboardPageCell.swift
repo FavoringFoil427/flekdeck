@@ -26,6 +26,8 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     var darkModeIcon: Bool = false
     var installState: FlekInstallState?
     private(set) var isEditing = false
+    private var isContextMenuActive = false
+    private var pendingReloadItems: [FlekHomeItem]?
 
     // MARK: - Inner collection view
 
@@ -128,6 +130,16 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     func itemsPerPage() -> Int {
         return rowsPerPage() * Self.columns
     }
+
+    /// Reload items, deferring if a context menu is active to avoid cell reuse glitches.
+    func safeReloadItems(_ newItems: [FlekHomeItem]) {
+        if isContextMenuActive {
+            pendingReloadItems = newItems
+        } else {
+            items = newItems
+            collectionView.reloadData()
+        }
+    }
 }
 
 // MARK: - UICollectionViewDataSource
@@ -182,8 +194,6 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         guard !isEditing else { return nil }
         let item = items[indexPath.item]
         guard !item.isPlaceholder else { return nil }
-        if case .installing = item { return nil }
-
         guard let menu = delegate?.pageCell(self, contextMenuFor: item) else { return nil }
 
         return UIContextMenuConfiguration(identifier: indexPath as NSCopying, previewProvider: nil) { _ in
@@ -205,5 +215,30 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         let params = UIPreviewParameters()
         params.backgroundColor = .clear
         return UITargetedPreview(view: cell, parameters: params)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, willDisplayContextMenu configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+        isContextMenuActive = true
+    }
+
+    func collectionView(_ collectionView: UICollectionView, willEndContextMenuInteraction configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+        animator?.addCompletion { [weak self] in
+            guard let self else { return }
+            self.isContextMenuActive = false
+            if let pending = self.pendingReloadItems {
+                self.pendingReloadItems = nil
+                self.items = pending
+                self.collectionView.reloadData()
+            }
+        }
+        // Fallback if no animator
+        if animator == nil {
+            isContextMenuActive = false
+            if let pending = pendingReloadItems {
+                pendingReloadItems = nil
+                items = pending
+                collectionView.reloadData()
+            }
+        }
     }
 }

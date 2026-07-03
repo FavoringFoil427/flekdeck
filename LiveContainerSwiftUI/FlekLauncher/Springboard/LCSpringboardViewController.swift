@@ -134,10 +134,26 @@ final class LCSpringboardViewController: UIViewController {
     /// Called by the Representable when SwiftUI items genuinely change
     /// (items added or removed, NOT just reordered).
     func updateItems(_ newItems: [FlekHomeItem]) {
+        let oldPageCount = pages.count
         flatItems = newItems
         recalculateItemsPerPage()
         paginateFromFlatItems()
-        outerCollectionView.reloadData()
+
+        // If the page count is unchanged, update visible page cells in-place
+        // instead of reloading the outer collection view (which destroys cells
+        // and causes a visible flash, e.g. when an installing item is cancelled).
+        if pages.count == oldPageCount {
+            for cell in outerCollectionView.visibleCells {
+                guard let pageCell = cell as? LCSpringboardPageCell,
+                      let indexPath = outerCollectionView.indexPath(for: pageCell) else { continue }
+                let pageIndex = indexPath.item
+                guard pageIndex < pages.count else { continue }
+                pageCell.installState = installState
+                pageCell.safeReloadItems(pages[pageIndex])
+            }
+        } else {
+            outerCollectionView.reloadData()
+        }
         pageControl.numberOfPages = pages.count
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
     }

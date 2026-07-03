@@ -873,7 +873,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             return nil
         case .installed(let app):
             return installedUIMenu(app)
-        case .installing, .placeholder:
+        case .installing:
+            let cancel = UIAction(
+                title: "lc.flek.cancelInstall".loc,
+                image: UIImage(systemName: "xmark.circle"),
+                attributes: .destructive
+            ) { [self] _ in
+                cancelHomeInstall()
+            }
+            return UIMenu(title: "", children: [cancel])
+        case .placeholder:
             return nil
         }
     }
