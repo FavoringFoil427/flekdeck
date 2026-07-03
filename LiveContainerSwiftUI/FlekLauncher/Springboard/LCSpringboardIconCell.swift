@@ -1,0 +1,295 @@
+//
+//  LCSpringboardIconCell.swift
+//  LiveContainerSwiftUI
+//
+//  UICollectionViewCell rendering a single app icon in the UIKit springboard.
+//  Simple iOS-style: squircle icon + name label underneath.
+//
+
+import UIKit
+
+final class LCSpringboardIconCell: UICollectionViewCell {
+
+    // MARK: - Subviews
+
+    let iconImageView: UIImageView = {
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFill
+        iv.clipsToBounds = true
+        return iv
+    }()
+
+    let nameLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.78
+        return label
+    }()
+
+    /// Blue "new" dot shown for apps that haven't been launched yet.
+    let newDotView: UIView = {
+        let v = UIView()
+        v.backgroundColor = UIColor.systemBlue
+        v.isHidden = true
+        return v
+    }()
+
+    /// Delete button shown in edit mode (top-left of icon).
+    let deleteButton: UIButton = {
+        let btn = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        btn.setImage(UIImage(systemName: "minus", withConfiguration: config), for: .normal)
+        btn.tintColor = .white
+        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.85)
+        btn.isHidden = true
+        btn.alpha = 0
+        return btn
+    }()
+
+    /// Dimming overlay + spinner for `.installing` state.
+    private let installOverlay: UIView = {
+        let v = UIView()
+        v.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        v.isHidden = true
+        return v
+    }()
+
+    private let activityIndicator: UIActivityIndicatorView = {
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.color = .white
+        spinner.hidesWhenStopped = true
+        return spinner
+    }()
+
+    // MARK: - State
+
+    private(set) var isAnimating = false
+    var onDeleteTap: (() -> Void)?
+    var onTap: (() -> Void)?
+
+    /// Whether this cell represents a placeholder (invisible).
+    private(set) var isPlaceholderCell = false
+
+    // MARK: - Layout constants
+
+    static let iconSize: CGFloat = 60
+    private static let iconCornerRadius: CGFloat = 13.4 // ~0.2237 * 60
+    private static let deleteButtonSize: CGFloat = 24
+    private static let newDotSize: CGFloat = 8
+    private static let iconTopPadding: CGFloat = 6
+    private static let labelTopSpacing: CGFloat = 6
+    private static let labelHeight: CGFloat = 16
+
+    // MARK: - Init
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupViews() {
+        clipsToBounds = false
+        contentView.clipsToBounds = false
+
+        contentView.addSubview(iconImageView)
+        contentView.addSubview(nameLabel)
+        contentView.addSubview(newDotView)
+        contentView.addSubview(deleteButton)
+
+        // Install overlay on top of icon
+        iconImageView.addSubview(installOverlay)
+        installOverlay.addSubview(activityIndicator)
+
+        deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(cellTapped))
+        contentView.addGestureRecognizer(tap)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        let bounds = contentView.bounds
+        let iconS = Self.iconSize
+        let iconX = (bounds.width - iconS) / 2
+        let iconY = Self.iconTopPadding
+
+        iconImageView.frame = CGRect(x: iconX, y: iconY, width: iconS, height: iconS)
+        applySquircleMask()
+
+        installOverlay.frame = iconImageView.bounds
+        activityIndicator.center = CGPoint(x: iconS / 2, y: iconS / 2)
+
+        nameLabel.frame = CGRect(
+            x: 4,
+            y: iconY + iconS + Self.labelTopSpacing,
+            width: bounds.width - 8,
+            height: Self.labelHeight
+        )
+
+        let dbSize = Self.deleteButtonSize
+        deleteButton.frame = CGRect(
+            x: iconX - dbSize / 3,
+            y: iconY - dbSize / 3,
+            width: dbSize,
+            height: dbSize
+        )
+        deleteButton.layer.cornerRadius = dbSize / 2
+        deleteButton.layer.masksToBounds = true
+
+        let dotSize = Self.newDotSize
+        newDotView.frame = CGRect(
+            x: (bounds.width - dotSize) / 2,
+            y: nameLabel.frame.maxY + 3,
+            width: dotSize,
+            height: dotSize
+        )
+        newDotView.layer.cornerRadius = dotSize / 2
+    }
+
+    private func applySquircleMask() {
+        let path = UIBezierPath(
+            roundedRect: iconImageView.bounds,
+            cornerRadius: Self.iconCornerRadius
+        )
+        let mask = CAShapeLayer()
+        mask.path = path.cgPath
+        iconImageView.layer.mask = mask
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        stopJiggle()
+        iconImageView.image = nil
+        nameLabel.text = nil
+        newDotView.isHidden = true
+        deleteButton.isHidden = true
+        deleteButton.alpha = 0
+        installOverlay.isHidden = true
+        activityIndicator.stopAnimating()
+        contentView.alpha = 1
+        contentView.isHidden = false
+        isUserInteractionEnabled = true
+        isPlaceholderCell = false
+        onDeleteTap = nil
+        onTap = nil
+    }
+
+    // MARK: - Configuration
+
+    func configure(with item: FlekHomeItem, darkMode: Bool, isNew: Bool) {
+        switch item {
+        case .defaultApp(let kind):
+            iconImageView.image = UIImage(named: kind.iconAssetName)
+            nameLabel.text = kind.title
+            newDotView.isHidden = true
+            isPlaceholderCell = false
+
+        case .installed(let app):
+            iconImageView.image = app.appInfo.iconIsDarkIcon(darkMode)
+            nameLabel.text = app.appInfo.displayName()
+            newDotView.isHidden = !isNew
+            isPlaceholderCell = false
+
+        case .installing:
+            iconImageView.image = nil
+            nameLabel.text = "Installing..."
+            newDotView.isHidden = true
+            installOverlay.isHidden = false
+            activityIndicator.startAnimating()
+            isPlaceholderCell = false
+
+        case .placeholder:
+            iconImageView.image = nil
+            nameLabel.text = nil
+            contentView.alpha = 0
+            isUserInteractionEnabled = false
+            isPlaceholderCell = true
+        }
+    }
+
+    // MARK: - Edit mode
+
+    func setDeleteButtonVisible(_ visible: Bool, animated: Bool = true) {
+        if visible {
+            deleteButton.isHidden = false
+            if animated {
+                UIView.animate(withDuration: 0.2) {
+                    self.deleteButton.alpha = 1
+                }
+            } else {
+                deleteButton.alpha = 1
+            }
+        } else {
+            if animated {
+                UIView.animate(withDuration: 0.2, animations: {
+                    self.deleteButton.alpha = 0
+                }, completion: { _ in
+                    self.deleteButton.isHidden = true
+                })
+            } else {
+                deleteButton.alpha = 0
+                deleteButton.isHidden = true
+            }
+        }
+    }
+
+    // MARK: - Jiggle animation (from jSpringBoard)
+
+    func startJiggle() {
+        guard !isAnimating else { return }
+        isAnimating = true
+
+        let posAnim = CAKeyframeAnimation(keyPath: "position")
+        posAnim.values = [
+            CGPoint(x: -1, y: -1),
+            CGPoint(x: 0, y: 0),
+            CGPoint(x: -1, y: 0),
+            CGPoint(x: 0, y: -1),
+            CGPoint(x: -1, y: -1)
+        ]
+        posAnim.calculationMode = .linear
+        posAnim.isAdditive = true
+
+        let rotAnim = CAKeyframeAnimation(keyPath: "transform")
+        rotAnim.valueFunction = CAValueFunction(name: .rotateZ)
+        rotAnim.values = [-0.03525565, 0.03525565, -0.03525565]
+        rotAnim.calculationMode = .linear
+        rotAnim.isAdditive = true
+
+        let group = CAAnimationGroup()
+        group.duration = 0.25
+        group.repeatCount = .infinity
+        group.isRemovedOnCompletion = false
+        group.beginTime = CACurrentMediaTime() + Double.random(in: 0...0.25)
+        group.animations = [posAnim, rotAnim]
+
+        contentView.layer.add(group, forKey: "jitterAnimation")
+    }
+
+    func stopJiggle() {
+        guard isAnimating else { return }
+        isAnimating = false
+        contentView.layer.removeAnimation(forKey: "jitterAnimation")
+        contentView.transform = .identity
+    }
+
+    // MARK: - Actions
+
+    @objc private func deleteTapped() {
+        onDeleteTap?()
+    }
+
+    @objc private func cellTapped() {
+        onTap?()
+    }
+}

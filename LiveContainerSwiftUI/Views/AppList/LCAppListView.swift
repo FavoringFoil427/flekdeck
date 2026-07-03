@@ -558,21 +558,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     contextMenu: { item in homeContextMenu(for: item) }
                 )
             } else {
-                FlekSpringboardView(
+                LCSpringboardRepresentable(
                     items: $orderedHomeItems,
                     darkModeIcon: darkModeIcon,
                     isEditing: $isEditing,
                     isNew: { FlekLaunchTracker.shared.isNew($0) },
-                    isSingleMode: { FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
                     onTap: { handleHomeTap($0) },
                     onDelete: { item in
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }
                     },
-                    onDropCompleted: { persistHomeOrder() },
-                    installState: homeInstallState,
-                    onCancelInstall: { cancelHomeInstall() },
-                    scrollToPage: $homeScrollToPage,
-                    contextMenu: { item in homeContextMenu(for: item) }
+                    onReorder: { persistHomeOrder() },
+                    scrollToPage: $homeScrollToPage
                 )
             }
         }
