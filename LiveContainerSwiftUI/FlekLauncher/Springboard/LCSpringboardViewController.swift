@@ -36,14 +36,14 @@ final class LCSpringboardViewController: UIViewController {
 
     private(set) var outerCollectionView: UICollectionView!
     private var pageControl: UIPageControl!
-    private var dragManager: LCSpringboardDragManager!
+    private(set) var dragManager: LCSpringboardDragManager!
     private var longPressGesture: UILongPressGestureRecognizer!
 
     private var currentPage: Int = 0
 
     // MARK: - Layout config
 
-    private var itemsPerPage: Int = 15
+    private(set) var itemsPerPage: Int = 15
     private let columns: Int = LCSpringboardPageCell.columns
 
     // MARK: - Lifecycle
@@ -81,8 +81,8 @@ final class LCSpringboardViewController: UIViewController {
             height: pageControlHeight
         )
 
-        // Recalculate pagination since height may have changed
-        recalculateGrid()
+        // Recalculate items-per-page metric (does NOT re-paginate)
+        recalculateItemsPerPage()
     }
 
     // MARK: - Setup
@@ -128,18 +128,21 @@ final class LCSpringboardViewController: UIViewController {
 
     // MARK: - Data update
 
-    /// Called by the Representable when SwiftUI items change.
+    /// Called by the Representable when SwiftUI items genuinely change
+    /// (items added or removed, NOT just reordered).
     func updateItems(_ newItems: [FlekHomeItem]) {
         flatItems = newItems
-        recalculateGrid()
+        recalculateItemsPerPage()
+        paginateFromFlatItems()
         outerCollectionView.reloadData()
         pageControl.numberOfPages = pages.count
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
     }
 
-    /// Re-paginate flatItems into pages based on current layout.
-    func recalculateGrid() {
-        // Calculate items per page from a temporary page cell measurement
+    /// Recalculate the `itemsPerPage` metric from current layout dimensions.
+    /// Does NOT re-paginate — the page structure is preserved.
+    /// Only called from `viewDidLayoutSubviews`.
+    private func recalculateItemsPerPage() {
         let pageControlHeight: CGFloat = 30
         let pageHeight = view.bounds.height - pageControlHeight
         guard pageHeight > 0 else { return }
@@ -155,8 +158,11 @@ final class LCSpringboardViewController: UIViewController {
         let availableHeight = pageHeight - topInset
         let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
         itemsPerPage = rows * columns
+    }
 
-        // Paginate
+    /// Distribute `flatItems` into fixed-size pages.
+    /// Only called from `updateItems` when genuinely new items arrive from SwiftUI.
+    private func paginateFromFlatItems() {
         guard itemsPerPage > 0 else { return }
         var newPages: [[FlekHomeItem]] = []
         var i = 0
@@ -171,7 +177,7 @@ final class LCSpringboardViewController: UIViewController {
         pages = newPages
     }
 
-    // MARK: - Editing
+    // MARK: - Editing (matches jSpringBoard's enterEditingMode / leaveEditingMode)
 
     func setEditing(_ editing: Bool, fromDrag: Bool = false) {
         guard editing != isInEditMode else { return }
@@ -179,6 +185,7 @@ final class LCSpringboardViewController: UIViewController {
 
         if editing {
             // Add a trailing empty page for reorder target
+            // (jSpringBoard: items.append([]) + insertItems)
             if let last = pages.last, !last.isEmpty {
                 pages.append([])
                 outerCollectionView.insertItems(at: [IndexPath(item: pages.count - 1, section: 0)])
@@ -189,24 +196,44 @@ final class LCSpringboardViewController: UIViewController {
                 (cell as? LCSpringboardPageCell)?.enterEditingMode()
             }
         } else {
-            // Remove trailing empty pages
-            while pages.count > 1 {
-                if let last = pages.last, last.allSatisfy({ $0.isPlaceholder }) {
-                    pages.removeLast()
-                } else {
-                    break
-                }
-            }
-
             for cell in outerCollectionView.visibleCells {
                 (cell as? LCSpringboardPageCell)?.leaveEditingMode()
             }
 
-            outerCollectionView.reloadData()
-            pageControl.numberOfPages = pages.count
+            // jSpringBoard: remove the last page if empty, after a 0.25s delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self else { return }
+                if self.pages.count > 1, let last = self.pages.last, last.isEmpty || last.allSatisfy({ $0.isPlaceholder }) {
+                    self.pages.removeLast()
+                    self.outerCollectionView.deleteItems(at: [IndexPath(item: self.pages.count, section: 0)])
+                    self.pageControl.numberOfPages = self.pages.count
+                }
+
+                // Sync flatItems from pages so SwiftUI binding stays consistent
+                let newFlat = self.pages.flatMap { $0 }
+                if newFlat.map(\.id) != self.flatItems.map(\.id) {
+                    self.flatItems = newFlat
+                    self.onReorder?(self.flatItems)
+                }
+            }
         }
 
         onEditingChanged?(editing)
+    }
+
+    // MARK: - Page overflow (jSpringBoard's moveLastItem)
+
+    /// Moves the last item from `pages[page]` to the front of `pages[page+1]`.
+    /// Recurses if the next page overflows. Exactly matches jSpringBoard.
+    func moveLastItem(inPage page: Int) {
+        guard page + 1 < pages.count else { return }
+
+        let item = pages[page].removeLast()
+        pages[page + 1].insert(item, at: 0)
+
+        if pages[page + 1].count > itemsPerPage {
+            moveLastItem(inPage: page + 1)
+        }
     }
 
     // MARK: - Scroll to page

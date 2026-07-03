@@ -3,8 +3,8 @@
 //  LiveContainerSwiftUI
 //
 //  Drag-and-drop state machine for the UIKit springboard.
-//  Adapted from jSpringBoard's AppGridManager+DragOperations.
-//  Handles: long press → snapshot → move → cross-page scroll → drop.
+//  Faithfully follows jSpringBoard's AppGridManager + AppGridManager+DragOperations
+//  pattern, including savedState undo and moveLastItem cascade.
 //
 
 import UIKit
@@ -12,20 +12,25 @@ import UIKit
 // MARK: - Drag operation state
 
 final class LCDragOperation {
-    let itemId: String
+    /// The actual item being dragged.
+    let item: FlekHomeItem
+    var itemId: String { item.id }
     let placeholderView: UIView
     let dragOffset: CGSize
     let originalPage: Int
     let originalIndex: Int
     var currentPage: Int
     var currentIndex: Int
-    /// Set to true when a page scroll is in progress and the target page cell
-    /// needs to adopt this drag operation in `willDisplay`.
+    /// When true, the item moved to a new page and the target PageCell
+    /// hasn't appeared yet. updateDrag short-circuits until willDisplay fires.
     var needsUpdate: Bool = false
+    /// Snapshot of vc.pages before a cascade overflow. Restored if the item
+    /// moves to yet another page (undo previous cascade before doing a new one).
+    var savedState: [[FlekHomeItem]]?
 
-    init(itemId: String, placeholderView: UIView, dragOffset: CGSize,
+    init(item: FlekHomeItem, placeholderView: UIView, dragOffset: CGSize,
          originalPage: Int, originalIndex: Int) {
-        self.itemId = itemId
+        self.item = item
         self.placeholderView = placeholderView
         self.dragOffset = dragOffset
         self.originalPage = originalPage
@@ -71,7 +76,6 @@ final class LCSpringboardDragManager {
 
         feedbackGenerator.prepare()
 
-        // Find which page cell and inner icon cell was touched
         let touchInView = gesture.location(in: vc.view)
         guard let (pageIndex, pageCell) = vc.pageCellAtPoint(touchInView) else { return }
 
@@ -83,13 +87,12 @@ final class LCSpringboardDragManager {
         let item = pageCell.items[indexPath.item]
         guard item.isDraggable else { return }
 
-        // Calculate drag offset so the snapshot stays centered under touch
+        // Offset so the snapshot stays centered under the finger
         let dragOffset = CGSize(
             width: iconCell.center.x - touchInPage.x,
             height: iconCell.center.y - touchInPage.y
         )
 
-        // Create snapshot
         let snapshot = iconCell.snapshotView(afterScreenUpdates: true) ?? UIView(frame: iconCell.bounds)
         var snapshotCenter = touchInView
         snapshotCenter.x += dragOffset.width
@@ -97,10 +100,8 @@ final class LCSpringboardDragManager {
         snapshot.center = snapshotCenter
         vc.view.addSubview(snapshot)
 
-        // Hide original
-        iconCell.contentView.isHidden = true
+        iconCell.isHidden = true
 
-        // Enter edit mode
         if !vc.isInEditMode {
             vc.setEditing(true, fromDrag: true)
         }
@@ -113,18 +114,17 @@ final class LCSpringboardDragManager {
         }
 
         currentOperation = LCDragOperation(
-            itemId: item.id,
+            item: item,
             placeholderView: snapshot,
             dragOffset: dragOffset,
             originalPage: pageIndex,
             originalIndex: indexPath.item
         )
 
-        // Tell page cell which item is dragged
         pageCell.draggedItemId = item.id
     }
 
-    // MARK: - Update
+    // MARK: - Update (within-page: moveItem only, no data model changes)
 
     private func updateDrag(_ gesture: UILongPressGestureRecognizer) {
         guard let vc = viewController, let op = currentOperation else { return }
@@ -137,6 +137,7 @@ final class LCSpringboardDragManager {
         snapshotCenter.y += op.dragOffset.height
         op.placeholderView.center = snapshotCenter
 
+        // If a cross-page scroll is pending, don't do any rearrangement
         if op.needsUpdate {
             return
         }
@@ -173,22 +174,19 @@ final class LCSpringboardDragManager {
         let destIndex = destIndexPath.item
         if destIndex == op.currentIndex { return }
 
-        // Don't swap onto placeholder
+        // Don't move onto a placeholder
         if destIndex < pageCell.items.count && pageCell.items[destIndex].isPlaceholder { return }
 
-        // Perform move
         let fromIP = IndexPath(item: op.currentIndex, section: 0)
         let toIP = IndexPath(item: destIndex, section: 0)
 
         let numberOfItems = pageCell.collectionView.numberOfItems(inSection: 0)
         guard op.currentIndex < numberOfItems && destIndex < numberOfItems else { return }
 
-        pageCell.items.swapAt(op.currentIndex, destIndex)
+        // jSpringBoard pattern: only call moveItem, do NOT touch the data model.
+        // The data model is synced at end-of-drag via updateState().
         pageCell.collectionView.moveItem(at: fromIP, to: toIP)
         op.currentIndex = destIndex
-
-        // Update the VC's data model
-        vc.pages[op.currentPage] = pageCell.items
 
         feedbackGenerator.impactOccurred(intensity: 0.5)
     }
@@ -200,7 +198,16 @@ final class LCSpringboardDragManager {
 
         cancelPageScrollTimer()
 
-        // Find the cell at the current position to animate back to
+        // jSpringBoard pattern: read the UI state back into the data model.
+        if let pageCell = vc.visiblePageCell(forPage: op.currentPage) {
+            updateState(forPageCell: pageCell, pageIndex: op.currentPage)
+        }
+
+        // Sync flatItems and notify SwiftUI
+        vc.flatItems = vc.pages.flatMap { $0 }
+        vc.onReorder?(vc.flatItems)
+
+        // Animate snapshot back into position
         if let pageCell = vc.visiblePageCell(forPage: op.currentPage),
            op.currentIndex < pageCell.collectionView.numberOfItems(inSection: 0),
            let targetCell = pageCell.collectionView.cellForItem(at: IndexPath(item: op.currentIndex, section: 0)) {
@@ -211,22 +218,17 @@ final class LCSpringboardDragManager {
                 op.placeholderView.alpha = 1
                 op.placeholderView.frame = convertedFrame
             }, completion: { _ in
-                targetCell.contentView.isHidden = false
+                targetCell.isHidden = false
                 op.placeholderView.removeFromSuperview()
                 self.currentOperation = nil
                 pageCell.draggedItemId = nil
-
-                // Notify reorder completion
-                vc.onReorder?(vc.pages.flatMap { $0 })
             })
         } else {
-            // Fallback: just remove snapshot
             op.placeholderView.removeFromSuperview()
             currentOperation = nil
-            vc.onReorder?(vc.pages.flatMap { $0 })
         }
 
-        // Refresh all visible page cells
+        // Unhide all cells and refresh
         for cell in vc.outerCollectionView.visibleCells {
             guard let pageCell = cell as? LCSpringboardPageCell else { continue }
             pageCell.draggedItemId = nil
@@ -234,7 +236,28 @@ final class LCSpringboardDragManager {
         }
     }
 
-    // MARK: - Page scroll timer
+    // MARK: - Read cell order back from UICollectionView (jSpringBoard's updateState)
+
+    private func updateState(forPageCell pageCell: LCSpringboardPageCell, pageIndex: Int) {
+        guard let vc = viewController else { return }
+
+        var items: [FlekHomeItem] = []
+        let count = pageCell.collectionView.numberOfItems(inSection: 0)
+        for i in 0..<count {
+            let indexPath = IndexPath(item: i, section: 0)
+            if let cell = pageCell.collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell,
+               let item = cell.configuredItem {
+                items.append(item)
+            }
+        }
+
+        if !items.isEmpty {
+            pageCell.items = items
+            vc.pages[pageIndex] = items
+        }
+    }
+
+    // MARK: - Page scroll timer (cross-page drag)
 
     private func startPageScrollTimer(direction: Int) {
         cancelPageScrollTimer()
@@ -252,6 +275,14 @@ final class LCSpringboardDragManager {
         pageScrollTimer = nil
     }
 
+    /// Cross-page move handler. Faithfully follows jSpringBoard's pageTimerHandler:
+    /// 1. Sync current page from cells (within-page moveItem didn't update data)
+    /// 2. Find the dragged item by ID in the data array
+    /// 3. If savedState exists, restore it (undo previous cascade)
+    /// 4. Remove item from current page
+    /// 5. If destination page is full, save state and cascade overflow
+    /// 6. Append item to destination page
+    /// 7. Update current page cell, scroll to destination
     @objc private func pageScrollTimerFired(_ timer: Timer) {
         guard let vc = viewController,
               let op = currentOperation,
@@ -259,55 +290,70 @@ final class LCSpringboardDragManager {
 
         pageScrollTimer = nil
 
-        let targetPage = op.currentPage + direction
-        guard targetPage >= 0 && targetPage < vc.pages.count else { return }
+        let nextPage = op.currentPage + direction
+        guard nextPage >= 0 && nextPage < vc.pages.count else { return }
 
-        // Remove item from current page
-        guard op.currentIndex < vc.pages[op.currentPage].count else { return }
-        vc.pages[op.currentPage].remove(at: op.currentIndex)
-
-        // Add to target page
-        vc.pages[targetPage].append(vc.pages[op.currentPage].count >= 0 ? FlekHomeItem.placeholder("__drag__") : FlekHomeItem.placeholder("__drag__"))
-        // Actually, we want to move the dragged item, not a placeholder
-        // Remove the placeholder we just added and add the actual item
-        if let lastIdx = vc.pages[targetPage].lastIndex(where: { $0.id == "__drag__" || ($0.isPlaceholder && $0.id == "placeholder.__drag__") }) {
-            vc.pages[targetPage].remove(at: lastIdx)
+        // Step 1: Sync current page from cells (moveItem didn't update data)
+        if let currentPageCell = vc.visiblePageCell(forPage: op.currentPage) {
+            updateState(forPageCell: currentPageCell, pageIndex: op.currentPage)
         }
 
-        // Find the dragged item from flatItems
-        let draggedItem: FlekHomeItem
-        if let found = vc.flatItems.first(where: { $0.id == op.itemId }) {
-            draggedItem = found
+        // Step 2: Find the dragged item's actual index in the data array
+        guard let currentIndex = vc.pages[op.currentPage].firstIndex(where: { $0.id == op.itemId }) else { return }
+        let currentPageInitialCount = vc.pages[op.currentPage].count
+
+        // Step 3: If savedState exists, restore it (undo previous cascade)
+        if let savedState = op.savedState {
+            vc.pages = savedState
+            op.savedState = nil
         } else {
-            return
+            // Step 4: Remove item from current page
+            vc.pages[op.currentPage].remove(at: currentIndex)
         }
 
-        vc.pages[targetPage].append(draggedItem)
+        // Step 5: If destination page is full, save state and cascade
+        if vc.pages[nextPage].count >= vc.itemsPerPage {
+            op.savedState = vc.pages
+            vc.moveLastItem(inPage: nextPage)
+        }
 
-        // Update current page cell
+        // Step 6: Append item to destination page
+        vc.pages[nextPage].append(op.item)
+
+        // Step 7: Update current page cell visuals
         if let currentPageCell = vc.visiblePageCell(forPage: op.currentPage) {
             currentPageCell.items = vc.pages[op.currentPage]
-            currentPageCell.draggedItemId = nil
-            currentPageCell.collectionView.reloadData()
+            op.needsUpdate = true
+
+            if vc.pages[op.currentPage].count < currentPageInitialCount {
+                currentPageCell.collectionView.performBatchUpdates({
+                    currentPageCell.collectionView.deleteItems(at: [IndexPath(item: currentIndex, section: 0)])
+                }, completion: nil)
+            } else {
+                currentPageCell.collectionView.reloadData()
+            }
         }
 
-        op.currentPage = targetPage
-        op.currentIndex = vc.pages[targetPage].count - 1
+        op.currentPage = nextPage
         op.needsUpdate = true
 
-        // Scroll to target page
-        let offset = CGPoint(x: vc.outerCollectionView.bounds.width * CGFloat(targetPage), y: 0)
+        // Scroll to destination page
+        let offset = CGPoint(x: vc.outerCollectionView.bounds.width * CGFloat(nextPage), y: 0)
         vc.outerCollectionView.setContentOffset(offset, animated: true)
     }
 
-    /// Called by the VC when a page cell becomes visible during a drag.
-    /// Adopts the drag operation onto the newly visible page.
+    /// Called by the VC when a page cell becomes visible during a drag (willDisplay).
+    /// Matches jSpringBoard's willDisplay logic.
     func adoptDragOnVisiblePage(_ pageCell: LCSpringboardPageCell, pageIndex: Int) {
-        guard let op = currentOperation, op.needsUpdate, op.currentPage == pageIndex else { return }
+        guard let vc = viewController,
+              let op = currentOperation,
+              op.needsUpdate,
+              op.currentPage == pageIndex else { return }
 
-        pageCell.items = viewController?.pages[pageIndex] ?? []
+        pageCell.items = vc.pages[pageIndex]
         pageCell.draggedItemId = op.itemId
-        op.currentIndex = max(0, pageCell.items.count - 1)
+        // The dragged item was appended last, so its index is count - 1
+        op.currentIndex = pageCell.collectionView(pageCell.collectionView, numberOfItemsInSection: 0) - 1
         op.needsUpdate = false
 
         pageCell.collectionView.reloadData()

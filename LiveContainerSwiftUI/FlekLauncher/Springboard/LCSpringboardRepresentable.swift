@@ -36,11 +36,15 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ vc: LCSpringboardViewController, context: Context) {
-        // Update items if they changed
-        let currentIds = vc.flatItems.map(\.id)
-        let newIds = items.map(\.id)
-        if currentIds != newIds {
-            vc.updateItems(items)
+        // Only call updateItems when the SET of items changes
+        // (app added/removed), not when order changes (reorder).
+        // Compare as sets so reorder doesn't trigger re-pagination.
+        if !vc.dragManager.isDragging {
+            let currentSet = Set(vc.flatItems.map(\.id))
+            let newSet = Set(items.map(\.id))
+            if currentSet != newSet {
+                vc.updateItems(items)
+            }
         }
 
         // Sync editing state (may be toggled from SwiftUI "Done" button)

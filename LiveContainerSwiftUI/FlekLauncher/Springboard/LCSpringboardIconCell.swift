@@ -75,13 +75,22 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     /// Whether this cell represents a placeholder (invisible).
     private(set) var isPlaceholderCell = false
 
+    /// The item this cell was last configured with.
+    /// Used by the drag manager to read back cell order after moves.
+    private(set) var configuredItem: FlekHomeItem?
+
+    /// Liquid Glass (iOS 26+) or thin material card background.
+    private var glassBackgroundView: UIVisualEffectView?
+
     // MARK: - Layout constants
 
     static let iconSize: CGFloat = 60
     private static let iconCornerRadius: CGFloat = 13.4 // ~0.2237 * 60
     private static let deleteButtonSize: CGFloat = 24
     private static let newDotSize: CGFloat = 8
-    private static let iconTopPadding: CGFloat = 6
+    private static let cardCorner: CGFloat = 20
+    private static let cardPadding: CGFloat = 10
+    private static let iconTopPadding: CGFloat = 16
     private static let labelTopSpacing: CGFloat = 6
     private static let labelHeight: CGFloat = 16
 
@@ -100,6 +109,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         clipsToBounds = false
         contentView.clipsToBounds = false
 
+        setupGlassBackground()
+
         contentView.addSubview(iconImageView)
         contentView.addSubview(nameLabel)
         contentView.addSubview(newDotView)
@@ -115,10 +126,42 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         contentView.addGestureRecognizer(tap)
     }
 
+    private func setupGlassBackground() {
+        let effectView: UIVisualEffectView
+        if #available(iOS 26, *) {
+            effectView = UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            effectView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        }
+        effectView.layer.cornerRadius = Self.cardCorner
+        effectView.layer.cornerCurve = .continuous
+        effectView.clipsToBounds = true
+
+        // On pre-iOS 26, add a white tint overlay for the frosted look
+        if #unavailable(iOS 26) {
+            let tint = UIView()
+            tint.backgroundColor = UIColor.white.withAlphaComponent(0.45)
+            tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            effectView.contentView.addSubview(tint)
+
+            // Subtle border
+            effectView.layer.borderWidth = 0.5
+            effectView.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        }
+
+        contentView.insertSubview(effectView, at: 0)
+        glassBackgroundView = effectView
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
 
         let bounds = contentView.bounds
+
+        // Glass card fills the cell
+        glassBackgroundView?.frame = bounds
+        glassBackgroundView?.layer.cornerRadius = Self.cardCorner
+
         let iconS = Self.iconSize
         let iconX = (bounds.width - iconS) / 2
         let iconY = Self.iconTopPadding
@@ -138,8 +181,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         let dbSize = Self.deleteButtonSize
         deleteButton.frame = CGRect(
-            x: iconX - dbSize / 3,
-            y: iconY - dbSize / 3,
+            x: -(dbSize / 3),
+            y: -(dbSize / 3),
             width: dbSize,
             height: dbSize
         )
@@ -178,6 +221,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         activityIndicator.stopAnimating()
         contentView.alpha = 1
         contentView.isHidden = false
+        glassBackgroundView?.isHidden = false
         isUserInteractionEnabled = true
         isPlaceholderCell = false
         onDeleteTap = nil
@@ -187,6 +231,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     // MARK: - Configuration
 
     func configure(with item: FlekHomeItem, darkMode: Bool, isNew: Bool) {
+        configuredItem = item
         switch item {
         case .defaultApp(let kind):
             iconImageView.image = UIImage(named: kind.iconAssetName)
@@ -212,6 +257,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             iconImageView.image = nil
             nameLabel.text = nil
             contentView.alpha = 0
+            glassBackgroundView?.isHidden = true
             isUserInteractionEnabled = false
             isPlaceholderCell = true
         }

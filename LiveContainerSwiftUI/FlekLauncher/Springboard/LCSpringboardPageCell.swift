@@ -75,7 +75,9 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let spacing: CGFloat = 12
         let availableWidth = contentView.bounds.width - inset * 2 - spacing * (cols - 1)
         let cellWidth = floor(availableWidth / cols)
-        let cellHeight = cellWidth + 24 // icon + label + spacing
+        // Card height: iconTopPadding(16) + icon(60) + labelSpacing(6) + label(16) + bottomPad(8) = 106
+        // Plus some spacing below the card for the "new" dot area
+        let cellHeight = cellWidth + 10
 
         layout.itemSize = CGSize(width: cellWidth, height: cellHeight)
         layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 0, right: inset)
@@ -150,11 +152,11 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
             cell.setDeleteButtonVisible(false, animated: false)
         }
 
-        // Hide cell if it's being dragged
+        // Hide cell entirely if it's being dragged
         if let dragId = draggedItemId, item.id == dragId {
-            cell.contentView.isHidden = true
+            cell.isHidden = true
         } else if !cell.isPlaceholderCell {
-            cell.contentView.isHidden = false
+            cell.isHidden = false
         }
 
         // Callbacks
