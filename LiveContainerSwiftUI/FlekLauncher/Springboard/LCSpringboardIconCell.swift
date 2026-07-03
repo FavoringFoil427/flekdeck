@@ -116,6 +116,13 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     private static let labelTopSpacing: CGFloat = 6
     private static let labelHeight: CGFloat = 16
 
+    // MARK: - Suppress default highlight
+
+    override var isHighlighted: Bool {
+        get { super.isHighlighted }
+        set { /* No highlight visual for springboard icons */ }
+    }
+
     // MARK: - Init
 
     override init(frame: CGRect) {

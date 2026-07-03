@@ -32,6 +32,7 @@ final class LCSpringboardViewController: UIViewController {
     var onDelete: ((FlekHomeItem) -> Void)?
     var onReorder: (([FlekHomeItem]) -> Void)?
     var onEditingChanged: ((Bool) -> Void)?
+    var contextMenuProvider: ((FlekHomeItem) -> UIMenu?)?
 
     // MARK: - UI
 
@@ -375,5 +376,9 @@ extension LCSpringboardViewController: LCSpringboardPageCellDelegate {
 
     func pageCell(_ pageCell: LCSpringboardPageCell, didTapDeleteFor item: FlekHomeItem) {
         onDelete?(item)
+    }
+
+    func pageCell(_ pageCell: LCSpringboardPageCell, contextMenuFor item: FlekHomeItem) -> UIMenu? {
+        return contextMenuProvider?(item)
     }
 }

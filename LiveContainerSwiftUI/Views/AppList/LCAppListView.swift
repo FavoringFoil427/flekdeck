@@ -568,6 +568,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }
                     },
                     onReorder: { persistHomeOrder() },
+                    contextMenuProvider: { homeUIMenu(for: $0) },
                     scrollToPage: $homeScrollToPage
                 )
             }
@@ -862,6 +863,91 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     // MARK: - Home context menu
+
+    @ViewBuilder
+    // MARK: - UIKit Context Menu (for UIKit springboard)
+
+    func homeUIMenu(for item: FlekHomeItem) -> UIMenu? {
+        switch item {
+        case .defaultApp:
+            return nil
+        case .installed(let app):
+            return installedUIMenu(app)
+        case .installing, .placeholder:
+            return nil
+        }
+    }
+
+    private func installedUIMenu(_ app: LCAppModel) -> UIMenu {
+        let runSingle = UIAction(
+            title: "lc.appBanner.runSingle".loc,
+            image: UIImage(systemName: "macwindow")
+        ) { [self] _ in
+            FlekLaunchModeStore.shared.set(.single, for: app)
+            homeRefreshToggle.toggle()
+            FlekLaunchTracker.shared.markLaunched(app)
+            Task { await launchHomeApp(app, parallel: false) }
+        }
+        let runParallel = UIAction(
+            title: "lc.appBanner.runParallel".loc,
+            image: UIImage(systemName: "macwindow.on.rectangle")
+        ) { [self] _ in
+            FlekLaunchModeStore.shared.set(.parallel, for: app)
+            homeRefreshToggle.toggle()
+            FlekLaunchTracker.shared.markLaunched(app)
+            Task { await launchHomeApp(app, parallel: true) }
+        }
+        var launchGroup = UIMenu(title: "", options: .displayInline, children: [runSingle, runParallel])
+        if #available(iOS 16.0, *) {
+            launchGroup.preferredElementSize = .medium
+        }
+
+        let copyUrl = UIAction(
+            title: "lc.appBanner.copyLaunchUrl".loc,
+            image: UIImage(systemName: "link")
+        ) { [self] _ in
+            homeCopyLaunchUrl(app)
+        }
+        let saveIcon = UIAction(
+            title: "lc.appBanner.saveAppIcon".loc,
+            image: UIImage(systemName: "square.and.arrow.down")
+        ) { [self] _ in
+            Task { await homeSaveIcon(app) }
+        }
+        let createClip = UIAction(
+            title: "lc.appBanner.createAppClip".loc,
+            image: UIImage(systemName: "appclip")
+        ) { [self] _ in
+            Task { await homeCreateAppClip(app) }
+        }
+        let addToHomeScreen = UIMenu(
+            title: "lc.appBanner.addToHomeScreen".loc,
+            image: UIImage(systemName: "plus.app"),
+            children: [copyUrl, saveIcon, createClip]
+        )
+
+        let settings = UIAction(
+            title: "lc.tabView.settings".loc,
+            image: UIImage(systemName: "gear")
+        ) { [self] _ in
+            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
+        }
+
+        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, settings]
+
+        if !app.uiIsShared {
+            let uninstall = UIAction(
+                title: "lc.appBanner.uninstall".loc,
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [self] _ in
+                Task { await requestUninstall(app) }
+            }
+            children.append(uninstall)
+        }
+
+        return UIMenu(title: "", children: children)
+    }
 
     @ViewBuilder
     func homeContextMenu(for item: FlekHomeItem) -> some View {

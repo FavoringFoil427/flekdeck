@@ -80,10 +80,54 @@ final class LCSpringboardDragManager {
         guard let (pageIndex, pageCell) = vc.pageCellAtPoint(touchInView) else { return }
 
         let touchInPage = gesture.location(in: pageCell.collectionView)
-        guard let indexPath = pageCell.collectionView.indexPathForItem(at: touchInPage),
-              let iconCell = pageCell.collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell,
-              !iconCell.isPlaceholderCell else { return }
 
+        // Check if touch landed on an icon cell
+        let hitIconCell: LCSpringboardIconCell?
+        if let indexPath = pageCell.collectionView.indexPathForItem(at: touchInPage),
+           let iconCell = pageCell.collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell,
+           !iconCell.isPlaceholderCell {
+            hitIconCell = iconCell
+        } else {
+            hitIconCell = nil
+        }
+
+        // Not in edit mode: long press on empty space or default app → enter edit mode
+        // Long press on an installed app icon is handled by context menu, so cancel the gesture
+        if !vc.isInEditMode {
+            let isDefaultApp: Bool
+            if let iconCell = hitIconCell,
+               let indexPath = pageCell.collectionView.indexPath(for: iconCell) {
+                let item = pageCell.items[indexPath.item]
+                if case .defaultApp = item { isDefaultApp = true } else { isDefaultApp = false }
+            } else {
+                isDefaultApp = false
+            }
+
+            if hitIconCell == nil {
+                // Empty space → enter edit mode only
+                feedbackGenerator.impactOccurred()
+                vc.setEditing(true)
+                gesture.isEnabled = false
+                gesture.isEnabled = true
+                return
+            }
+
+            if isDefaultApp {
+                // Default app → enter edit mode and continue to start drag below
+                feedbackGenerator.impactOccurred()
+                vc.setEditing(true)
+            } else {
+                // Installed app → let context menu handle it
+                gesture.isEnabled = false
+                gesture.isEnabled = true
+                return
+            }
+        }
+
+        // In edit mode (or just entered for default app): start drag on an icon
+        guard let iconCell = hitIconCell else { return }
+
+        let indexPath = pageCell.collectionView.indexPath(for: iconCell)!
         let item = pageCell.items[indexPath.item]
         guard item.isDraggable else { return }
 
@@ -103,12 +147,6 @@ final class LCSpringboardDragManager {
 
         // jSpringBoard hides contentView only (not the whole cell)
         iconCell.contentView.isHidden = true
-
-        // jSpringBoard: haptic fires inside enterEditingMode(), not on every drag
-        if !vc.isInEditMode {
-            feedbackGenerator.impactOccurred()
-            vc.setEditing(true, fromDrag: true)
-        }
 
         UIView.animate(withDuration: 0.25) {
             snapshot.transform = CGAffineTransform.identity.scaledBy(x: 1.3, y: 1.3)

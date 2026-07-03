@@ -12,6 +12,7 @@ import UIKit
 protocol LCSpringboardPageCellDelegate: AnyObject {
     func pageCell(_ pageCell: LCSpringboardPageCell, didTapItem item: FlekHomeItem)
     func pageCell(_ pageCell: LCSpringboardPageCell, didTapDeleteFor item: FlekHomeItem)
+    func pageCell(_ pageCell: LCSpringboardPageCell, contextMenuFor item: FlekHomeItem) -> UIMenu?
 }
 
 final class LCSpringboardPageCell: UICollectionViewCell {
@@ -175,4 +176,34 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
 
 // MARK: - UICollectionViewDelegate
 
-extension LCSpringboardPageCell: UICollectionViewDelegate { }
+extension LCSpringboardPageCell: UICollectionViewDelegate {
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard !isEditing else { return nil }
+        let item = items[indexPath.item]
+        guard !item.isPlaceholder else { return nil }
+        if case .installing = item { return nil }
+
+        guard let menu = delegate?.pageCell(self, contextMenuFor: item) else { return nil }
+
+        return UIContextMenuConfiguration(identifier: indexPath as NSCopying, previewProvider: nil) { _ in
+            menu
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let indexPath = configuration.identifier as? IndexPath,
+              let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+        let params = UIPreviewParameters()
+        params.backgroundColor = .clear
+        return UITargetedPreview(view: cell, parameters: params)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let indexPath = configuration.identifier as? IndexPath,
+              let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+        let params = UIPreviewParameters()
+        params.backgroundColor = .clear
+        return UITargetedPreview(view: cell, parameters: params)
+    }
+}

@@ -17,6 +17,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onReorder: () -> Void
+    var contextMenuProvider: ((FlekHomeItem) -> UIMenu?)?
     @Binding var scrollToPage: Int?
 
     func makeUIViewController(context: Context) -> LCSpringboardViewController {
@@ -32,6 +33,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
         vc.onEditingChanged = { editing in
             isEditing = editing
         }
+        vc.contextMenuProvider = contextMenuProvider
         return vc
     }
 
@@ -72,6 +74,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
         vc.onEditingChanged = { editing in
             isEditing = editing
         }
+        vc.contextMenuProvider = contextMenuProvider
 
         // Scroll-to-page request from SwiftUI
         if let page = scrollToPage {
