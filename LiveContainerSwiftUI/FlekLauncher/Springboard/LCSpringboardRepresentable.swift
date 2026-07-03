@@ -13,7 +13,6 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     @Binding var items: [FlekHomeItem]
     let darkModeIcon: Bool
     @Binding var isEditing: Bool
-    var isNew: (LCAppModel) -> Bool
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onReorder: () -> Void
@@ -22,7 +21,6 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> LCSpringboardViewController {
         let vc = LCSpringboardViewController()
         vc.darkModeIcon = darkModeIcon
-        vc.isNewCheck = isNew
         vc.onTap = onTap
         vc.onDelete = onDelete
         vc.onReorder = { [self] newItems in
@@ -59,7 +57,6 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
         }
 
         // Closures that may have captured new state
-        vc.isNewCheck = isNew
         vc.onTap = onTap
         vc.onDelete = onDelete
         vc.onReorder = { [self] newItems in

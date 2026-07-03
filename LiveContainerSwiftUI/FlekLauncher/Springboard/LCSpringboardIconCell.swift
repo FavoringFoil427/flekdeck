@@ -22,7 +22,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     let nameLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .white
+        label.textColor = .label
         label.textAlignment = .center
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
@@ -31,13 +31,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return label
     }()
 
-    /// Blue "new" dot shown for apps that haven't been launched yet.
-    let newDotView: UIView = {
-        let v = UIView()
-        v.backgroundColor = UIColor.systemBlue
-        v.isHidden = true
-        return v
-    }()
+    
 
     /// Delete button shown in edit mode (top-left of icon).
     let deleteButton: UIButton = {
@@ -87,7 +81,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     static let iconSize: CGFloat = 60
     private static let iconCornerRadius: CGFloat = 13.4 // ~0.2237 * 60
     private static let deleteButtonSize: CGFloat = 24
-    private static let newDotSize: CGFloat = 8
+    
     private static let cardCorner: CGFloat = 20
     private static let cardPadding: CGFloat = 10
     private static let iconTopPadding: CGFloat = 16
@@ -113,7 +107,6 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         contentView.addSubview(iconImageView)
         contentView.addSubview(nameLabel)
-        contentView.addSubview(newDotView)
         contentView.addSubview(deleteButton)
 
         // Install overlay on top of icon
@@ -157,16 +150,21 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         super.layoutSubviews()
 
         let bounds = contentView.bounds
+        let cardSide = bounds.width
 
-        // Glass card fills the cell
-        glassBackgroundView?.frame = bounds
+        // Square glass card, offset down to leave room for delete button overhang
+        let cardY = (bounds.height - cardSide) / 2
+        let cardFrame = CGRect(x: 0, y: cardY, width: cardSide, height: cardSide)
+        glassBackgroundView?.frame = cardFrame
         glassBackgroundView?.layer.cornerRadius = Self.cardCorner
 
+        // Content block: icon + spacing + label
         let iconS = Self.iconSize
-        let iconX = (bounds.width - iconS) / 2
-        let iconY = Self.iconTopPadding
+        let contentHeight = iconS + Self.labelTopSpacing + Self.labelHeight
+        let contentY = cardY + (cardSide - contentHeight) / 2
 
-        iconImageView.frame = CGRect(x: iconX, y: iconY, width: iconS, height: iconS)
+        let iconX = (bounds.width - iconS) / 2
+        iconImageView.frame = CGRect(x: iconX, y: contentY, width: iconS, height: iconS)
         applySquircleMask()
 
         installOverlay.frame = iconImageView.bounds
@@ -174,29 +172,20 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         nameLabel.frame = CGRect(
             x: 4,
-            y: iconY + iconS + Self.labelTopSpacing,
+            y: contentY + iconS + Self.labelTopSpacing,
             width: bounds.width - 8,
             height: Self.labelHeight
         )
 
         let dbSize = Self.deleteButtonSize
         deleteButton.frame = CGRect(
-            x: -(dbSize / 3),
-            y: -(dbSize / 3),
+            x: cardFrame.minX - (dbSize / 3),
+            y: cardFrame.minY - (dbSize / 3),
             width: dbSize,
             height: dbSize
         )
         deleteButton.layer.cornerRadius = dbSize / 2
         deleteButton.layer.masksToBounds = true
-
-        let dotSize = Self.newDotSize
-        newDotView.frame = CGRect(
-            x: (bounds.width - dotSize) / 2,
-            y: nameLabel.frame.maxY + 3,
-            width: dotSize,
-            height: dotSize
-        )
-        newDotView.layer.cornerRadius = dotSize / 2
     }
 
     private func applySquircleMask() {
@@ -214,7 +203,6 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         stopJiggle()
         iconImageView.image = nil
         nameLabel.text = nil
-        newDotView.isHidden = true
         deleteButton.isHidden = true
         deleteButton.alpha = 0
         installOverlay.isHidden = true
@@ -230,25 +218,22 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Configuration
 
-    func configure(with item: FlekHomeItem, darkMode: Bool, isNew: Bool) {
+    func configure(with item: FlekHomeItem, darkMode: Bool) {
         configuredItem = item
         switch item {
         case .defaultApp(let kind):
             iconImageView.image = UIImage(named: kind.iconAssetName)
             nameLabel.text = kind.title
-            newDotView.isHidden = true
             isPlaceholderCell = false
 
         case .installed(let app):
             iconImageView.image = app.appInfo.iconIsDarkIcon(darkMode)
             nameLabel.text = app.appInfo.displayName()
-            newDotView.isHidden = !isNew
             isPlaceholderCell = false
 
         case .installing:
             iconImageView.image = nil
             nameLabel.text = "Installing..."
-            newDotView.isHidden = true
             installOverlay.isHidden = false
             activityIndicator.startAnimating()
             isPlaceholderCell = false
@@ -339,11 +324,26 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         let container = LCIconCellSnapshotView(frame: bounds)
         container.clipsToBounds = false
 
-        // 1. Card background
-        if let glass = glassBackgroundView,
-           let snap = glass.snapshotView(afterScreenUpdates: true) {
-            snap.frame = glass.frame
-            container.addSubview(snap)
+        // 1. Card background — recreate instead of snapshotting
+        // (UIVisualEffectView snapshots are unreliable, especially UIGlassEffect)
+        if let glass = glassBackgroundView {
+            let bgCopy: UIVisualEffectView
+            if #available(iOS 26, *) {
+                bgCopy = UIVisualEffectView(effect: UIGlassEffect())
+            } else {
+                bgCopy = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+                let tint = UIView()
+                tint.backgroundColor = UIColor.white.withAlphaComponent(0.45)
+                tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                bgCopy.contentView.addSubview(tint)
+                bgCopy.layer.borderWidth = 0.5
+                bgCopy.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+            }
+            bgCopy.frame = glass.frame
+            bgCopy.layer.cornerRadius = Self.cardCorner
+            bgCopy.layer.cornerCurve = .continuous
+            bgCopy.clipsToBounds = true
+            container.addSubview(bgCopy)
         }
 
         // 2. Icon

@@ -562,7 +562,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     items: $orderedHomeItems,
                     darkModeIcon: darkModeIcon,
                     isEditing: $isEditing,
-                    isNew: { FlekLaunchTracker.shared.isNew($0) },
                     onTap: { handleHomeTap($0) },
                     onDelete: { item in
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }

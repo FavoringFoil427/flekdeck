@@ -23,7 +23,7 @@ final class LCSpringboardViewController: UIViewController {
     private(set) var isInEditMode: Bool = false
 
     var darkModeIcon: Bool = false
-    var isNewCheck: ((LCAppModel) -> Bool)?
+    
 
     // MARK: - Callbacks (set by Representable)
 
@@ -74,11 +74,12 @@ final class LCSpringboardViewController: UIViewController {
             }
         }
 
+        let pageControlTopPadding: CGFloat = 20
         pageControl.frame = CGRect(
             x: 0,
-            y: cvHeight,
+            y: cvHeight + pageControlTopPadding,
             width: view.bounds.width,
-            height: pageControlHeight
+            height: pageControlHeight - pageControlTopPadding
         )
 
         // Recalculate items-per-page metric (does NOT re-paginate)
@@ -152,10 +153,11 @@ final class LCSpringboardViewController: UIViewController {
         let spacing: CGFloat = 12
         let availableWidth = view.bounds.width - inset * 2 - spacing * (cols - 1)
         let cellWidth = floor(availableWidth / cols)
-        let cellHeight = cellWidth + 24
+        let cellHeight = cellWidth + 10 // matches PageCell's updateFlowLayout
         let topInset: CGFloat = 12
+        let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8
-        let availableHeight = pageHeight - topInset
+        let availableHeight = pageHeight - topInset - bottomInset
         let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
         itemsPerPage = rows * columns
     }
@@ -289,7 +291,7 @@ extension LCSpringboardViewController: UICollectionViewDataSource {
         cell.items = pages[indexPath.item]
         cell.delegate = self
         cell.darkModeIcon = darkModeIcon
-        cell.isNewCheck = isNewCheck
+    
         cell.draggedItemId = dragManager.currentOperation?.itemId
         cell.collectionView.reloadData()
 

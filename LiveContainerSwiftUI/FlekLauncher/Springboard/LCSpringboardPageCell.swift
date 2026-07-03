@@ -23,7 +23,6 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     var items: [FlekHomeItem] = []
     var draggedItemId: String?
     var darkModeIcon: Bool = false
-    var isNewCheck: ((LCAppModel) -> Bool)?
     private(set) var isEditing = false
 
     // MARK: - Inner collection view
@@ -36,6 +35,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
         let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
         cv.backgroundColor = .clear
+        cv.clipsToBounds = false
         cv.isScrollEnabled = false
         cv.showsVerticalScrollIndicator = false
         cv.register(LCSpringboardIconCell.self, forCellWithReuseIdentifier: "IconCell")
@@ -51,6 +51,9 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+
+        clipsToBounds = false
+        contentView.clipsToBounds = false
 
         contentView.addSubview(collectionView)
         collectionView.dataSource = self
@@ -80,7 +83,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let cellHeight = cellWidth + 10
 
         layout.itemSize = CGSize(width: cellWidth, height: cellHeight)
-        layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 0, right: inset)
+        layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 12, right: inset)
         layout.minimumInteritemSpacing = spacing
         layout.minimumLineSpacing = 8
     }
@@ -115,7 +118,8 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let cellHeight = layout.itemSize.height
         let topInset = layout.sectionInset.top
         let lineSpacing = layout.minimumLineSpacing
-        let availableHeight = contentView.bounds.height - topInset
+        let bottomInset = layout.sectionInset.bottom
+        let availableHeight = contentView.bounds.height - topInset - bottomInset
         return max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
     }
 
@@ -136,12 +140,7 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "IconCell", for: indexPath) as! LCSpringboardIconCell
         let item = items[indexPath.item]
 
-        var isNew = false
-        if case .installed(let app) = item {
-            isNew = isNewCheck?(app) ?? false
-        }
-
-        cell.configure(with: item, darkMode: darkModeIcon, isNew: isNew)
+        cell.configure(with: item, darkMode: darkModeIcon)
 
         // Edit mode state
         if isEditing && !cell.isPlaceholderCell {
