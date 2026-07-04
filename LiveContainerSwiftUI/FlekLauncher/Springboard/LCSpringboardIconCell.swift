@@ -45,6 +45,18 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return btn
     }()
 
+    /// Badge for single-mode apps (top-right of icon).
+    private let singleBadge: UILabel = {
+        let label = UILabel()
+        label.text = "1"
+        label.font = .systemFont(ofSize: 12, weight: .bold)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.backgroundColor = .systemBlue
+        label.isHidden = true
+        return label
+    }()
+
     /// Dimming overlay for `.installing` state (covers icon).
     private let installOverlay: UIView = {
         let v = UIView()
@@ -142,6 +154,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         contentView.addSubview(iconImageView)
         contentView.addSubview(nameLabel)
+        contentView.addSubview(singleBadge)
         contentView.addSubview(deleteButton)
 
         // Install overlay on top of icon
@@ -228,6 +241,17 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             height: Self.labelHeight
         )
 
+        // Single-mode badge (top-right of icon)
+        let badgeSize: CGFloat = 20
+        singleBadge.frame = CGRect(
+            x: iconImageView.frame.maxX - badgeSize / 2,
+            y: iconImageView.frame.minY - badgeSize / 3,
+            width: badgeSize,
+            height: badgeSize
+        )
+        singleBadge.layer.cornerRadius = badgeSize / 2
+        singleBadge.layer.masksToBounds = true
+
         let dbSize = Self.deleteButtonSize
         deleteButton.frame = CGRect(
             x: cardFrame.minX - (dbSize / 3),
@@ -256,6 +280,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         nameLabel.text = nil
         deleteButton.isHidden = true
         deleteButton.alpha = 0
+        singleBadge.isHidden = true
         installOverlay.isHidden = true
         activityIndicator.stopAnimating()
         progressLabel.isHidden = true
@@ -288,6 +313,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         case .installed(let app):
             iconImageView.image = app.appInfo.iconIsDarkIcon(darkMode)
             nameLabel.text = app.appInfo.displayName()
+            singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
             isPlaceholderCell = false
 
         case .installing:
