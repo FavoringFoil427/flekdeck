@@ -43,6 +43,11 @@ struct FlekGameWarningTarget: Identifiable {
     let app: LCAppModel
 }
 
+struct NavigationTarget: Identifiable {
+    let id = UUID()
+    let view: AnyView
+}
+
 struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @Binding var appDataFolderNames: [String]
     @Binding var tweakFolderNames: [String]
@@ -80,8 +85,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var safariViewOpened = false
     @State var safariViewURL = URL(string: "https://google.com")!
     
-    @State private var navigateTo : AnyView?
-    @State private var isNavigationActive = false
+    @State private var navigationTarget: NavigationTarget?
     
     @State private var helpPresent = false
     
@@ -339,8 +343,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 showInstallerCover = false
             }
         }
-        .sheet(isPresented: $isNavigationActive) {
-            if let navigateTo { navigateTo }
+        .sheet(item: $navigationTarget) { target in
+            target.view
         }
         .sheet(item: $gameWarningTarget) { target in
             FlekGameWarningView(appName: target.app.appInfo.displayName() ?? "") { parallel, remember in
@@ -1500,6 +1504,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         .addObjects(from: urlSchemes as! [Any])
                 }
             }
+            
+            // Explicitly rebuild home items so the new app icon appears
+            // immediately (onChange handlers may miss it due to batching).
+            rebuildOrderedHomeItems()
         }
     }
     
@@ -1859,8 +1867,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
     func openNavigationView(view: AnyView) {
-        navigateTo = view
-        isNavigationActive = true
+        navigationTarget = NavigationTarget(view: view)
     }
     
     func promptForGeneratedIconStyle() async -> GeneratedIconStyle? {
@@ -1873,8 +1880,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
     
     func closeNavigationView() {
-        isNavigationActive = false
-        navigateTo = nil
+        navigationTarget = nil
     }
     
     func copyError() {
