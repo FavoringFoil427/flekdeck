@@ -82,9 +82,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let spacing: CGFloat = 12
         let availableWidth = contentView.bounds.width - inset * 2 - spacing * (cols - 1)
         let cellWidth = floor(availableWidth / cols)
-        // Card height: iconTopPadding(16) + icon(60) + labelSpacing(6) + label(16) + bottomPad(8) = 106
-        // Plus some spacing below the card for the "new" dot area
-        let cellHeight = cellWidth + 10
+        let cellHeight = cellWidth
 
         layout.itemSize = CGSize(width: cellWidth, height: cellHeight)
         layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 12, right: inset)

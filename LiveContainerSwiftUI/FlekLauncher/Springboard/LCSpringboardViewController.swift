@@ -171,7 +171,7 @@ final class LCSpringboardViewController: UIViewController {
         let spacing: CGFloat = 12
         let availableWidth = view.bounds.width - inset * 2 - spacing * (cols - 1)
         let cellWidth = floor(availableWidth / cols)
-        let cellHeight = cellWidth + 10 // matches PageCell's updateFlowLayout
+        let cellHeight = cellWidth // matches PageCell's updateFlowLayout
         let topInset: CGFloat = 12
         let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8

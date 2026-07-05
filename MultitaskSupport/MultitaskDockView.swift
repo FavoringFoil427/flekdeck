@@ -469,6 +469,7 @@ class AppInfoProvider {
         guard let hostingController = hostingController, let keyWindow = self.keyWindow else { return }
         
         DispatchQueue.main.async {
+            guard self.isSwitcherBarVisible else { return }
             self.isSwitcherBarVisible = false
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
@@ -544,6 +545,10 @@ class AppInfoProvider {
     // MARK: - Navigation Assist Button
     
     private func showNavAssist(in window: UIWindow) {
+        // Remove any existing nav assist button to prevent duplicates
+        navAssistButton?.removeFromSuperview()
+        navAssistButton = nil
+
         let size = Constants.navAssistSize
         let screenBounds = window.bounds
         let x = screenBounds.width - safeAreaInsets.right - size - Constants.navAssistMargin
@@ -715,20 +720,20 @@ class AppInfoProvider {
         
         isNavAssistStashed = true
         
-        // Add chevron indicator if not already present
-        if navAssistChevron == nil {
-            let chevronName = onRight ? "chevron.left" : "chevron.right"
-            let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
-            let chevronImage = UIImage(systemName: chevronName, withConfiguration: config)
+        // Add or update chevron indicator
+        let chevronName = onRight ? "chevron.left" : "chevron.right"
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        let chevronImage = UIImage(systemName: chevronName, withConfiguration: config)
+
+        if let existing = navAssistChevron {
+            existing.image = chevronImage
+        } else {
             let chevronView = UIImageView(image: chevronImage)
             chevronView.tintColor = .white
             chevronView.contentMode = .center
-            // Offset chevron toward the visible side
-            let chevronFrame = button.bounds
-            chevronView.frame = chevronFrame
+            chevronView.frame = button.bounds
             chevronView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             
-            // Hide the main icon, show chevron
             button.viewWithTag(100)?.isHidden = true
             button.addSubview(chevronView)
             navAssistChevron = chevronView
