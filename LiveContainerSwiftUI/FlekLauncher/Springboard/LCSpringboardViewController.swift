@@ -84,8 +84,16 @@ final class LCSpringboardViewController: UIViewController {
             height: pageControlHeight - pageControlTopPadding
         )
 
-        // Recalculate items-per-page metric (does NOT re-paginate)
+        // Recalculate items-per-page; re-paginate if it changed
+        // (the initial updateItems call may run before SwiftUI applies
+        // padding, giving an oversized frame and too many rows).
+        let oldIPP = itemsPerPage
         recalculateItemsPerPage()
+        if itemsPerPage != oldIPP && !flatItems.isEmpty {
+            paginateFromFlatItems()
+            outerCollectionView.reloadData()
+            pageControl.numberOfPages = pages.count
+        }
     }
 
     // MARK: - Setup
