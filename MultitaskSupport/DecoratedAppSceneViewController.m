@@ -75,7 +75,8 @@ void UIKitFixesInit(void) {
     frame.origin = CGPointMake(rootViewCenter.x - frame.size.width / 2, rootViewCenter.y - frame.size.height / 2);
     
     if(_isMaximized) {
-        [self updateMaximizedFrameWithSettings:self.appSceneVC.settings];
+        // Don't call updateMaximizedFrameWithSettings here — navBar not created yet.
+        // The frame will be set after updateVerticalConstraints below.
         CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
         // save origin as normalized coordinates
         frame.origin.x /= maxFrame.size.width;
@@ -129,6 +130,10 @@ void UIKitFixesInit(void) {
         [_appSceneVC.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
     ]];
     
+    // Set the maximized frame now that navBar is created and hidden
+    if(_isMaximized) {
+        [self updateMaximizedFrameWithSettings:self.appSceneVC.settings];
+    }
     
     [self updateOriginalFrame];
 }
