@@ -1437,6 +1437,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         finalNewApp.installationDate = Date.now
         
         await MainActor.run {
+            // Mark this URL as successfully installed so the installer row
+            // can show a checkmark animation before reverting to the download button.
+            sharedModel.lastCompletedInstallURL = sharedModel.installingURL
+
             // Remove the installing card before adding the new app so that
             // homeItems never contains both .installing and the new .installed
             // item at the same time (which caused an empty grid slot).

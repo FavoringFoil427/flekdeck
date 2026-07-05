@@ -211,6 +211,7 @@ struct FlekInstallerView: View {
                                                    fraction: sharedModel.installFraction,
                                                    indeterminate: sharedModel.installIndeterminate)
                                 : nil,
+                            isCompleted: sharedModel.lastCompletedInstallURL == app.install_url,
                             onInstall: { install(app) },
                             onCancel: { sharedModel.cancelInstallRequested = true }
                         )
@@ -268,6 +269,7 @@ struct FlekInstallerView: View {
                                                            fraction: sharedModel.installFraction,
                                                            indeterminate: sharedModel.installIndeterminate)
                                         : nil,
+                                    isCompleted: sharedModel.lastCompletedInstallURL == app.install_url,
                                     onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
                                     onCancel: { sharedModel.cancelInstallRequested = true }
                                 )
@@ -480,8 +482,11 @@ struct FlekInstallerRow: View {
     let app: FSAppModel
     let accent: Color
     var installState: FlekInstallState? = nil
+    var isCompleted: Bool = false
     var onInstall: () -> Void
     var onCancel: () -> Void = {}
+
+    @State private var showCheckmark = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -499,6 +504,8 @@ struct FlekInstallerRow: View {
                     FlekRowProgress(state: installState, accent: accent)
                 }
                 .buttonStyle(.plain)
+            } else if showCheckmark {
+                FlekRowCheckmark(accent: accent)
             } else {
                 Button(action: onInstall) {
                     Image(systemName: "arrow.down.circle.fill")
@@ -510,6 +517,16 @@ struct FlekInstallerRow: View {
         }
         .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+        .onChange(of: isCompleted) { completed in
+            if completed {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                    showCheckmark = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    withAnimation { showCheckmark = false }
+                }
+            }
+        }
     }
 }
 
@@ -533,6 +550,45 @@ struct FlekRowProgress: View {
             }
         }
         .frame(width: 30, height: 30)
+    }
+}
+
+/// Animated checkmark shown briefly after a successful install.
+struct FlekRowCheckmark: View {
+    let accent: Color
+    @State private var trimEnd: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.green)
+            // Checkmark drawn with a trim animation
+            CheckmarkShape()
+                .trim(from: 0, to: trimEnd)
+                .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                .padding(8)
+        }
+        .frame(width: 30, height: 30)
+        .onAppear {
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
+                trimEnd = 1
+            }
+        }
+    }
+}
+
+/// A checkmark shape for stroke animation.
+private struct CheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        path.move(to: CGPoint(x: w * 0.2, y: h * 0.5))
+        path.addLine(to: CGPoint(x: w * 0.42, y: h * 0.72))
+        path.addLine(to: CGPoint(x: w * 0.8, y: h * 0.28))
+        return path
     }
 }
 

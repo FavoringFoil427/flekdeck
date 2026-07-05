@@ -76,6 +76,7 @@ class SharedModel: ObservableObject {
     @Published var installFraction: Double = 0
     @Published var installIndeterminate: Bool = true
     @Published var cancelInstallRequested = false
+    @Published var lastCompletedInstallURL: String?
 
     static let isPhone: Bool = {
         UIDevice.current.userInterfaceIdiom == .phone
