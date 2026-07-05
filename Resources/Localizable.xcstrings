@@ -2385,6 +2385,17 @@
         }
       }
     },
+    "lc.appList.customBundleId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bundle Identifier"
+          }
+        }
+      }
+    },
     "lc.appList.enterUrlTip": {
       "extractionState": "manual",
       "localizations": {
@@ -19614,6 +19625,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "打開此選項時LiveContainer不會簽署新App。啟用此選項期間安裝的App會保持未簽署狀態。"
+          }
+        }
+      }
+    },
+    "lc.settings.customBundleId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Customize Bundle ID During Install"
+          }
+        }
+      }
+    },
+    "lc.settings.customBundleIdDesc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show a prompt to customize the app's bundle identifier during installation. Changing the bundle ID creates an isolated app with separate data, keychain, and preferences."
           }
         }
       }

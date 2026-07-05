@@ -60,6 +60,7 @@ typedef NS_ENUM(NSInteger, MultitaskSpecified){
 - (NSString*)displayName;
 - (NSString*)bundlePath;
 - (NSString*)bundleIdentifier;
+- (void)overrideBundleIdentifier:(NSString*)newBundleId;
 - (NSString*)version;
 - (NSMutableArray<NSString *>*)urlSchemes;
 - (instancetype)initWithBundlePath:(NSString*)bundlePath;

@@ -136,6 +136,17 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
     }
 }
 
+- (void)overrideBundleIdentifier:(NSString*)newBundleId {
+    NSString* currentId = _infoPlist[@"CFBundleIdentifier"];
+    if (newBundleId.length > 0 && ![newBundleId isEqualToString:currentId]) {
+        _info[@"LCPreCustomBundleId"] = currentId;
+        _infoPlist[@"CFBundleIdentifier"] = newBundleId;
+        NSString *infoPath = [NSString stringWithFormat:@"%@/Info.plist", _bundlePath];
+        [_infoPlist writeBinToFile:infoPath atomically:YES];
+        [self save];
+    }
+}
+
 - (NSString*)dataUUID {
     return _info[@"LCDataUUID"];
 }

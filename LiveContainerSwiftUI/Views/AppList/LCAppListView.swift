@@ -61,6 +61,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     @State var installOptions: [AppReplaceOption]
     @StateObject var installReplaceAlert = AlertHelper<AppReplaceOption>()
+    @StateObject var bundleIdInput = InputHelper()
     
     @State var webViewOpened = false
     @State var webViewURL : URL = URL(string: "about:blank")!
@@ -484,6 +485,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             },
             actionCancel: {_ in
                 installUrlInput.close(result: nil)
+            }
+        )
+        .textFieldAlert(
+            isPresented: $bundleIdInput.show,
+            title: "lc.appList.customBundleId".loc,
+            text: $bundleIdInput.initVal,
+            placeholder: "com.example.app",
+            action: { newText in
+                bundleIdInput.close(result: newText)
+            },
+            actionCancel: { _ in
+                bundleIdInput.close(result: nil)
             }
         )
         // Download progress is shown on the home app icon (and Installer row),
@@ -1310,6 +1323,22 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         
         guard let newAppInfo = LCAppInfo(bundlePath: appFolderPath.path) else {
             throw "lc.appList.infoPlistCannotReadError".loc
+        }
+
+        // Show bundle ID customization if enabled in settings
+        if LCUtils.appGroupUserDefault.bool(forKey: "LCCustomBundleIdEnabled") {
+            guard let chosenBundleId = await bundleIdInput.open(
+                initVal: newAppInfo.bundleIdentifier()!
+            ) else {
+                // User cancelled
+                self.installprogressVisible = false
+                try fm.removeItem(at: payloadPath)
+                return
+            }
+            let trimmed = chosenBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty && trimmed != newAppInfo.bundleIdentifier()! {
+                newAppInfo.overrideBundleIdentifier(trimmed)
+            }
         }
 
         var appRelativePath = "\(newAppInfo.bundleIdentifier()!.sanitizeNonACSII()).app"
