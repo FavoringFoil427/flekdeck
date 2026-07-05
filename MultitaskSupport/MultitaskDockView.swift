@@ -325,7 +325,11 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             self.apps.removeAll { $0.appUUID == appUUID }
             self.appSnapshotViews.removeValue(forKey: appUUID)
-            self.internalPageControllers.removeValue(forKey: appUUID)
+            if let hostVC = self.internalPageControllers.removeValue(forKey: appUUID) {
+                hostVC.willMove(toParent: nil)
+                hostVC.view.removeFromSuperview()
+                hostVC.removeFromParent()
+            }
             
             if self.frontmostAppUUID == appUUID {
                 self.updateFrontmostApp()
@@ -955,7 +959,16 @@ class AppInfoProvider {
         if isSwitcherBarVisible {
             hostVC.additionalSafeAreaInsets.bottom = Constants.barHeight
         }
-        windowHostingView.addSubview(hostVC.view)
+
+        // Add as child view controller so the hosting controller inherits
+        // proper safe area insets (status bar, etc.) for correct nav bar layout
+        if let rootVC = keyWindow?.rootViewController {
+            rootVC.addChild(hostVC)
+            windowHostingView.addSubview(hostVC.view)
+            hostVC.didMove(toParent: rootVC)
+        } else {
+            windowHostingView.addSubview(hostVC.view)
+        }
         
         internalPageControllers[uuid] = hostVC
         
