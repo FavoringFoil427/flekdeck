@@ -120,6 +120,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     @State private var isViewAppeared = false
     @State private var isMultitaskHomeState = false
+    @Environment(\.colorScheme) private var colorScheme
     
     @ObservedObject var searchContext: SearchContext
     var sortedApps: [LCAppModel] {
@@ -283,6 +284,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         }
                     }
                     .animation(.easeInOut(duration: 0.25), value: isMultitaskHomeState)
+                    .id(colorScheme)
                     .padding(.bottom, 10)
                 }
             }
