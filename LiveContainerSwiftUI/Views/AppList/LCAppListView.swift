@@ -971,8 +971,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     func homeUIMenu(for item: FlekHomeItem) -> UIMenu? {
         switch item {
-        case .defaultApp:
-            return nil
+        case .defaultApp(let kind):
+            guard kind != .settings && kind != .installer else { return nil }
+            let moveCards = UIAction(
+                title: "lc.appBanner.moveCards".loc,
+                image: UIImage(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+            ) { [self] _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    isEditing = true
+                }
+            }
+            return UIMenu(title: "", children: [moveCards])
         case .installed(let app):
             return installedUIMenu(app)
         case .installing:
@@ -1044,7 +1053,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
         }
 
-        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, settings]
+        let moveCards = UIAction(
+            title: "lc.appBanner.moveCards".loc,
+            image: UIImage(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+        ) { [self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                isEditing = true
+            }
+        }
+
+        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, settings, moveCards]
 
         if !app.uiIsShared {
             let uninstall = UIAction(
