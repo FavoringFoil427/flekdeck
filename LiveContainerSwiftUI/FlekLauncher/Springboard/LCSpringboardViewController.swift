@@ -93,6 +93,11 @@ final class LCSpringboardViewController: UIViewController {
             paginateFromFlatItems()
             outerCollectionView.reloadData()
             pageControl.numberOfPages = pages.count
+            // Restore scroll position after re-pagination
+            if currentPage > 0 && currentPage < pages.count {
+                let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(currentPage), y: 0)
+                outerCollectionView.setContentOffset(offset, animated: false)
+            }
         }
     }
 
@@ -151,16 +156,27 @@ final class LCSpringboardViewController: UIViewController {
         // instead of reloading the outer collection view (which destroys cells
         // and causes a visible flash, e.g. when an installing item is cancelled).
         if pages.count == oldPageCount {
-            for cell in outerCollectionView.visibleCells {
-                guard let pageCell = cell as? LCSpringboardPageCell,
-                      let indexPath = outerCollectionView.indexPath(for: pageCell) else { continue }
-                let pageIndex = indexPath.item
-                guard pageIndex < pages.count else { continue }
-                pageCell.installState = installState
-                pageCell.safeReloadItems(pages[pageIndex])
+            let visiblePageCells = outerCollectionView.visibleCells.compactMap { $0 as? LCSpringboardPageCell }
+            if visiblePageCells.isEmpty {
+                // View is off-screen (e.g. behind a fullScreenCover);
+                // reload so cells pick up the new data when they appear.
+                outerCollectionView.reloadData()
+            } else {
+                for pageCell in visiblePageCells {
+                    guard let indexPath = outerCollectionView.indexPath(for: pageCell) else { continue }
+                    let pageIndex = indexPath.item
+                    guard pageIndex < pages.count else { continue }
+                    pageCell.installState = installState
+                    pageCell.safeReloadItems(pages[pageIndex])
+                }
             }
         } else {
             outerCollectionView.reloadData()
+            // Preserve scroll position after page count change
+            if currentPage > 0 && currentPage < pages.count {
+                let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(currentPage), y: 0)
+                outerCollectionView.setContentOffset(offset, animated: false)
+            }
         }
         pageControl.numberOfPages = pages.count
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
