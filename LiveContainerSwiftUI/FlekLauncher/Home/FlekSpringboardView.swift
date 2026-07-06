@@ -622,10 +622,21 @@ struct SpringboardReorderDelegate: DropDelegate {
         guard fromPage >= 0, fromIdx >= 0 else { return }
         guard let toIdx = pages[pageIndex].firstIndex(where: { $0.id == item.id }) else { return }
 
+        // For cross-page moves onto a placeholder, snap to the first
+        // available placeholder so the item fills the earliest empty
+        // slot instead of landing wherever the finger happens to be.
+        let effectiveToIdx: Int
+        if fromPage != pageIndex, item.isPlaceholder,
+           let first = pages[pageIndex].firstIndex(where: { $0.isPlaceholder }) {
+            effectiveToIdx = first
+        } else {
+            effectiveToIdx = toIdx
+        }
+
         withAnimation(.spring) {
             // Swap: each item takes the other's grid position
-            let temp = pages[pageIndex][toIdx]
-            pages[pageIndex][toIdx] = pages[fromPage][fromIdx]
+            let temp = pages[pageIndex][effectiveToIdx]
+            pages[pageIndex][effectiveToIdx] = pages[fromPage][fromIdx]
             pages[fromPage][fromIdx] = temp
         }
 
