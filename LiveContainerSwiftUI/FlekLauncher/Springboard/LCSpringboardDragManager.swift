@@ -291,10 +291,9 @@ final class LCSpringboardDragManager {
             updateState(forPageCell: pageCell, pageIndex: op.currentPage)
         }
 
-        // Sync flatItems and notify SwiftUI.
-        // Use padded flattening so page boundaries survive persistence.
-        vc.flatItems = vc.flatItemsPreservingPageBoundaries()
-        vc.onReorder?(vc.flatItems)
+        // Sync flatItems and page sizes back to SwiftUI so page
+        // boundaries survive through persistence and rebuild.
+        vc.syncPagesToSwiftUI()
 
         // Animate snapshot back into position
         if let pageCell = vc.visiblePageCell(forPage: op.currentPage),

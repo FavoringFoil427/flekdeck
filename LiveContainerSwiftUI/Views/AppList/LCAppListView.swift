@@ -625,9 +625,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
                 } else {
-                    // Deleted app – keep its grid slot as a placeholder so
-                    // surrounding icons don't shift position.
-                    result.append(.placeholder("slot.\(slotIndex)"))
+                    // Deleted app – use distinct prefix so per-page
+                    // compaction can remove only these gaps.
+                    result.append(.placeholder("deleted.\(slotIndex)"))
                     didReplaceDeleted = true
                 }
             }
@@ -656,34 +656,58 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             result.append(contentsOf: sortedApps.map { .installed($0) })
         }
 
-        // When a deletion left the last page(s) all-placeholder, trim them
-        // and update the persisted page sizes so the empty page disappears.
-        // Skip during edit mode – editPages is the source of truth there,
-        // and the exit-edit-mode handler already trims trailing empty pages.
+        // Compact deleted-app placeholders within each page so the
+        // remaining apps on that page close the gap, without pulling
+        // items from other pages.
+        // Skip during edit mode – editPages is the source of truth there.
         if didReplaceDeleted && !isEditing {
+            let isDeletedPlaceholder: (FlekHomeItem) -> Bool = { item in
+                if case .placeholder(let id) = item { return id.hasPrefix("deleted.") }
+                return false
+            }
+
             var sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
             if !sizes.isEmpty {
-                var trimmed = false
+                // Remove deleted placeholders page-by-page
+                var offset = 0
+                for pageIdx in 0..<sizes.count {
+                    let pageStart = offset
+                    let pageEnd = min(pageStart + sizes[pageIdx], result.count)
+                    var i = pageStart
+                    var removed = 0
+                    while i < pageEnd - removed {
+                        if isDeletedPlaceholder(result[i]) {
+                            result.remove(at: i)
+                            removed += 1
+                        } else {
+                            i += 1
+                        }
+                    }
+                    sizes[pageIdx] -= removed
+                    offset = pageStart + sizes[pageIdx]
+                }
+                // Safety: remove any deleted placeholders beyond stored pages
+                result.removeAll(where: isDeletedPlaceholder)
+                // Trim trailing pages that are now all-placeholder or empty
                 while sizes.count > 1 {
                     let lastPageStart = sizes.dropLast().reduce(0, +)
-                    let lastPageEnd = min(lastPageStart + sizes.last!, result.count)
+                    let lastPageEnd = min(lastPageStart + (sizes.last ?? 0), result.count)
                     guard lastPageStart < result.count else {
                         sizes.removeLast()
-                        trimmed = true
                         continue
                     }
                     let lastPage = result[lastPageStart..<lastPageEnd]
-                    if !lastPage.contains(where: { !$0.isPlaceholder }) {
+                    if lastPage.isEmpty || !lastPage.contains(where: { !$0.isPlaceholder }) {
                         result.removeSubrange(lastPageStart..<lastPageEnd)
                         sizes.removeLast()
-                        trimmed = true
                     } else {
                         break
                     }
                 }
-                if trimmed {
-                    LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
-                }
+                LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+            } else {
+                // No page sizes stored — just remove deleted placeholders
+                result.removeAll(where: isDeletedPlaceholder)
             }
         }
 

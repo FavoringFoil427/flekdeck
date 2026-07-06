@@ -251,17 +251,49 @@ final class LCSpringboardViewController: UIViewController {
         return result
     }
 
-    /// Distribute `flatItems` into fixed-size pages.
-    /// Only called from `updateItems` when genuinely new items arrive from SwiftUI.
+    /// Syncs the current page layout back to SwiftUI, persisting both the
+    /// padded flat items and page sizes so that page boundaries survive
+    /// through `rebuildOrderedHomeItems` and `paginateFromFlatItems`.
+    func syncPagesToSwiftUI() {
+        flatItems = flatItemsPreservingPageBoundaries()
+        // Persist page sizes (strip trailing empty edit-mode pages)
+        var sizes = pages.map { $0.count }
+        while sizes.last == 0 { sizes.removeLast() }
+        if !sizes.isEmpty {
+            LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+        }
+        onReorder?(flatItems)
+    }
+
+    /// Distribute `flatItems` into pages.
+    /// Uses stored per-page sizes when available so that custom page
+    /// boundaries (from drag-and-drop reorder) are preserved. Falls back
+    /// to uniform chunking by `itemsPerPage` when no sizes are stored.
     private func paginateFromFlatItems() {
         guard itemsPerPage > 0 else { return }
+
+        let storedSizes = LCUtils.appGroupUserDefault.array(
+            forKey: FlekLauncherKeys.homeScreenPageSizes
+        ) as? [Int]
+
         var newPages: [[FlekHomeItem]] = []
-        var i = 0
-        while i < flatItems.count {
-            let end = min(i + itemsPerPage, flatItems.count)
-            newPages.append(Array(flatItems[i..<end]))
-            i = end
+        var offset = 0
+
+        if let sizes = storedSizes, !sizes.isEmpty {
+            for size in sizes where offset < flatItems.count {
+                let count = min(size, flatItems.count - offset)
+                newPages.append(Array(flatItems[offset..<(offset + count)]))
+                offset += count
+            }
         }
+
+        // Remaining items (beyond stored sizes, or no sizes stored)
+        while offset < flatItems.count {
+            let end = min(offset + itemsPerPage, flatItems.count)
+            newPages.append(Array(flatItems[offset..<end]))
+            offset = end
+        }
+
         if newPages.isEmpty {
             newPages = [[]]
         }
@@ -300,12 +332,11 @@ final class LCSpringboardViewController: UIViewController {
                     self.pageControl.numberOfPages = self.pages.count
                 }
 
-                // Sync flatItems from pages so SwiftUI binding stays consistent.
-                // Use padded flattening so page boundaries survive persistence.
+                // Sync flatItems and page sizes back to SwiftUI so page
+                // boundaries survive through persistence and rebuild.
                 let newFlat = self.flatItemsPreservingPageBoundaries()
                 if newFlat.map(\.id) != self.flatItems.map(\.id) {
-                    self.flatItems = newFlat
-                    self.onReorder?(self.flatItems)
+                    self.syncPagesToSwiftUI()
                 }
             }
         }
