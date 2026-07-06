@@ -411,6 +411,8 @@ struct FlekInstallerView: View {
     // MARK: Actions
 
     private func install(_ app: FSAppModel) {
+        // Don't start a new install while one is in progress
+        guard sharedModel.installingURL == nil else { return }
         if viewModel.repository != .flekstore && !viewModel.hasSubscription {
             showPremium = true
             return
@@ -425,6 +427,7 @@ struct FlekInstallerView: View {
     }
 
     private func installSearchResult(_ app: FSAppModel, fromFlekstore: Bool) {
+        guard sharedModel.installingURL == nil else { return }
         if !fromFlekstore && !viewModel.hasSubscription {
             showPremium = true
             return
