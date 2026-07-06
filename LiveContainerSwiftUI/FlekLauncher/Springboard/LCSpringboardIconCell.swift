@@ -38,8 +38,6 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         let btn = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
         btn.setImage(UIImage(systemName: "minus", withConfiguration: config), for: .normal)
-        btn.tintColor = .white
-        btn.backgroundColor = UIColor.darkGray.withAlphaComponent(0.85)
         btn.isHidden = true
         btn.alpha = 0
         return btn
@@ -265,6 +263,23 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         )
         deleteButton.layer.cornerRadius = dbSize / 2
         deleteButton.layer.masksToBounds = true
+
+        updateDeleteButtonColors()
+    }
+
+    private func updateDeleteButtonColors() {
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        deleteButton.tintColor = isDark ? .white : .black
+        deleteButton.backgroundColor = isDark
+            ? UIColor(white: 0.25, alpha: 1)
+            : UIColor(white: 0.85, alpha: 1)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            updateDeleteButtonColors()
+        }
     }
 
     private func applySquircleMask() {

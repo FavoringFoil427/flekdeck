@@ -27,6 +27,7 @@ struct FlekAppCard<Icon: View>: View {
     /// Random delay so each card wiggles at a different phase, like real iOS.
     @State private var wiggleDelay: Double = 0
     @AppStorage(FlekLauncherKeys.cardStyleGlass, store: LCUtils.appGroupUserDefault) private var cardStyleGlass: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
 
     private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }
 
@@ -86,10 +87,10 @@ struct FlekAppCard<Icon: View>: View {
                 } label: {
                     Image(systemName: "minus")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(colorScheme == .dark ? .white : .black)
                         .frame(width: 24, height: 24)
-                        .background(Circle().fill(Color(white: 0.85)))
-                        .overlay(Circle().strokeBorder(Color.black.opacity(0.15), lineWidth: 0.5))
+                        .background(Circle().fill(colorScheme == .dark ? Color(white: 0.25) : Color(white: 0.85)))
+                        .overlay(Circle().strokeBorder((colorScheme == .dark ? Color.white : Color.black).opacity(0.15), lineWidth: 0.5))
                 }
                 .buttonStyle(.plain)
                 .offset(x: -6, y: -6)
