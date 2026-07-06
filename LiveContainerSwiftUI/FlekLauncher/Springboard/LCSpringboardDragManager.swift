@@ -51,7 +51,7 @@ final class LCSpringboardDragManager {
     private let feedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
 
     // Edge detection
-    private let edgeMargin: CGFloat = 36
+    private let edgeMargin: CGFloat = 50
     private let pageScrollDelay: TimeInterval = 0.7
 
     var isDragging: Bool { currentOperation != nil }
@@ -216,13 +216,13 @@ final class LCSpringboardDragManager {
                     destinationIndex = indexPath.item + 1
                 }
             }
-        } else if touchInPage.x <= layout.sectionInset.left {
+        } else if touchInPage.x <= edgeMargin {
             // Left edge — trigger page scroll
             if !(pageScrollTimer?.isValid ?? false) {
                 startPageScrollTimer(direction: -1)
             }
             return
-        } else if touchInPage.x > pageCell.collectionView.frame.size.width - layout.sectionInset.right {
+        } else if touchInPage.x > pageCell.collectionView.frame.size.width - edgeMargin {
             // Right edge — trigger page scroll
             if !(pageScrollTimer?.isValid ?? false) {
                 startPageScrollTimer(direction: 1)
