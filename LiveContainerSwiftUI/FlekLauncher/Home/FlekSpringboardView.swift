@@ -205,18 +205,23 @@ struct FlekSpringboardView<Menu: View>: View {
             }
             .onChange(of: realItemIds) { newIds in
                 // A real item was removed (confirmed deletion) while in
-                // edit mode – replace it with a placeholder in editPages
-                // so the icon disappears immediately.
+                // edit mode – replace it with a placeholder then compact
+                // the page so remaining icons fill the gap.
                 guard isEditing, !editPages.isEmpty else { return }
                 let idSet = Set(newIds)
-                for pi in editPages.indices {
-                    for ii in editPages[pi].indices {
-                        let editItem = editPages[pi][ii]
-                        guard !editItem.isPlaceholder else { continue }
-                        if !idSet.contains(editItem.id) {
-                            withAnimation {
+                withAnimation {
+                    for pi in editPages.indices {
+                        var needsCompact = false
+                        for ii in editPages[pi].indices {
+                            let editItem = editPages[pi][ii]
+                            guard !editItem.isPlaceholder else { continue }
+                            if !idSet.contains(editItem.id) {
                                 editPages[pi][ii] = .placeholder(UUID().uuidString)
+                                needsCompact = true
                             }
+                        }
+                        if needsCompact {
+                            PageBackgroundDropDelegate.compactPage(&editPages, at: pi)
                         }
                     }
                 }
@@ -575,6 +580,8 @@ struct PageBackgroundDropDelegate: DropDelegate {
         withAnimation(.spring) {
             pages[pageIndex][targetIdx] = pages[fromPage][fromIdx]
             pages[fromPage][fromIdx] = .placeholder(UUID().uuidString)
+            // Compact the source page so remaining items fill the gap
+            Self.compactPage(&pages, at: fromPage)
         }
 
         generator.prepare()
@@ -587,6 +594,14 @@ struct PageBackgroundDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         draggedItem != nil
+    }
+
+    /// Moves all real items to the front of the page and fills remaining
+    /// slots with fresh placeholders so there are no mid-page gaps.
+    static func compactPage(_ pages: inout [[FlekHomeItem]], at pi: Int) {
+        let real = pages[pi].filter { !$0.isPlaceholder }
+        let padCount = pages[pi].count - real.count
+        pages[pi] = real + (0..<padCount).map { _ in .placeholder(UUID().uuidString) }
     }
 }
 
@@ -638,6 +653,11 @@ struct SpringboardReorderDelegate: DropDelegate {
             let temp = pages[pageIndex][effectiveToIdx]
             pages[pageIndex][effectiveToIdx] = pages[fromPage][fromIdx]
             pages[fromPage][fromIdx] = temp
+            // Compact the source page when moving cross-page so
+            // remaining items fill the gap left behind
+            if fromPage != pageIndex {
+                PageBackgroundDropDelegate.compactPage(&pages, at: fromPage)
+            }
         }
 
         generator.prepare()
