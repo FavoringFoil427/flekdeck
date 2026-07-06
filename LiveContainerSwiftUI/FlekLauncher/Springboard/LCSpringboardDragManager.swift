@@ -295,6 +295,23 @@ final class LCSpringboardDragManager {
         // boundaries survive through persistence and rebuild.
         vc.syncPagesToSwiftUI()
 
+        // jSpringBoard: fix inconsistencies BEFORE the slide-back animation.
+        // Skip the dragged cell — it stays hidden until the animation completes.
+        for cell in vc.outerCollectionView.visibleCells {
+            guard let pageCell = cell as? LCSpringboardPageCell else { continue }
+            for iconCell in pageCell.collectionView.visibleCells {
+                guard let iconCell = iconCell as? LCSpringboardIconCell else { continue }
+                if let configItem = iconCell.configuredItem, configItem.id == op.itemId {
+                    continue
+                }
+                iconCell.nameLabel.alpha = 1
+                iconCell.contentView.isHidden = false
+                if vc.isInEditMode {
+                    iconCell.startJiggle(force: true)
+                }
+            }
+        }
+
         // Animate snapshot back into position
         if let pageCell = vc.visiblePageCell(forPage: op.currentPage),
            op.currentIndex < pageCell.collectionView.numberOfItems(inSection: 0),
@@ -305,28 +322,19 @@ final class LCSpringboardDragManager {
                 op.placeholderView.transform = .identity
                 op.placeholderView.frame = convertedFrame
             }, completion: { _ in
+                // Only unhide the dragged cell and clear state in completion
                 targetCell.contentView.isHidden = false
                 op.placeholderView.removeFromSuperview()
                 self.currentOperation = nil
-                pageCell.draggedItemId = nil
+                for cell in vc.outerCollectionView.visibleCells {
+                    (cell as? LCSpringboardPageCell)?.draggedItemId = nil
+                }
             })
         } else {
             op.placeholderView.removeFromSuperview()
             currentOperation = nil
-        }
-
-        // jSpringBoard "fixing possible inconsistencies" pattern:
-        // Reset nameLabel alpha and restart jiggle on all visible cells
-        for cell in vc.outerCollectionView.visibleCells {
-            guard let pageCell = cell as? LCSpringboardPageCell else { continue }
-            pageCell.draggedItemId = nil
-            for iconCell in pageCell.collectionView.visibleCells {
-                guard let iconCell = iconCell as? LCSpringboardIconCell else { continue }
-                iconCell.nameLabel.alpha = 1
-                iconCell.contentView.isHidden = false
-                if vc.isInEditMode {
-                    iconCell.startJiggle()
-                }
+            for cell in vc.outerCollectionView.visibleCells {
+                (cell as? LCSpringboardPageCell)?.draggedItemId = nil
             }
         }
     }

@@ -203,18 +203,15 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         super.layoutSubviews()
 
         let bounds = contentView.bounds
-        let cardSide = bounds.width
 
-        // Square glass card, offset down to leave room for delete button overhang
-        let cardY = (bounds.height - cardSide) / 2
-        let cardFrame = CGRect(x: 0, y: cardY, width: cardSide, height: cardSide)
-        glassBackgroundView?.frame = cardFrame
+        // Glass card fills the full cell bounds
+        glassBackgroundView?.frame = bounds
         glassBackgroundView?.layer.cornerRadius = Self.cardCorner
 
         // Content block: icon + spacing + label
         let iconS = Self.iconSize
         let contentHeight = iconS + Self.labelTopSpacing + Self.labelHeight
-        let contentY = cardY + (cardSide - contentHeight) / 2
+        let contentY = (bounds.height - contentHeight) / 2
 
         let iconX = (bounds.width - iconS) / 2
         iconImageView.frame = CGRect(x: iconX, y: contentY, width: iconS, height: iconS)
@@ -256,8 +253,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         let dbSize = Self.deleteButtonSize
         deleteButton.frame = CGRect(
-            x: cardFrame.minX - (dbSize / 3),
-            y: cardFrame.minY - (dbSize / 3),
+            x: -(dbSize / 3),
+            y: -(dbSize / 3),
             width: dbSize,
             height: dbSize
         )
@@ -441,8 +438,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Jiggle animation (from jSpringBoard)
 
-    func startJiggle() {
-        guard !isAnimating else { return }
+    func startJiggle(force: Bool = false) {
+        guard !isAnimating || force else { return }
         isAnimating = true
 
         let posAnim = CAKeyframeAnimation(keyPath: "position")
@@ -466,16 +463,17 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         group.duration = 0.25
         group.repeatCount = .infinity
         group.isRemovedOnCompletion = false
-        group.beginTime = CACurrentMediaTime() + Double.random(in: 0...0.25)
+        // jSpringBoard: small absolute time (far in the past) makes CA start
+        // instantly at a random phase offset.
+        group.beginTime = Double.random(in: 0...0.25)
         group.animations = [posAnim, rotAnim]
 
         contentView.layer.add(group, forKey: "jitterAnimation")
     }
 
     func stopJiggle() {
-        guard isAnimating else { return }
         isAnimating = false
-        contentView.layer.removeAnimation(forKey: "jitterAnimation")
+        contentView.layer.removeAllAnimations()
         contentView.transform = .identity
     }
 

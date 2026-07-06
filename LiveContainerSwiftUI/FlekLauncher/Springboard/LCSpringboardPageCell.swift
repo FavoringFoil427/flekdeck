@@ -42,6 +42,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         cv.clipsToBounds = false
         cv.isScrollEnabled = false
         cv.showsVerticalScrollIndicator = false
+        cv.contentInsetAdjustmentBehavior = .never
         cv.register(LCSpringboardIconCell.self, forCellWithReuseIdentifier: "IconCell")
         return cv
     }()
@@ -49,7 +50,25 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     // MARK: - Layout config
 
     static let columns: Int = 3
-    static let horizontalInset: CGFloat = 16
+
+    /// jSpringBoard dynamic cell width: 30pt side padding for screens ≥390pt, 24pt otherwise.
+    static func computeCellWidth(forWidth width: CGFloat) -> CGFloat {
+        let screenWidth = max(width, 320)
+        let sidePadding: CGFloat = screenWidth >= 390 ? 30 : 24
+        let cols = CGFloat(columns)
+        let totalSpacing: CGFloat = 12 * (cols - 1)
+        let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
+        return floor(availableWidth / cols)
+    }
+
+    /// jSpringBoard horizontal margin: centers the grid with leftover space, min 16pt.
+    static func computeHorizontalInset(forWidth width: CGFloat) -> CGFloat {
+        let screenWidth = max(width, 320)
+        let cols = CGFloat(columns)
+        let totalSpacing: CGFloat = 12 * (cols - 1)
+        let cellWidth = computeCellWidth(forWidth: screenWidth)
+        return max(16, (screenWidth - (cellWidth * cols) - totalSpacing) / 2)
+    }
 
     // MARK: - Init
 
@@ -77,16 +96,13 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     private func updateFlowLayout() {
         guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return }
 
-        let cols = CGFloat(Self.columns)
-        let inset = Self.horizontalInset
-        let spacing: CGFloat = 12
-        let availableWidth = contentView.bounds.width - inset * 2 - spacing * (cols - 1)
-        let cellWidth = floor(availableWidth / cols)
-        let cellHeight = cellWidth
+        let width = contentView.bounds.width
+        let cellWidth = Self.computeCellWidth(forWidth: width)
+        let inset = Self.computeHorizontalInset(forWidth: width)
 
-        layout.itemSize = CGSize(width: cellWidth, height: cellHeight)
+        layout.itemSize = CGSize(width: cellWidth, height: cellWidth)
         layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 12, right: inset)
-        layout.minimumInteritemSpacing = spacing
+        layout.minimumInteritemSpacing = 12
         layout.minimumLineSpacing = 8
     }
 
@@ -130,13 +146,37 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     }
 
     /// Reload items, deferring if a context menu is active to avoid cell reuse glitches.
+    /// When a single item is deleted, applies jSpringBoard's shrink-to-zero animation.
     func safeReloadItems(_ newItems: [FlekHomeItem]) {
         if isContextMenuActive {
             pendingReloadItems = newItems
-        } else {
-            items = newItems
-            collectionView.reloadData()
+            return
         }
+
+        // jSpringBoard delete animation: shrink cell to ~0 then batch-delete
+        if newItems.count == items.count - 1 {
+            let oldIDs = Set(items.map(\.id))
+            let newIDs = Set(newItems.map(\.id))
+            let removed = oldIDs.subtracting(newIDs)
+            if removed.count == 1, let removedID = removed.first,
+               let index = items.firstIndex(where: { $0.id == removedID }),
+               let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) {
+                UIView.animate(withDuration: 0.25, animations: {
+                    cell.contentView.transform = CGAffineTransform.identity.scaledBy(x: 0.0001, y: 0.0001)
+                }, completion: { _ in
+                    self.items = newItems
+                    self.collectionView.performBatchUpdates({
+                        self.collectionView.deleteItems(at: [IndexPath(item: index, section: 0)])
+                    }, completion: { _ in
+                        cell.contentView.transform = .identity
+                    })
+                })
+                return
+            }
+        }
+
+        items = newItems
+        collectionView.reloadData()
     }
 }
 

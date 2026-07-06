@@ -141,6 +141,7 @@ final class LCSpringboardViewController: UIViewController {
         outerCollectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         outerCollectionView.isPagingEnabled = true
         outerCollectionView.showsHorizontalScrollIndicator = false
+        outerCollectionView.contentInsetAdjustmentBehavior = .never
         outerCollectionView.backgroundColor = .clear
         outerCollectionView.clipsToBounds = false
         outerCollectionView.register(LCSpringboardPageCell.self, forCellWithReuseIdentifier: "PageCell")
@@ -218,17 +219,12 @@ final class LCSpringboardViewController: UIViewController {
         let pageHeight = view.bounds.height - pageControlHeight
         guard pageHeight > 0 else { return }
 
-        let inset = LCSpringboardPageCell.horizontalInset
-        let cols = CGFloat(columns)
-        let spacing: CGFloat = 12
-        let availableWidth = view.bounds.width - inset * 2 - spacing * (cols - 1)
-        let cellWidth = floor(availableWidth / cols)
-        let cellHeight = cellWidth // matches PageCell's updateFlowLayout
+        let cellWidth = LCSpringboardPageCell.computeCellWidth(forWidth: view.bounds.width)
         let topInset: CGFloat = 12
         let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8
         let availableHeight = pageHeight - topInset - bottomInset
-        let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        let rows = max(1, Int((availableHeight + lineSpacing) / (cellWidth + lineSpacing)))
         itemsPerPage = rows * columns
     }
 
