@@ -149,6 +149,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     }
 
     private func setupViews() {
+        backgroundColor = .clear
         clipsToBounds = false
         contentView.clipsToBounds = false
 

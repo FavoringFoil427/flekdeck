@@ -228,6 +228,10 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
 
 extension LCSpringboardPageCell: UICollectionViewDelegate {
 
+    func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
+        return false
+    }
+
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard !isEditing else { return nil }
         let item = items[indexPath.item]
@@ -241,18 +245,26 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
 
     func collectionView(_ collectionView: UICollectionView, previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
         guard let indexPath = configuration.identifier as? IndexPath,
-              let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+              let cell = collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell else { return nil }
         let params = UIPreviewParameters()
         params.backgroundColor = .clear
-        return UITargetedPreview(view: cell, parameters: params)
+        params.visiblePath = UIBezierPath(
+            roundedRect: cell.iconImageView.bounds,
+            cornerRadius: 13.4
+        )
+        return UITargetedPreview(view: cell.iconImageView, parameters: params)
     }
 
     func collectionView(_ collectionView: UICollectionView, previewForDismissingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
         guard let indexPath = configuration.identifier as? IndexPath,
-              let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+              let cell = collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell else { return nil }
         let params = UIPreviewParameters()
         params.backgroundColor = .clear
-        return UITargetedPreview(view: cell, parameters: params)
+        params.visiblePath = UIBezierPath(
+            roundedRect: cell.iconImageView.bounds,
+            cornerRadius: 13.4
+        )
+        return UITargetedPreview(view: cell.iconImageView, parameters: params)
     }
 
     func collectionView(_ collectionView: UICollectionView, willDisplayContextMenu configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
