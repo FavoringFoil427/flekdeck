@@ -232,6 +232,25 @@ final class LCSpringboardViewController: UIViewController {
         itemsPerPage = rows * columns
     }
 
+    /// Flatten `pages` back into a single array, padding non-last pages
+    /// with placeholders up to `itemsPerPage` so that page boundaries
+    /// survive the round-trip through `persistHomeOrder` / `rebuildOrderedHomeItems`.
+    func flatItemsPreservingPageBoundaries() -> [FlekHomeItem] {
+        guard itemsPerPage > 0 else { return pages.flatMap { $0 } }
+        var result: [FlekHomeItem] = []
+        for (i, page) in pages.enumerated() {
+            result.append(contentsOf: page)
+            // Pad intermediate pages that are shorter than itemsPerPage
+            if i < pages.count - 1 {
+                let padding = max(0, itemsPerPage - page.count)
+                for j in 0..<padding {
+                    result.append(.placeholder("pad.\(i).\(j)"))
+                }
+            }
+        }
+        return result
+    }
+
     /// Distribute `flatItems` into fixed-size pages.
     /// Only called from `updateItems` when genuinely new items arrive from SwiftUI.
     private func paginateFromFlatItems() {
@@ -281,8 +300,9 @@ final class LCSpringboardViewController: UIViewController {
                     self.pageControl.numberOfPages = self.pages.count
                 }
 
-                // Sync flatItems from pages so SwiftUI binding stays consistent
-                let newFlat = self.pages.flatMap { $0 }
+                // Sync flatItems from pages so SwiftUI binding stays consistent.
+                // Use padded flattening so page boundaries survive persistence.
+                let newFlat = self.flatItemsPreservingPageBoundaries()
                 if newFlat.map(\.id) != self.flatItems.map(\.id) {
                     self.flatItems = newFlat
                     self.onReorder?(self.flatItems)
