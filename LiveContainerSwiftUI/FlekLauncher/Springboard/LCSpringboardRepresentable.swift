@@ -38,6 +38,10 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ vc: LCSpringboardViewController, context: Context) {
+        // Always store the latest items so viewWillAppear can catch up
+        // after being hidden behind a fullScreenCover.
+        vc.pendingItems = items
+
         // Only call updateItems when the SET of items changes
         // (app added/removed), not when order changes (reorder).
         // Compare as sets so reorder doesn't trigger re-pagination.
@@ -46,6 +50,7 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
             let newSet = Set(items.map(\.id))
             if currentSet != newSet {
                 vc.updateItems(items)
+                vc.pendingItems = nil
             }
         }
 

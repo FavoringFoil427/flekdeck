@@ -748,8 +748,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             return sizes.count
         }
-        // Fallback: no custom sizes, can't compute page
-        return 0
+        // Fallback: estimate itemsPerPage from screen geometry
+        // (mirrors LCSpringboardViewController.recalculateItemsPerPage)
+        let cols = CGFloat(LCSpringboardPageCell.columns)
+        let inset = LCSpringboardPageCell.horizontalInset
+        let spacing: CGFloat = 12
+        let screenBounds = UIScreen.main.bounds
+        let availableWidth = screenBounds.width - inset * 2 - spacing * (cols - 1)
+        let cellSize = floor(availableWidth / cols)
+        let pageControlHeight: CGFloat = 30
+        let topInset: CGFloat = 12
+        let bottomInset: CGFloat = 12
+        let lineSpacing: CGFloat = 8
+        let pageHeight = screenBounds.height - pageControlHeight
+        let availableHeight = pageHeight - topInset - bottomInset
+        let rows = max(1, Int((availableHeight + lineSpacing) / (cellSize + lineSpacing)))
+        let ipp = max(1, rows * Int(cols))
+        return index / ipp
     }
 
     /// Scrolls the springboard to the page containing the given item.

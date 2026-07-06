@@ -16,6 +16,10 @@ final class LCSpringboardViewController: UIViewController {
     /// Flat list of all items (source of truth from SwiftUI).
     var flatItems: [FlekHomeItem] = []
 
+    /// Latest items from SwiftUI, even if updateItems() hasn't been called yet.
+    /// Used to catch up when the view reappears after being behind a cover.
+    var pendingItems: [FlekHomeItem]?
+
     /// Paginated items (computed from flatItems).
     var pages: [[FlekHomeItem]] = [[]]
 
@@ -57,6 +61,30 @@ final class LCSpringboardViewController: UIViewController {
         setupOuterCollectionView()
         setupPageControl()
         setupDragManager()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // When the view reappears (e.g. after a fullScreenCover is dismissed),
+        // apply any items that were synced while we were hidden.
+        if let pending = pendingItems {
+            let currentIDs = flatItems.map(\.id)
+            let pendingIDs = pending.map(\.id)
+            if currentIDs != pendingIDs {
+                updateItems(pending)
+                // If the pending items include .installing, scroll to its page
+                // (the original scroll-to-page may have been consumed behind the cover).
+                if let idx = pending.firstIndex(where: { $0.id == "installing" }) {
+                    let page = idx / max(itemsPerPage, 1)
+                    if page < pages.count {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.scrollToPage(page)
+                        }
+                    }
+                }
+            }
+            pendingItems = nil
+        }
     }
 
     override func viewDidLayoutSubviews() {

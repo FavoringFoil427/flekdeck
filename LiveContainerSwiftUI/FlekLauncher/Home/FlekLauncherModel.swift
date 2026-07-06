@@ -89,7 +89,7 @@ enum FlekHomeItem: Identifiable, DragulaItem {
 }
 
 /// Snapshot of the in-progress install, used to render the install card/row.
-struct FlekInstallState {
+struct FlekInstallState: Equatable {
     var name: String?
     var iconURL: String?
     var fraction: Double      // 0...1, only meaningful while downloading
