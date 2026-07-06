@@ -256,8 +256,18 @@ final class LCSpringboardViewController: UIViewController {
     /// through `rebuildOrderedHomeItems` and `paginateFromFlatItems`.
     func syncPagesToSwiftUI() {
         flatItems = flatItemsPreservingPageBoundaries()
-        // Persist page sizes (strip trailing empty edit-mode pages)
-        var sizes = pages.map { $0.count }
+        // Save page sizes matching the padded flat layout.
+        // Non-last pages are padded to itemsPerPage (just like the flat
+        // array), so paginateFromFlatItems splits items at the right
+        // boundaries when reading these sizes back.
+        var sizes: [Int] = []
+        for (i, page) in pages.enumerated() {
+            if i < pages.count - 1 {
+                sizes.append(max(page.count, itemsPerPage))
+            } else {
+                sizes.append(page.count)
+            }
+        }
         while sizes.last == 0 { sizes.removeLast() }
         if !sizes.isEmpty {
             LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)

@@ -55,6 +55,7 @@ public final class DownloadHelper : ObservableObject {
                     }
                 }
                 if self.continuation != nil {
+                    self.continuation = nil
                     c.resume()
                 }
 
@@ -69,11 +70,11 @@ public final class DownloadHelper : ObservableObject {
     }
     
     func cancel() {
-        if let continuation {
-            continuation.resume()
+        if let c = continuation {
+            continuation = nil
+            c.resume()
         }
         cancelled = true
-        continuation = nil
         downloadTask?.cancel()
         isDownloading = false
     }
