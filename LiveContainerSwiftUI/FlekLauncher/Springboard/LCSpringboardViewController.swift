@@ -319,6 +319,20 @@ final class LCSpringboardViewController: UIViewController {
             offset = end
         }
 
+        // Strip placeholder padding so the UIKit collection view only
+        // contains real items. This matches jSpringBoard (which has no
+        // placeholder concept) and ensures clean moveItem animations
+        // during within-page rearrangement. Placeholders are re-added
+        // by flatItemsPreservingPageBoundaries() when syncing back to
+        // SwiftUI for persistence.
+        for i in newPages.indices {
+            newPages[i].removeAll(where: { $0.isPlaceholder })
+        }
+        // Remove trailing empty pages left after stripping
+        while newPages.count > 1 && (newPages.last?.isEmpty ?? true) {
+            newPages.removeLast()
+        }
+
         if newPages.isEmpty {
             newPages = [[]]
         }

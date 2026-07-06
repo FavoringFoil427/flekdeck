@@ -153,22 +153,29 @@ final class LCSpringboardPageCell: UICollectionViewCell {
             return
         }
 
-        // jSpringBoard delete animation: shrink cell to ~0 then batch-delete
+        // Delete animation: shrink icon to ~0, then batch-delete so
+        // remaining icons shift smoothly. Only the icon is scaled —
+        // applying a transform to the full contentView causes liquid
+        // glass visual artefacts.
         if newItems.count == items.count - 1 {
             let oldIDs = Set(items.map(\.id))
             let newIDs = Set(newItems.map(\.id))
             let removed = oldIDs.subtracting(newIDs)
             if removed.count == 1, let removedID = removed.first,
                let index = items.firstIndex(where: { $0.id == removedID }),
-               let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) {
+               let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? LCSpringboardIconCell {
                 UIView.animate(withDuration: 0.25, animations: {
-                    cell.contentView.transform = CGAffineTransform.identity.scaledBy(x: 0.0001, y: 0.0001)
+                    cell.iconImageView.transform = CGAffineTransform.identity.scaledBy(x: 0.0001, y: 0.0001)
+                    cell.nameLabel.alpha = 0
+                    cell.contentView.alpha = 0
                 }, completion: { _ in
                     self.items = newItems
                     self.collectionView.performBatchUpdates({
                         self.collectionView.deleteItems(at: [IndexPath(item: index, section: 0)])
                     }, completion: { _ in
-                        cell.contentView.transform = .identity
+                        cell.iconImageView.transform = .identity
+                        cell.nameLabel.alpha = 1
+                        cell.contentView.alpha = 1
                     })
                 })
                 return

@@ -266,9 +266,6 @@ final class LCSpringboardDragManager {
 
         if destinationIndex == op.currentIndex { return }
 
-        // Don't move onto a placeholder
-        if destinationIndex < pageCell.items.count && pageCell.items[destinationIndex].isPlaceholder { return }
-
         // jSpringBoard pattern: only call moveItem if both indices are valid
         guard op.currentIndex < numberOfItems && destinationIndex < numberOfItems else { return }
 

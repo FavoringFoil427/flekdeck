@@ -661,8 +661,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // Compact deleted-app placeholders within each page so the
         // remaining apps on that page close the gap, without pulling
         // items from other pages.
-        // Skip during edit mode – editPages is the source of truth there.
-        if didReplaceDeleted && !isEditing {
+        if didReplaceDeleted {
             let isDeletedPlaceholder: (FlekHomeItem) -> Bool = { item in
                 if case .placeholder(let id) = item { return id.hasPrefix("deleted.") }
                 return false
