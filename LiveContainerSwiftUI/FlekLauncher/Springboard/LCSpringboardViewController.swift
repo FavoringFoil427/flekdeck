@@ -522,10 +522,13 @@ extension LCSpringboardViewController: UICollectionViewDelegate {
     }
 
     func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
-        guard let pageCell = cell as? LCSpringboardPageCell else { return }
-        if isInEditMode {
-            pageCell.leaveEditingMode()
-        }
+        // Note: Do NOT call leaveEditingMode() here. When the user swipes
+        // between pages during edit mode, leaveEditingMode() starts an animated
+        // hide of delete buttons. If the page scrolls back into view before the
+        // animation completes, the stale completion handler sets isHidden = true
+        // after enterEditingMode() has already shown the buttons, causing them
+        // to randomly disappear. The willDisplay/cellForItemAt callbacks already
+        // handle restoring edit mode state correctly when pages reappear.
     }
 }
 
