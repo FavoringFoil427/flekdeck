@@ -75,7 +75,7 @@ final class LCSpringboardViewController: UIViewController {
                 // If the pending items include .installing, scroll to its page
                 // (the original scroll-to-page may have been consumed behind the cover).
                 if let idx = pending.firstIndex(where: { $0.id == "installing" }) {
-                    let page = idx / max(itemsPerPage, 1)
+                    let page = pageForFlatIndex(idx)
                     if page < pages.count {
                         DispatchQueue.main.async { [weak self] in
                             self?.scrollToPage(page)
@@ -279,6 +279,10 @@ final class LCSpringboardViewController: UIViewController {
     /// Uses stored per-page sizes when available so that custom page
     /// boundaries (from drag-and-drop reorder) are preserved. Falls back
     /// to uniform chunking by `itemsPerPage` when no sizes are stored.
+    ///
+    /// When items exist beyond the stored sizes (e.g. a newly installed app),
+    /// the last page is filled up to `itemsPerPage` before a new page is
+    /// created — matching real iOS SpringBoard behaviour.
     private func paginateFromFlatItems() {
         guard itemsPerPage > 0 else { return }
 
@@ -295,9 +299,24 @@ final class LCSpringboardViewController: UIViewController {
                 newPages.append(Array(flatItems[offset..<(offset + count)]))
                 offset += count
             }
+
+            // Fill the last page up to itemsPerPage before creating new pages.
+            // The last stored page size is the actual item count (not padded),
+            // so there may be room for more items (e.g. a newly installed app).
+            if !newPages.isEmpty && offset < flatItems.count {
+                let lastPageCount = newPages[newPages.count - 1].count
+                let room = itemsPerPage - lastPageCount
+                if room > 0 {
+                    let toAdd = min(room, flatItems.count - offset)
+                    newPages[newPages.count - 1].append(
+                        contentsOf: flatItems[offset..<(offset + toAdd)]
+                    )
+                    offset += toAdd
+                }
+            }
         }
 
-        // Remaining items (beyond stored sizes, or no sizes stored)
+        // Remaining items (beyond stored sizes + last-page fill, or no sizes stored)
         while offset < flatItems.count {
             let end = min(offset + itemsPerPage, flatItems.count)
             newPages.append(Array(flatItems[offset..<end]))
@@ -389,6 +408,40 @@ final class LCSpringboardViewController: UIViewController {
         guard page >= 0 && page < pages.count else { return }
         let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(page), y: 0)
         outerCollectionView.setContentOffset(offset, animated: animated)
+    }
+
+    // MARK: - Page index calculation
+
+    /// Returns the page index for a flat-array position, using stored page
+    /// sizes and filling the last page up to `itemsPerPage` — matching
+    /// `paginateFromFlatItems()` exactly.
+    func pageForFlatIndex(_ index: Int) -> Int {
+        guard itemsPerPage > 0 else { return 0 }
+
+        let sizes = LCUtils.appGroupUserDefault.array(
+            forKey: FlekLauncherKeys.homeScreenPageSizes
+        ) as? [Int] ?? []
+
+        if !sizes.isEmpty {
+            var offset = 0
+            for (page, size) in sizes.enumerated() {
+                offset += size
+                if index < offset { return page }
+            }
+            // Beyond stored sizes: the last page can still hold items
+            // up to itemsPerPage (mirroring paginateFromFlatItems).
+            let lastPageSize = sizes.last ?? 0
+            let room = max(0, itemsPerPage - lastPageSize)
+            let beyondStored = index - offset
+            if beyondStored < room {
+                return sizes.count - 1
+            }
+            // Truly new pages beyond the last stored page's capacity
+            let beyondLastPage = beyondStored - room
+            return sizes.count + beyondLastPage / itemsPerPage
+        }
+
+        return index / itemsPerPage
     }
 
     // MARK: - Helpers

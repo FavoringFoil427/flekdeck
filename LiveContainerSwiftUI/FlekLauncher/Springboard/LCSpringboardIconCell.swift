@@ -99,6 +99,10 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     /// Current icon URL loading task.
     private var iconLoadTask: URLSessionDataTask?
+    /// URL string of the icon currently being loaded (or already loaded).
+    /// Used to avoid cancelling + restarting the same load on every
+    /// progress update (configureInstallState is called very frequently).
+    private var loadingIconURL: String?
 
     // MARK: - State
 
@@ -287,6 +291,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         progressTrack.isHidden = true
         iconLoadTask?.cancel()
         iconLoadTask = nil
+        loadingIconURL = nil
         currentFraction = 0
         contentView.alpha = 1
         contentView.isHidden = false
@@ -340,10 +345,13 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Name
         nameLabel.text = state?.name ?? "Installing..."
 
-        // Icon from URL
+        // Icon from URL — only start a new load when the URL changes.
+        // configureInstallState is called on every progress tick, so
+        // cancelling + restarting the load each time prevented the
+        // icon from ever finishing its download.
         if let urlStr = state?.iconURL, let url = URL(string: urlStr) {
-            if iconImageView.image == nil {
-                // Load icon asynchronously
+            if urlStr != loadingIconURL || iconImageView.image == nil {
+                loadingIconURL = urlStr
                 iconLoadTask?.cancel()
                 iconLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
                     guard let data, let image = UIImage(data: data) else { return }
@@ -353,7 +361,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
                 }
                 iconLoadTask?.resume()
             }
-        } else {
+        } else if state?.iconURL == nil && loadingIconURL != nil {
+            // URL was removed — clear the icon
+            loadingIconURL = nil
+            iconLoadTask?.cancel()
+            iconLoadTask = nil
             iconImageView.image = nil
         }
 

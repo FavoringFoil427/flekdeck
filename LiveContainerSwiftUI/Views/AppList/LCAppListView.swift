@@ -762,17 +762,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     /// Returns the page index for a given flat-array position using
     /// the persisted page sizes (or uniform chunking as fallback).
+    ///
+    /// When the index is beyond the stored page sizes the last page is
+    /// filled up to `itemsPerPage` before a new page is assumed —
+    /// matching `LCSpringboardViewController.paginateFromFlatItems()`.
     private func pageForIndex(_ index: Int) -> Int {
-        let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
-        if !sizes.isEmpty {
-            var offset = 0
-            for (page, size) in sizes.enumerated() {
-                offset += size
-                if index < offset { return page }
-            }
-            return sizes.count
-        }
-        // Fallback: estimate itemsPerPage from screen geometry
+        // Estimate itemsPerPage from screen geometry
         // (mirrors LCSpringboardViewController.recalculateItemsPerPage)
         let cols = CGFloat(LCSpringboardPageCell.columns)
         let inset = LCSpringboardPageCell.horizontalInset
@@ -788,6 +783,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         let availableHeight = pageHeight - topInset - bottomInset
         let rows = max(1, Int((availableHeight + lineSpacing) / (cellSize + lineSpacing)))
         let ipp = max(1, rows * Int(cols))
+
+        let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
+        if !sizes.isEmpty {
+            var offset = 0
+            for (page, size) in sizes.enumerated() {
+                offset += size
+                if index < offset { return page }
+            }
+            // Beyond stored sizes: the last page can still hold items
+            // up to itemsPerPage (mirroring paginateFromFlatItems).
+            let lastPageSize = sizes.last ?? 0
+            let room = max(0, ipp - lastPageSize)
+            let beyondStored = index - offset
+            if beyondStored < room {
+                return sizes.count - 1
+            }
+            let beyondLastPage = beyondStored - room
+            return sizes.count + beyondLastPage / ipp
+        }
+
         return index / ipp
     }
 
@@ -799,11 +814,44 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     var homeInstallState: FlekInstallState {
-        FlekInstallState(
+        // Unified progress bar: download fills 0%→80%, install fills 80%→100%.
+        // For local-file installs (no download) the install phase uses the
+        // full 0%→100% range instead.
+        let downloading = downloadHelper.isDownloading
+        let dlProgress = Double(downloadHelper.downloadProgress)
+        let installProgress = Double(installProgressPercentage)
+
+        let fraction: Double
+        let indeterminate: Bool
+
+        if downloading {
+            // Download phase: 0% → 80%
+            fraction = 0.8 * dlProgress
+            indeterminate = false
+        } else if installprogressVisible {
+            if dlProgress > 0.01 {
+                // URL install — download finished, install in progress: 80% → 100%
+                fraction = 0.8 + 0.2 * installProgress
+                indeterminate = false
+            } else if installProgress > 0 {
+                // Local-file install (no download): 0% → 100%
+                fraction = installProgress
+                indeterminate = false
+            } else {
+                // Very start before any progress ticks
+                indeterminate = true
+                fraction = 0
+            }
+        } else {
+            indeterminate = true
+            fraction = 0
+        }
+
+        return FlekInstallState(
             name: sharedModel.installingName,
             iconURL: sharedModel.installingIconURL,
-            fraction: Double(downloadHelper.downloadProgress),
-            indeterminate: !downloadHelper.isDownloading
+            fraction: fraction,
+            indeterminate: indeterminate
         )
     }
 
