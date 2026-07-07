@@ -524,6 +524,7 @@ extension LCSpringboardViewController: UICollectionViewDelegate {
         // If a drag is in progress and needs to adopt this page
         dragManager.adoptDragOnVisiblePage(pageCell, pageIndex: indexPath.item)
 
+        pageCell.items = pages[indexPath.item]
         pageCell.installState = installState
         pageCell.draggedItemId = dragManager.currentOperation?.itemId
         pageCell.collectionView.reloadData()
