@@ -243,8 +243,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                 .background(
                                     Capsule()
                                         .fill(.ultraThinMaterial)
-                                        .overlay(Capsule().fill(Color.white.opacity(0.45)))
-                                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                                        .overlay(Capsule().fill(Color.primary.opacity(0.15)))
+                                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
                                 )
                                 .transition(.scale.combined(with: .opacity))
                             }
@@ -560,8 +560,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         } else {
             label
                 .background(Capsule().fill(.ultraThinMaterial))
-                .overlay(Capsule().fill(Color.white.opacity(0.28)))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                .overlay(Capsule().fill(Color.primary.opacity(0.15)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
         }
     }
 

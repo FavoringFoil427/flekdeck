@@ -184,16 +184,16 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         effectView.layer.cornerCurve = .continuous
         effectView.clipsToBounds = true
 
-        // On pre-iOS 26, add a white tint overlay for the frosted look
+        // On pre-iOS 26, add a tint overlay for the frosted look
         if #unavailable(iOS 26) {
             let tint = UIView()
-            tint.backgroundColor = UIColor.white.withAlphaComponent(0.45)
+            tint.backgroundColor = UIColor.label.withAlphaComponent(0.15)
             tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             effectView.contentView.addSubview(tint)
 
             // Subtle border
             effectView.layer.borderWidth = 0.5
-            effectView.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+            effectView.layer.borderColor = UIColor.label.withAlphaComponent(0.15).cgColor
         }
 
         contentView.insertSubview(effectView, at: 0)
@@ -497,11 +497,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             } else {
                 bgCopy = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
                 let tint = UIView()
-                tint.backgroundColor = UIColor.white.withAlphaComponent(0.45)
+                tint.backgroundColor = UIColor.label.withAlphaComponent(0.15)
                 tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 bgCopy.contentView.addSubview(tint)
                 bgCopy.layer.borderWidth = 0.5
-                bgCopy.layer.borderColor = UIColor.white.withAlphaComponent(0.25).cgColor
+                bgCopy.layer.borderColor = UIColor.label.withAlphaComponent(0.15).cgColor
             }
             bgCopy.frame = glass.frame
             bgCopy.layer.cornerRadius = Self.cardCorner
