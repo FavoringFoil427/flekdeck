@@ -181,6 +181,16 @@ final class LCSpringboardViewController: UIViewController {
         recalculateItemsPerPage()
         paginateFromFlatItems()
 
+        // In edit mode, preserve the trailing empty page so that the page
+        // count stays stable after a deletion. Without this,
+        // paginateFromFlatItems strips the empty page, causing a page-count
+        // mismatch that forces a full reloadData (no smooth shift animation).
+        if isInEditMode {
+            if pages.last?.isEmpty != true {
+                pages.append([])
+            }
+        }
+
         // If the page count is unchanged, update visible page cells in-place
         // instead of reloading the outer collection view (which destroys cells
         // and causes a visible flash, e.g. when an installing item is cancelled).
