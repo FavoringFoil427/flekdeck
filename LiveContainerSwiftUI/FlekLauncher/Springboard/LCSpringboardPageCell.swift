@@ -261,6 +261,7 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
             roundedRect: cell.iconImageView.bounds,
             cornerRadius: 13.4
         )
+        params.shadowPath = UIBezierPath()
         return UITargetedPreview(view: cell.iconImageView, parameters: params)
     }
 
@@ -273,6 +274,7 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
             roundedRect: cell.iconImageView.bounds,
             cornerRadius: 13.4
         )
+        params.shadowPath = UIBezierPath()
         return UITargetedPreview(view: cell.iconImageView, parameters: params)
     }
 
