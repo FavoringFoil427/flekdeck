@@ -83,6 +83,12 @@ enum FlekHomeItem: Identifiable, DragulaItem {
         return false
     }
 
+    /// Whether this item can be deleted in edit mode.
+    var canDelete: Bool {
+        if case .installed = self { return true }
+        return false
+    }
+
     func getItemProvider() -> NSItemProvider {
         NSItemProvider(object: id as NSString)
     }
