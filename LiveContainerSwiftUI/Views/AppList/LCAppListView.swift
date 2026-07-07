@@ -179,18 +179,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     Button {
                         isEditing = false
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Done")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .foregroundStyle(Color.primary.opacity(0.75))
-                        .padding(.horizontal, 18)
-                        .frame(height: FlekTheme.searchPillSize)
-                        .background(Capsule().fill(.ultraThinMaterial))
-                        .overlay(Capsule().fill(Color.white.opacity(0.28)))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+                        doneButtonLabel
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 10)
@@ -551,6 +540,28 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if let obj2 = obj.object as? [String: Any], let installUrl = obj2["url"] as? URL {
                 Task { await installFromUrl(urlStr: installUrl.absoluteString) }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var doneButtonLabel: some View {
+        let label = HStack(spacing: 6) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 14, weight: .semibold))
+            Text("Done")
+                .font(.system(size: 16, weight: .medium))
+        }
+        .foregroundStyle(Color.primary.opacity(0.75))
+        .padding(.horizontal, 18)
+        .frame(height: FlekTheme.searchPillSize)
+
+        if #available(iOS 26.0, *) {
+            label.glassEffect(.regular.interactive(false))
+        } else {
+            label
+                .background(Capsule().fill(.ultraThinMaterial))
+                .overlay(Capsule().fill(Color.white.opacity(0.28)))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
         }
     }
 
