@@ -20,6 +20,7 @@ struct FlekSearchView: View {
     @State private var query = ""
     @FocusState private var fieldFocused: Bool
     @StateObject private var repoSearch = MultiRepoSearchModel()
+    @Environment(\.colorScheme) private var colorScheme
 
     private var results: [LCAppModel] {
         guard !query.isEmpty else { return [] }
@@ -31,7 +32,7 @@ struct FlekSearchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.3).ignoresSafeArea()
+            Color.black.opacity(colorScheme == .dark ? 0.5 : 0.3).ignoresSafeArea()
                 .onTapGesture { close() }
 
             VStack(spacing: 0) {
@@ -59,9 +60,9 @@ struct FlekSearchView: View {
             VStack(spacing: 12) {
                 Image(systemName: "app.grid")
                     .font(.system(size: 48, weight: .thin))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Color.primary.opacity(0.4))
                 Text("lc.flek.noResults".loc)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(Color.primary.opacity(0.6))
             }
             Spacer()
         } else {
@@ -122,7 +123,7 @@ struct FlekSearchView: View {
                 }
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(Color.primary.opacity(0.7))
             }
             content()
         }
@@ -134,10 +135,10 @@ struct FlekSearchView: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20))
-                    .foregroundStyle(.black.opacity(0.6))
+                    .foregroundStyle(Color.primary.opacity(0.5))
                 TextField("lc.flek.search".loc, text: $query)
                     .font(.system(size: 18))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.primary)
                     .focused($fieldFocused)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -148,7 +149,7 @@ struct FlekSearchView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(.black.opacity(0.4))
+                            .foregroundStyle(Color.primary.opacity(0.35))
                     }
                     .buttonStyle(.plain)
                 }
@@ -156,25 +157,17 @@ struct FlekSearchView: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().fill(Color.white.opacity(0.45)).allowsHitTesting(false))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
-            .compositingGroup()
+            .modifier(SearchPillBackground())
 
             // Clear + close button (returns to the home screen)
             Button {
                 close()
             } label: {
-                ZStack {
-                    Circle().fill(.ultraThinMaterial)
-                        .overlay(Circle().fill(Color.white.opacity(0.45)))
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
-                    Image(systemName: "xmark")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.black.opacity(0.7))
-                }
-                .frame(width: 50, height: 50)
-                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
+                Image(systemName: "xmark")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Color.primary.opacity(0.6))
+                    .frame(width: 50, height: 50)
+                    .modifier(SearchCloseBackground())
             }
             .buttonStyle(.plain)
         }
@@ -298,16 +291,16 @@ private struct FlekSearchRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.appInfo.displayName() ?? "?")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                 Text("\(app.appInfo.version() ?? "?") - \(app.appInfo.bundleIdentifier() ?? "?")")
                     .font(.system(size: 12))
-                    .foregroundStyle(.black.opacity(0.55))
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             Image(systemName: "arrow.up.forward.app")
-                .foregroundStyle(.black.opacity(0.6))
+                .foregroundStyle(Color.primary.opacity(0.5))
         }
         .padding(.horizontal, 12)
         .frame(height: 68)
@@ -324,26 +317,66 @@ private struct FlekStoreSearchRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.app_name)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                 Text("\(app.app_version)")
                     .font(.system(size: 12))
-                    .foregroundStyle(.black.opacity(0.55))
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                 if !app.app_short_description.isEmpty {
                     Text(app.app_short_description)
                         .font(.system(size: 12))
-                        .foregroundStyle(.black.opacity(0.55))
+                        .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 24))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary.opacity(0.5))
         }
         .padding(.horizontal, 12)
         .frame(height: 68)
         .flekGlassCard(cornerRadius: 16)
+    }
+}
+
+// MARK: - Glass background modifiers
+
+/// Applies Liquid Glass capsule on iOS 26+, thin material fallback otherwise.
+private struct SearchPillBackground: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .glassEffect(.regular, in: .capsule)
+        } else {
+            let tint = colorScheme == .dark ? 0.15 : 0.45
+            content
+                .background(Capsule().fill(.ultraThinMaterial))
+                .overlay(Capsule().fill(Color.white.opacity(tint)).allowsHitTesting(false))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
+                .compositingGroup()
+        }
+    }
+}
+
+/// Applies Liquid Glass circle on iOS 26+, thin material fallback otherwise.
+private struct SearchCloseBackground: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .glassEffect(.regular, in: .circle)
+        } else {
+            let tint = colorScheme == .dark ? 0.15 : 0.45
+            content
+                .background(Circle().fill(.ultraThinMaterial))
+                .overlay(Circle().fill(Color.white.opacity(tint)).allowsHitTesting(false))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
+                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
+        }
     }
 }
