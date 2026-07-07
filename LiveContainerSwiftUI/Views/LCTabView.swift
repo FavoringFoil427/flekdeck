@@ -319,6 +319,15 @@ struct LCTabView: View {
         
     }
     private func refreshBlockedStatus() async {
+        #if targetEnvironment(simulator)
+        await MainActor.run {
+            isBlocked = false
+            didFailBlockedStatusCheck = false
+            hasCheckedBlockedStatus = true
+        }
+        return
+        #endif
+
         guard let resolvedEncryptedUDID = resolveEncryptedUDID() else {
             await MainActor.run {
                 accessVerificationFailureMessage = "User UDID is empty. Please contact FlekSt0re tech support."
