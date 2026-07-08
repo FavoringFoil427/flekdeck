@@ -783,13 +783,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // (mirrors LCSpringboardViewController.recalculateItemsPerPage)
         let screenBounds = UIScreen.main.bounds
         let cellSize = LCSpringboardPageCell.computeCellWidth(forWidth: screenBounds.width)
+        let cellHeight = floor(cellSize * 64.0 / 59.0)
         let pageControlHeight: CGFloat = 30
-        let topInset: CGFloat = 12
+        let topInset: CGFloat = 0
         let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8
         let pageHeight = screenBounds.height - pageControlHeight
         let availableHeight = pageHeight - topInset - bottomInset
-        let rows = max(1, Int((availableHeight + lineSpacing) / (cellSize + lineSpacing)))
+        let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
         let ipp = max(1, rows * LCSpringboardPageCell.columns)
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []

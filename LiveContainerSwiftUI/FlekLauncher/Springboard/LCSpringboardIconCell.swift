@@ -21,7 +21,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     let nameLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = .label
         label.textAlignment = .center
         label.numberOfLines = 1
@@ -120,11 +120,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Layout constants
 
-    static let iconSize: CGFloat = 60
-    private static let iconCornerRadius: CGFloat = 13.4 // ~0.2237 * 60
+    static let iconSize: CGFloat = 75
+    private static let iconCornerRadius: CGFloat = 17   // ~0.2237 * iconSize
     private static let deleteButtonSize: CGFloat = 24
     
-    private static let cardCorner: CGFloat = 20
+    private static let cardCorner: CGFloat = 24
     private static let cardPadding: CGFloat = 10
     private static let iconTopPadding: CGFloat = 16
     private static let labelTopSpacing: CGFloat = 6

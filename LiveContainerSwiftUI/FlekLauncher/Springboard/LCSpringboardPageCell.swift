@@ -51,23 +51,23 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     static let columns: Int = 3
 
-    /// jSpringBoard dynamic cell width: 30pt side padding for screens ≥390pt, 24pt otherwise.
+    /// Dynamic cell width with tight margins to maximise icon size.
     static func computeCellWidth(forWidth width: CGFloat) -> CGFloat {
         let screenWidth = max(width, 320)
-        let sidePadding: CGFloat = screenWidth >= 390 ? 30 : 24
+        let sidePadding: CGFloat = screenWidth >= 390 ? 16 : 12
         let cols = CGFloat(columns)
         let totalSpacing: CGFloat = 12 * (cols - 1)
         let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
         return floor(availableWidth / cols)
     }
 
-    /// jSpringBoard horizontal margin: centers the grid with leftover space, min 16pt.
+    /// Horizontal margin: centres the grid with leftover space.
     static func computeHorizontalInset(forWidth width: CGFloat) -> CGFloat {
         let screenWidth = max(width, 320)
         let cols = CGFloat(columns)
         let totalSpacing: CGFloat = 12 * (cols - 1)
         let cellWidth = computeCellWidth(forWidth: screenWidth)
-        return max(16, (screenWidth - (cellWidth * cols) - totalSpacing) / 2)
+        return max(4, (screenWidth - (cellWidth * cols) - totalSpacing) / 2)
     }
 
     // MARK: - Init
@@ -100,8 +100,8 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let cellWidth = Self.computeCellWidth(forWidth: width)
         let inset = Self.computeHorizontalInset(forWidth: width)
 
-        layout.itemSize = CGSize(width: cellWidth, height: cellWidth)
-        layout.sectionInset = UIEdgeInsets(top: 12, left: inset, bottom: 12, right: inset)
+        layout.itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 64.0 / 59.0))
+        layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 12, right: inset)
         layout.minimumInteritemSpacing = 12
         layout.minimumLineSpacing = 8
     }

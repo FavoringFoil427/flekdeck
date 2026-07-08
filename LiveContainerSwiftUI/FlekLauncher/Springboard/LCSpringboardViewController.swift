@@ -272,11 +272,12 @@ final class LCSpringboardViewController: UIViewController {
         guard pageHeight > 0 else { return }
 
         let cellWidth = LCSpringboardPageCell.computeCellWidth(forWidth: view.bounds.width)
-        let topInset: CGFloat = 12
+        let cellHeight = floor(cellWidth * 64.0 / 59.0)
+        let topInset: CGFloat = 0
         let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8
         let availableHeight = pageHeight - topInset - bottomInset
-        let rows = max(1, Int((availableHeight + lineSpacing) / (cellWidth + lineSpacing)))
+        let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
         itemsPerPage = rows * columns
     }
 
