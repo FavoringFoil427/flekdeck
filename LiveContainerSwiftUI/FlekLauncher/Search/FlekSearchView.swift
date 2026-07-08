@@ -47,6 +47,7 @@ struct FlekSearchView: View {
         .onAppear {
             fieldFocused = true
             repoSearch.setup()
+            Task { await MultiRepoSearchModel.prefetchAllRepos() }
         }
         .onChange(of: query) { q in
             debounceTask?.cancel()
@@ -246,8 +247,16 @@ class MultiRepoSearchModel: ObservableObject {
     }
 
     /// Fetches all custom-repo catalogs and writes them to disk cache.
-    /// Call from app launch (background) and installer tab open (refresh).
+    /// Skips if called again within the cooldown interval (5 minutes).
+    private static var lastPrefetchDate: Date?
+    private static let prefetchCooldown: TimeInterval = 300 // 5 minutes
+
     static func prefetchAllRepos() async {
+        if let last = lastPrefetchDate, Date().timeIntervalSince(last) < prefetchCooldown {
+            return
+        }
+        lastPrefetchDate = Date()
+
         let repos = FlekInstallerView.loadRepos()
         let cache = RepoCatalogCache.shared
         await withTaskGroup(of: Void.self) { group in
