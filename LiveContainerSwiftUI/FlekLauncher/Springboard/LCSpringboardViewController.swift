@@ -379,21 +379,40 @@ final class LCSpringboardViewController: UIViewController {
 
             pageControl.backgroundStyle = .minimal
 
-            // jSpringBoard: remove the last page if empty, after a 0.25s delay
+            // Remove trailing empty pages after edit animations settle.
+            // Uses reloadData instead of deleteItems to avoid conflicts
+            // with ongoing leaveEditingMode animations.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 guard let self else { return }
-                if self.pages.count > 1, let last = self.pages.last, last.isEmpty || last.allSatisfy({ $0.isPlaceholder }) {
+
+                var removedPages = false
+                while self.pages.count > 1,
+                      let last = self.pages.last,
+                      last.isEmpty || last.allSatisfy({ $0.isPlaceholder }) {
                     self.pages.removeLast()
-                    self.outerCollectionView.deleteItems(at: [IndexPath(item: self.pages.count, section: 0)])
-                    self.pageControl.numberOfPages = self.pages.count
+                    removedPages = true
                 }
 
-                // Sync flatItems and page sizes back to SwiftUI so page
-                // boundaries survive through persistence and rebuild.
-                let newFlat = self.flatItemsPreservingPageBoundaries()
-                if newFlat.map(\.id) != self.flatItems.map(\.id) {
-                    self.syncPagesToSwiftUI()
+                if removedPages {
+                    // Clamp currentPage if the user was on a removed page
+                    let maxPage = max(0, self.pages.count - 1)
+                    if self.currentPage > maxPage {
+                        self.currentPage = maxPage
+                    }
+                    self.outerCollectionView.reloadData()
+                    self.pageControl.numberOfPages = self.pages.count
+                    self.pageControl.currentPage = self.currentPage
+                    // Scroll to valid page
+                    let offset = CGPoint(
+                        x: self.outerCollectionView.bounds.width * CGFloat(self.currentPage),
+                        y: 0
+                    )
+                    self.outerCollectionView.setContentOffset(offset, animated: true)
                 }
+
+                // Always sync page sizes and flat items back to SwiftUI
+                // so page boundaries survive through persistence and rebuild.
+                self.syncPagesToSwiftUI()
             }
         }
 
