@@ -434,6 +434,17 @@ final class LCSpringboardViewController: UIViewController {
         }
     }
 
+    /// Applies any pending item changes that were deferred while dragging.
+    func applyPendingItemsIfNeeded() {
+        guard let pending = pendingItems else { return }
+        let currentSet = Set(flatItems.map(\.id))
+        let newSet = Set(pending.map(\.id))
+        if currentSet != newSet {
+            updateItems(pending)
+        }
+        pendingItems = nil
+    }
+
     // MARK: - Install state update
 
     /// Updates install progress on visible installing cells without full reload.

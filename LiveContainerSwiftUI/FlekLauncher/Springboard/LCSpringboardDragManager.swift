@@ -326,6 +326,9 @@ final class LCSpringboardDragManager {
                 for cell in vc.outerCollectionView.visibleCells {
                     (cell as? LCSpringboardPageCell)?.draggedItemId = nil
                 }
+                // Apply any item changes that arrived while dragging
+                // (e.g. an installing app finished and became .installed).
+                vc.applyPendingItemsIfNeeded()
             })
         } else {
             op.placeholderView.removeFromSuperview()
@@ -333,6 +336,7 @@ final class LCSpringboardDragManager {
             for cell in vc.outerCollectionView.visibleCells {
                 (cell as? LCSpringboardPageCell)?.draggedItemId = nil
             }
+            vc.applyPendingItemsIfNeeded()
         }
     }
 

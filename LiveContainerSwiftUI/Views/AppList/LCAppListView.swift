@@ -600,7 +600,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     onDelete: { item in
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }
                     },
-                    onReorder: { persistHomeOrder() },
+                    onReorder: { handleHomeReorder() },
                     contextMenuProvider: { homeUIMenu(for: $0) },
                     scrollToPage: $homeScrollToPage
                 )
@@ -638,6 +638,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             for (slotIndex, id) in storedOrder.enumerated() {
                 if id == "__empty__" {
                     result.append(.placeholder("slot.\(slotIndex)"))
+                } else if id == "__installing__" {
+                    // Distinct marker for the installing icon's position.
+                    // Uses a recognisable prefix so the new app can be
+                    // placed at the exact same slot after install finishes.
+                    result.append(.placeholder("installing.\(slotIndex)"))
                 } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
                 } else {
@@ -647,8 +652,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     didReplaceDeleted = true
                 }
             }
-            // Place new items at the first available placeholder slot
-            // instead of appending at the end
+            // Place new items at the first available placeholder slot.
+            // Prefer the slot where the installing icon was so the new
+            // app appears at the exact page/position the user dragged to.
             let remainingDefaults = available.values.compactMap { item -> FlekHomeItem? in
                 if case .defaultApp = item { return item }
                 return nil
@@ -657,8 +663,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if case .installed = item { return item }
                 return nil
             }
+            let isInstallingSlot: (FlekHomeItem) -> Bool = { item in
+                if case .placeholder(let id) = item { return id.hasPrefix("installing.") }
+                return false
+            }
             for newItem in remainingDefaults + remainingInstalled {
-                if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
+                if let installIdx = result.firstIndex(where: isInstallingSlot) {
+                    result[installIdx] = newItem
+                    lastNewIdx = installIdx
+                } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
                     result[placeholderIdx] = newItem
                     lastNewIdx = placeholderIdx
                 } else {
@@ -726,10 +739,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
 
-        // Place the installing indicator at the first placeholder slot
+        // Place the installing indicator at the reserved installing slot
+        // (if one was saved), falling back to the first placeholder slot.
         var scrollIdx: Int?
         if installprogressVisible {
-            if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
+            let isInstallingSlot: (FlekHomeItem) -> Bool = { item in
+                if case .placeholder(let id) = item { return id.hasPrefix("installing.") }
+                return false
+            }
+            if let installIdx = result.firstIndex(where: isInstallingSlot) {
+                result[installIdx] = .installing
+                scrollIdx = installIdx
+            } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
                 result[placeholderIdx] = .installing
                 scrollIdx = placeholderIdx
             } else {
@@ -753,13 +774,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
 
+    /// Called when the UIKit springboard finishes a drag-and-drop reorder.
+    func handleHomeReorder() {
+        persistHomeOrder()
+        // If the install finished while the icon was being dragged, the
+        // reorder pushes stale items (still containing .installing) back to
+        // SwiftUI, overwriting the correct pending update. Detect and rebuild.
+        if !installprogressVisible,
+           orderedHomeItems.contains(where: { if case .installing = $0 { return true }; return false }) {
+            rebuildOrderedHomeItems()
+        }
+    }
+
     /// Persists the current home screen order after a drag-and-drop reorder.
     /// Placeholders are saved as `"__empty__"` markers to preserve grid positions.
     func persistHomeOrder() {
         let ids = orderedHomeItems.compactMap { item -> String? in
-            // Save the installing card's slot as __empty__ so the new app
-            // takes the exact same position once install finishes
-            if case .installing = item { return "__empty__" }
+            // Mark the installing card's slot distinctly so the new app
+            // takes the exact same position once install finishes,
+            // rather than the first available placeholder on any page.
+            if case .installing = item { return "__installing__" }
             if item.isPlaceholder { return "__empty__" }
             return item.id
         }

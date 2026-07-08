@@ -72,7 +72,7 @@ enum FlekHomeItem: Identifiable, DragulaItem {
     /// Only real app items can be dragged.
     var isDraggable: Bool {
         switch self {
-        case .installing, .placeholder: return false
+        case .placeholder: return false
         default: return true
         }
     }
