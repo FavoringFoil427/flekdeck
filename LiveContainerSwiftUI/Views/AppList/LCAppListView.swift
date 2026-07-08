@@ -759,6 +759,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
 
+        // Safety net: ensure every installed app appears in the result.
+        // Race conditions between drag-end sync and install completion can
+        // occasionally cause an app to be absent from the grid.
+        let presentIDs = Set(result.compactMap { $0.id })
+        for app in sortedApps {
+            let item = FlekHomeItem.installed(app)
+            if !presentIDs.contains(item.id) {
+                lastNewIdx = result.count
+                result.append(item)
+            }
+        }
+
         orderedHomeItems = result
 
         // Persist immediately when the grid changed (new items placed at
