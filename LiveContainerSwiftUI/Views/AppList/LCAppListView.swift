@@ -165,6 +165,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     var body: some View {
         ZStack {
             FlekWallpaperView()
+            FlekBlurredWallpaperOverlay(radius: 30)
 
             homeContentView
             .padding(.top, 8)

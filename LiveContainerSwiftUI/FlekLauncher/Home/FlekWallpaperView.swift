@@ -7,6 +7,8 @@
 //
 
 import SwiftUI
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 /// A selectable wallpaper. Persisted as a single string descriptor:
 ///   - "asset:<name>"     bundled image asset
@@ -113,3 +115,106 @@ enum FlekWallpaperStore {
         }
     }
 }
+
+// MARK: - CIGaussianBlur helper
+
+private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
+/// Applies CIGaussianBlur to a UIImage. Returns nil on failure.
+func ciGaussianBlur(_ image: UIImage, radius: CGFloat) -> UIImage? {
+    guard let ciImage = CIImage(image: image) else { return nil }
+    let filter = CIFilter.gaussianBlur()
+    filter.inputImage = ciImage
+    filter.radius = Float(radius)
+    guard let output = filter.outputImage else { return nil }
+    // CIGaussianBlur expands the image; crop back to original extent
+    let cropped = output.cropped(to: ciImage.extent)
+    guard let cgImage = ciContext.createCGImage(cropped, from: cropped.extent) else { return nil }
+    return UIImage(cgImage: cgImage, scale: image.scale, orientation: image.imageOrientation)
+}
+
+/// Renders a gradient to a UIImage so it can be blurred with CIGaussianBlur.
+private func renderGradient(colors: [Color], size: CGSize) -> UIImage? {
+    let renderer = UIGraphicsImageRenderer(size: size)
+    return renderer.image { ctx in
+        let cgColors = colors.map { UIColor($0).cgColor }
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: cgColors as CFArray,
+                                        locations: nil) else { return }
+        ctx.cgContext.drawLinearGradient(
+            gradient,
+            start: .zero,
+            end: CGPoint(x: size.width, y: size.height),
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        )
+    }
+}
+
+/// Bottom gradient blur overlay using CIGaussianBlur — pure blur, no tint.
+struct FlekBlurredWallpaperOverlay: View {
+    @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
+    private var wallpaperDescriptor: String = FlekWallpaper.defaultDescriptor
+    @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
+    private var wallpaperPhoto: String = ""
+
+    var radius: CGFloat = 20
+
+    @State private var blurredImage: UIImage?
+
+    var body: some View {
+        GeometryReader { geo in
+            if let blurred = blurredImage {
+                Image(uiImage: blurred)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.8),
+                                .init(color: .white, location: 1.0),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear { generateBlurred() }
+        .onChange(of: wallpaperDescriptor) { _ in generateBlurred() }
+        .onChange(of: wallpaperPhoto) { _ in generateBlurred() }
+    }
+
+    private func generateBlurred() {
+        let screenSize = UIScreen.main.bounds.size
+        let sourceImage: UIImage?
+
+        if !wallpaperPhoto.isEmpty {
+            sourceImage = FlekWallpaperStore.loadPhoto(named: wallpaperPhoto)
+        } else {
+            let wp = FlekWallpaper.from(descriptor: wallpaperDescriptor)
+            switch wp {
+            case .asset(let name):
+                sourceImage = UIImage(named: name)
+            case .gradient(_, let colors):
+                sourceImage = renderGradient(colors: colors, size: screenSize)
+            }
+        }
+
+        guard let source = sourceImage else {
+            blurredImage = nil
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ciGaussianBlur(source, radius: radius)
+            DispatchQueue.main.async {
+                blurredImage = result
+            }
+        }
+    }
+}
+
+
