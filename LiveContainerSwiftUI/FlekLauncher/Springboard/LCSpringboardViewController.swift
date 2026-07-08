@@ -42,8 +42,7 @@ final class LCSpringboardViewController: UIViewController {
 
     private(set) var outerCollectionView: UICollectionView!
     private var pageControl: UIPageControl!
-    private var pageControlGlassContainer: UIView!
-    private var pageControlGlassEffect: UIVisualEffectView!
+
     private(set) var dragManager: LCSpringboardDragManager!
     private var longPressGesture: UILongPressGestureRecognizer!
 
@@ -113,8 +112,6 @@ final class LCSpringboardViewController: UIViewController {
             width: view.bounds.width,
             height: pageControlHeight - pageControlTopPadding
         )
-        layoutPageControlGlass()
-
         // Recalculate items-per-page; re-paginate if it changed
         // (the initial updateItems call may run before SwiftUI applies
         // padding, giving an oversized frame and too many rows).
@@ -155,50 +152,16 @@ final class LCSpringboardViewController: UIViewController {
     }
 
     private func setupPageControl() {
-        // Glass background (capsule, hidden until edit mode)
-        pageControlGlassContainer = UIView()
-        pageControlGlassContainer.alpha = 0
-        pageControlGlassContainer.layer.cornerCurve = .continuous
-
-        if #available(iOS 26, *) {
-            pageControlGlassEffect = UIVisualEffectView(effect: UIGlassEffect())
-        } else {
-            pageControlGlassEffect = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        }
-        pageControlGlassEffect.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        pageControlGlassEffect.layer.cornerCurve = .continuous
-        pageControlGlassEffect.clipsToBounds = true
-        pageControlGlassContainer.addSubview(pageControlGlassEffect)
-
-        view.addSubview(pageControlGlassContainer)
-
-        // Page control on top of glass
         pageControl = UIPageControl()
         pageControl.currentPageIndicatorTintColor = .white
         pageControl.pageIndicatorTintColor = UIColor.white.withAlphaComponent(0.35)
+        pageControl.backgroundStyle = .minimal
         pageControl.hidesForSinglePage = true
         pageControl.isUserInteractionEnabled = true
         pageControl.addTarget(self, action: #selector(pageControlTapped(_:)), for: .valueChanged)
+        pageControl.transform = CGAffineTransform(scaleX: 1.25, y: 1.25)
 
         view.addSubview(pageControl)
-    }
-
-    private func layoutPageControlGlass() {
-        let pcSize = pageControl.intrinsicContentSize
-        let hPad: CGFloat = 10
-        let glassWidth = pcSize.width + hPad * 2
-        let glassHeight: CGFloat = 24
-        let centerX = view.bounds.midX
-        let centerY = pageControl.frame.midY
-        pageControlGlassContainer.frame = CGRect(
-            x: centerX - glassWidth / 2,
-            y: centerY - glassHeight / 2,
-            width: glassWidth,
-            height: glassHeight
-        )
-        pageControlGlassEffect.frame = pageControlGlassContainer.bounds
-        pageControlGlassEffect.layer.cornerRadius = glassHeight / 2
-        pageControlGlassContainer.layer.cornerRadius = glassHeight / 2
     }
 
     private func setupDragManager() {
@@ -258,9 +221,6 @@ final class LCSpringboardViewController: UIViewController {
         }
         pageControl.numberOfPages = pages.count
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
-        if isInEditMode {
-            layoutPageControlGlass()
-        }
     }
 
     /// Recalculate the `itemsPerPage` metric from current layout dimensions.
@@ -411,20 +371,13 @@ final class LCSpringboardViewController: UIViewController {
                 (cell as? LCSpringboardPageCell)?.enterEditingMode()
             }
 
-            // Show glass behind page dots
-            layoutPageControlGlass()
-            UIView.animate(withDuration: 0.25) {
-                self.pageControlGlassContainer.alpha = 1
-            }
+            pageControl.backgroundStyle = .prominent
         } else {
             for cell in outerCollectionView.visibleCells {
                 (cell as? LCSpringboardPageCell)?.leaveEditingMode()
             }
 
-            // Hide glass behind page dots
-            UIView.animate(withDuration: 0.25) {
-                self.pageControlGlassContainer.alpha = 0
-            }
+            pageControl.backgroundStyle = .minimal
 
             // jSpringBoard: remove the last page if empty, after a 0.25s delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
