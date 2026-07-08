@@ -216,7 +216,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                             showSearch = true
                                         } label: {
                                             Image(systemName: "magnifyingglass")
-                                                .font(.system(size: FlekTheme.searchPillSize * 0.65, weight: .regular))
+                                                .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
                                                 .foregroundStyle(Color.primary.opacity(0.6))
                                                 .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                         }
@@ -261,7 +261,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                     showSearch = true
                                 } label: {
                                     Image(systemName: "magnifyingglass")
-                                        .font(.system(size: FlekTheme.searchPillSize * 0.65, weight: .regular))
+                                        .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
                                         .foregroundStyle(Color.primary.opacity(0.6))
                                         .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                 }
@@ -270,7 +270,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             }
                         } else {
                             FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.5) {
+                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.38) {
                                 showSearch = true
                             }
                         }
