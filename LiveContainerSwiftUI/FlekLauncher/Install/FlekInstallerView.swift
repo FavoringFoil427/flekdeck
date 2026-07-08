@@ -30,6 +30,7 @@ struct FlekInstallerView: View {
     @State private var showSources = false
     @State private var showPremium = false
     @State private var searchActive = false
+    @State private var searchDebounceTask: Task<Void, Never>?
     @State private var importURLInput = false
     @FocusState private var searchFocused: Bool
     @StateObject private var importUrlHelper = InputHelper()
@@ -366,7 +367,17 @@ struct FlekInstallerView: View {
                 .textInputAutocapitalization(.never)
                 .focused($searchFocused)
                 .onChange(of: viewModel.searchQuery) { q in
-                    repoSearch.debounceSearch(q)
+                    searchDebounceTask?.cancel()
+                    let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty {
+                        repoSearch.cancelSearch()
+                        return
+                    }
+                    searchDebounceTask = Task {
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        guard !Task.isCancelled else { return }
+                        repoSearch.search(trimmed)
+                    }
                 }
 
             if !viewModel.searchQuery.isEmpty {

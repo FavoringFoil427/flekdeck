@@ -18,15 +18,17 @@ struct FlekSearchView: View {
     var onInstallStoreApp: (FSAppModel) -> Void = { _ in }
 
     @State private var query = ""
+    @State private var debouncedQuery = ""
+    @State private var debounceTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
     @StateObject private var repoSearch = MultiRepoSearchModel()
     @Environment(\.colorScheme) private var colorScheme
 
     private var results: [LCAppModel] {
-        guard !query.isEmpty else { return [] }
+        guard !debouncedQuery.isEmpty else { return [] }
         return apps.filter { app in
-            (app.appInfo.displayName()?.localizedCaseInsensitiveContains(query) ?? false) ||
-            (app.appInfo.bundleIdentifier()?.localizedCaseInsensitiveContains(query) ?? false)
+            (app.appInfo.displayName()?.localizedCaseInsensitiveContains(debouncedQuery) ?? false) ||
+            (app.appInfo.bundleIdentifier()?.localizedCaseInsensitiveContains(debouncedQuery) ?? false)
         }
     }
 
@@ -47,13 +49,25 @@ struct FlekSearchView: View {
             repoSearch.setup()
         }
         .onChange(of: query) { q in
-            repoSearch.debounceSearch(q)
+            debounceTask?.cancel()
+            let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                debouncedQuery = ""
+                repoSearch.cancelSearch()
+                return
+            }
+            debounceTask = Task {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                debouncedQuery = trimmed
+                repoSearch.search(trimmed)
+            }
         }
     }
 
     @ViewBuilder
     private var resultsArea: some View {
-        if query.isEmpty {
+        if debouncedQuery.isEmpty {
             Spacer()
         } else if results.isEmpty && repoSearch.sections.isEmpty && !repoSearch.isLoading {
             Spacer()
@@ -174,7 +188,9 @@ struct FlekSearchView: View {
     }
 
     private func close() {
+        debounceTask?.cancel()
         query = ""
+        debouncedQuery = ""
         fieldFocused = false
         isPresented = false
     }
@@ -206,11 +222,10 @@ class MultiRepoSearchModel: ObservableObject {
         Task { await flekstoreVM.refreshSubscriptionStatus() }
     }
 
-    func debounceSearch(_ query: String) {
+    func search(_ query: String) {
         searchTask?.cancel()
 
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        guard !query.isEmpty else {
             sections = []
             isLoading = false
             return
@@ -219,10 +234,14 @@ class MultiRepoSearchModel: ObservableObject {
         isLoading = true
 
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
-            await performSearch(trimmed)
+            await performSearch(query)
         }
+    }
+
+    func cancelSearch() {
+        searchTask?.cancel()
+        sections = []
+        isLoading = false
     }
 
     private func performSearch(_ query: String) async {
