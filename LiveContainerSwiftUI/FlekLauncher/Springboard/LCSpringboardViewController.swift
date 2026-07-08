@@ -90,8 +90,10 @@ final class LCSpringboardViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        let pageControlHeight: CGFloat = 30
-        let cvHeight = view.bounds.height - pageControlHeight
+        // The outer CV fills the full view height so that overflowing rows
+        // (clipsToBounds = false) remain interactive — their cells are
+        // within the CV's bounds and receive tap events.
+        let cvHeight = view.bounds.height
 
         outerCollectionView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: cvHeight)
 
@@ -104,16 +106,16 @@ final class LCSpringboardViewController: UIViewController {
             }
         }
 
+        // Page control overlays the bottom of the CV.
         let pageControlTopPadding: CGFloat = 20
+        let pageControlHeight: CGFloat = 10
         pageControl.frame = CGRect(
             x: 0,
-            y: cvHeight + pageControlTopPadding,
+            y: cvHeight - pageControlHeight - pageControlTopPadding,
             width: view.bounds.width,
-            height: pageControlHeight - pageControlTopPadding
+            height: pageControlHeight
         )
-        // Recalculate items-per-page; re-paginate if it changed
-        // (the initial updateItems call may run before SwiftUI applies
-        // padding, giving an oversized frame and too many rows).
+        // Recalculate items-per-page; re-paginate if it changed.
         let oldIPP = itemsPerPage
         recalculateItemsPerPage()
         if itemsPerPage != oldIPP && !flatItems.isEmpty {
@@ -135,7 +137,7 @@ final class LCSpringboardViewController: UIViewController {
         layout.scrollDirection = .horizontal
         layout.minimumLineSpacing = 0
         layout.minimumInteritemSpacing = 0
-        layout.itemSize = CGSize(width: view.bounds.width, height: view.bounds.height - 30)
+        layout.itemSize = CGSize(width: view.bounds.width, height: view.bounds.height)
 
         outerCollectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         outerCollectionView.isPagingEnabled = true
@@ -221,21 +223,27 @@ final class LCSpringboardViewController: UIViewController {
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
     }
 
-    /// Recalculate the `itemsPerPage` metric from current layout dimensions.
-    /// Does NOT re-paginate — the page structure is preserved.
-    /// Only called from `viewDidLayoutSubviews`.
+    /// Recalculate the `itemsPerPage` metric from screen dimensions.
+    ///
+    /// Uses the full screen height minus the top safe area and a small top
+    /// padding, rather than the constrained `view.bounds.height`. This gives
+    /// more rows because the grid extends beyond the page cell via
+    /// `clipsToBounds = false`, allowing the last row to overflow into the
+    /// dock area — matching the real iOS SpringBoard's compact spacing.
     private func recalculateItemsPerPage() {
+        let screenH = UIScreen.main.bounds.height
+        let topSafe = view.window?.safeAreaInsets.top ?? 59
+        let topPad: CGFloat = 8
+        let effectiveHeight = screenH - topSafe - topPad
+        guard effectiveHeight > 0 else { return }
+
         let pageControlHeight: CGFloat = 30
-        let pageHeight = view.bounds.height - pageControlHeight
-        guard pageHeight > 0 else { return }
+        let pageHeight = effectiveHeight - pageControlHeight
 
         let cellWidth = LCSpringboardPageCell.computeCellWidth(forWidth: view.bounds.width)
         let cellHeight = floor(cellWidth * 64.0 / 59.0)
-        let topInset: CGFloat = 0
-        let bottomInset: CGFloat = 12
         let lineSpacing: CGFloat = 8
-        let availableHeight = pageHeight - topInset - bottomInset
-        let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
         itemsPerPage = rows * columns
     }
 

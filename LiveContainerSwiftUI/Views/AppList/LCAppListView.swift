@@ -764,7 +764,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // Place installing indicators for each active queue item.
         // Each item reclaims its previously-persisted slot (keyed by UUID)
         // so positions stay stable across rebuilds.
-        var scrollIdx: Int?
+        var newInstallScrollIdx: Int?
         var didPlaceInstalling = false
         for item in installQueue.activeItems {
             let itemKey = "installing.\(item.id)"
@@ -774,14 +774,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             let installingItem = FlekHomeItem.installing(item)
             if let installIdx = result.firstIndex(where: isInstallingSlot) {
+                // Reclaiming a previously-persisted slot — no scroll needed
                 result[installIdx] = installingItem
-                scrollIdx = scrollIdx ?? installIdx
             } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
                 result[placeholderIdx] = installingItem
-                scrollIdx = scrollIdx ?? placeholderIdx
+                newInstallScrollIdx = newInstallScrollIdx ?? placeholderIdx
                 didPlaceInstalling = true
             } else {
-                scrollIdx = scrollIdx ?? result.count
+                newInstallScrollIdx = newInstallScrollIdx ?? result.count
                 result.append(installingItem)
                 didPlaceInstalling = true
             }
@@ -809,8 +809,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             persistHomeOrder()
         }
 
-        // Auto-scroll to the page containing the installing/new app
-        if let idx = scrollIdx ?? lastNewIdx {
+        // Auto-scroll only when a NEW install is initiated (first placement
+        // on the grid). Don't scroll when an install completes or when
+        // items reclaim their persisted slots on rebuild.
+        if let idx = newInstallScrollIdx {
             homeScrollToPage = pageForIndex(idx)
         }
     }
@@ -863,12 +865,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         let cellSize = LCSpringboardPageCell.computeCellWidth(forWidth: screenBounds.width)
         let cellHeight = floor(cellSize * 64.0 / 59.0)
         let pageControlHeight: CGFloat = 30
-        let topInset: CGFloat = 0
-        let bottomInset: CGFloat = 12
+        let topSafe = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.windows.first?.safeAreaInsets.top }
+            .first ?? 59
+        let topPad: CGFloat = 8
         let lineSpacing: CGFloat = 8
-        let pageHeight = screenBounds.height - pageControlHeight
-        let availableHeight = pageHeight - topInset - bottomInset
-        let rows = max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        let effectiveHeight = screenBounds.height - topSafe - topPad
+        let pageHeight = effectiveHeight - pageControlHeight
+        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
         let ipp = max(1, rows * LCSpringboardPageCell.columns)
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
