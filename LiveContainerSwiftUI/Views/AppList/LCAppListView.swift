@@ -59,10 +59,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var errorInfo = ""
     
     // ipa installing stuff
-    @State var installprogressVisible = false
+    @ObservedObject var installQueue = LCInstallQueue.shared
     @State private var homeScrollToPage: Int?
-    @State var installProgressPercentage : Float = 0.0
-    @State var installObserver : NSKeyValueObservation?
     
     @State var installOptions: [AppReplaceOption]
     @StateObject var installReplaceAlert = AlertHelper<AppReplaceOption>()
@@ -72,7 +70,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var webViewURL : URL = URL(string: "about:blank")!
     @StateObject private var webViewUrlInput = InputHelper()
     
-    @EnvironmentObject var downloadHelper: DownloadHelper
     @StateObject private var installUrlInput = InputHelper()
     
     @State private var jitLog = ""
@@ -290,9 +287,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     darkModeIcon: darkModeIcon,
                     onSelect: { app in handleHomeTap(.installed(app)) },
                     onInstallStoreApp: { app in
-                        sharedModel.installingName = app.app_name
-                        sharedModel.installingIconURL = app.app_icon
-                        sharedModel.urlToInstall = app.install_url
+                        installQueue.enqueue(
+                            url: app.install_url,
+                            name: app.app_name,
+                            iconURL: app.app_icon
+                        )
                     }
                 )
                 .transition(.opacity)
@@ -301,21 +300,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         .onAppear {
             if !didAppear { onAppear() }
             if flekstoreSharedModel.appInstallURL != "" {
-                Task {
-                    await installFromUrl(urlStr: flekstoreSharedModel.appInstallURL)
-                    await MainActor.run { flekstoreSharedModel.appInstallURL = "" }
-                }
+                installQueue.enqueue(
+                    url: flekstoreSharedModel.appInstallURL,
+                    name: nil,
+                    iconURL: nil
+                )
+                flekstoreSharedModel.appInstallURL = ""
             }
             rebuildOrderedHomeItems()
         }
         .onChange(of: sharedAppSortManager.sortedApps.count) { _ in
-            // Skip rebuilds while an install is in progress so the
-            // ForEach identity stays stable and context menus don't
-            // get cross-contaminated between items.
-            guard !installprogressVisible else { return }
             rebuildOrderedHomeItems()
         }
-        .onChange(of: installprogressVisible) { _ in
+        .onChange(of: installQueue.items.count) { _ in
             rebuildOrderedHomeItems()
         }
         .onReceive({
@@ -349,27 +346,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Task { await launchHomeApp(target.app, parallel: parallel) }
             }
         }
-        .onChange(of: installprogressVisible) { visible in
-            if !visible {
-                sharedModel.installingName = nil
-                sharedModel.installingIconURL = nil
-                sharedModel.installingURL = nil
-                sharedModel.installFraction = 0
-                sharedModel.installIndeterminate = true
-            }
-        }
-        .onReceive(downloadHelper.$downloadProgress) { p in
-            sharedModel.installFraction = Double(p)
-        }
-        .onReceive(downloadHelper.$isDownloading) { downloading in
-            sharedModel.installIndeterminate = !downloading
-        }
-        .onChange(of: sharedModel.cancelInstallRequested) { req in
-            if req {
-                cancelHomeInstall()
-                sharedModel.cancelInstallRequested = false
-            }
-        }
+        
         .fileExporter(
             isPresented: $homeSaveIconExporterShow,
             document: homeSaveIconFile,
@@ -392,10 +369,44 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         } message: {
             Text("lc.appBanner.deleteDataShortMsg".loc)
         }
-        .task(id: sharedModel.urlToInstall) {
-            if let installURL = sharedModel.urlToInstall {
-                await installFromUrl(urlStr: installURL)
-                sharedModel.urlToInstall = nil
+        .task {
+            // Wire up the queue's install handler — called serially for each
+            // item that has finished downloading and is ready for extraction + signing.
+            installQueue.installHandler = { [self] item in
+                let fileURL: URL
+                var isLocalFile = false
+                if let downloaded = item.downloadedFileURL {
+                    fileURL = downloaded
+                } else if let url = URL(string: item.url), url.isFileURL {
+                    fileURL = url
+                    isLocalFile = true
+                    // Try to access security-scoped resource for local files
+                    let fm = FileManager.default
+                    if !fm.isReadableFile(atPath: url.path) {
+                        _ = url.startAccessingSecurityScopedResource()
+                    }
+                } else if let url = URL(string: item.url) {
+                    fileURL = url
+                } else {
+                    throw "lc.appList.urlInvalidError".loc
+                }
+
+                defer {
+                    if isLocalFile {
+                        fileURL.stopAccessingSecurityScopedResource()
+                        // Clean up IPA if it was imported via Inbox
+                        let fm = FileManager.default
+                        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+                            let inboxFile = docs.appendingPathComponent("Inbox")
+                                .appendingPathComponent(fileURL.lastPathComponent)
+                            if fm.fileExists(atPath: inboxFile.path) {
+                                try? fm.removeItem(at: fileURL)
+                            }
+                        }
+                    }
+                }
+
+                try await installIpaFile(fileURL, item: item)
             }
         }
         .alert("lc.common.error".loc, isPresented: $errorShow){
@@ -541,7 +552,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.InstallAppNotification)) { obj in
             if let obj2 = obj.object as? [String: Any], let installUrl = obj2["url"] as? URL {
-                Task { await installFromUrl(urlStr: installUrl.absoluteString) }
+                installFromUrl(urlStr: installUrl.absoluteString)
             }
         }
     }
@@ -586,8 +597,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }
                     },
                     onDropCompleted: { persistHomeOrder() },
-                    installState: homeInstallState,
-                    onCancelInstall: { cancelHomeInstall() },
+                    onCancelInstall: { installQueue.cancel($0) },
                     contextMenu: { item in homeContextMenu(for: item) }
                 )
             } else {
@@ -595,7 +605,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     items: $orderedHomeItems,
                     darkModeIcon: darkModeIcon,
                     isEditing: $isEditing,
-                    installState: homeInstallState,
                     onTap: { handleHomeTap($0) },
                     onDelete: { item in
                         if case .installed(let app) = item { Task { await requestUninstall(app) } }
@@ -739,23 +748,24 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
 
-        // Place the installing indicator at the reserved installing slot
-        // (if one was saved), falling back to the first placeholder slot.
+        // Place installing indicators for each active queue item.
         var scrollIdx: Int?
-        if installprogressVisible {
-            let isInstallingSlot: (FlekHomeItem) -> Bool = { item in
-                if case .placeholder(let id) = item { return id.hasPrefix("installing.") }
+        for item in installQueue.activeItems {
+            let itemKey = "installing.\(item.id)."
+            let isInstallingSlot: (FlekHomeItem) -> Bool = { homeItem in
+                if case .placeholder(let id) = homeItem { return id.hasPrefix(itemKey) }
                 return false
             }
+            let installingItem = FlekHomeItem.installing(item)
             if let installIdx = result.firstIndex(where: isInstallingSlot) {
-                result[installIdx] = .installing
-                scrollIdx = installIdx
+                result[installIdx] = installingItem
+                scrollIdx = scrollIdx ?? installIdx
             } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
-                result[placeholderIdx] = .installing
-                scrollIdx = placeholderIdx
+                result[placeholderIdx] = installingItem
+                scrollIdx = scrollIdx ?? placeholderIdx
             } else {
-                scrollIdx = result.count
-                result.append(.installing)
+                scrollIdx = scrollIdx ?? result.count
+                result.append(installingItem)
             }
         }
 
@@ -789,11 +799,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// Called when the UIKit springboard finishes a drag-and-drop reorder.
     func handleHomeReorder() {
         persistHomeOrder()
-        // If the install finished while the icon was being dragged, the
+        // If an install finished while the icon was being dragged, the
         // reorder pushes stale items (still containing .installing) back to
         // SwiftUI, overwriting the correct pending update. Detect and rebuild.
-        if !installprogressVisible,
-           orderedHomeItems.contains(where: { if case .installing = $0 { return true }; return false }) {
+        let hasInstallingItems = orderedHomeItems.contains(where: { if case .installing = $0 { return true }; return false })
+        if hasInstallingItems && installQueue.activeItems.isEmpty {
             rebuildOrderedHomeItems()
         }
     }
@@ -805,7 +815,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // Mark the installing card's slot distinctly so the new app
             // takes the exact same position once install finishes,
             // rather than the first available placeholder on any page.
-            if case .installing = item { return "__installing__" }
+            if case .installing(let inst) = item { return "__installing.\(inst.id)__" }
             if item.isPlaceholder { return "__empty__" }
             return item.id
         }
@@ -871,54 +881,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         homeScrollToPage = page
     }
 
-    var homeInstallState: FlekInstallState {
-        // Unified progress bar: download fills 0%→80%, install fills 80%→100%.
-        // For local-file installs (no download) the install phase uses the
-        // full 0%→100% range instead.
-        let downloading = downloadHelper.isDownloading
-        let dlProgress = Double(downloadHelper.downloadProgress)
-        let installProgress = Double(installProgressPercentage)
-
-        let fraction: Double
-        let indeterminate: Bool
-
-        if downloading {
-            // Download phase: 0% → 80%
-            fraction = 0.8 * dlProgress
-            indeterminate = false
-        } else if installprogressVisible {
-            if dlProgress > 0.01 {
-                // URL install — download finished, install in progress: 80% → 100%
-                fraction = 0.8 + 0.2 * installProgress
-                indeterminate = false
-            } else if installProgress > 0 {
-                // Local-file install (no download): 0% → 100%
-                fraction = installProgress
-                indeterminate = false
-            } else {
-                // Very start before any progress ticks
-                indeterminate = true
-                fraction = 0
-            }
-        } else {
-            indeterminate = true
-            fraction = 0
-        }
-
-        return FlekInstallState(
-            name: sharedModel.installingName,
-            iconURL: sharedModel.installingIconURL,
-            fraction: fraction,
-            indeterminate: indeterminate
-        )
-    }
-
-    func cancelHomeInstall() {
-        downloadHelper.cancel()
-        installprogressVisible = false
-        sharedModel.installingName = nil
-        sharedModel.installingIconURL = nil
-    }
+    
 
     func handleHomeTap(_ item: FlekHomeItem) {
         switch item {
@@ -1044,13 +1007,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             return UIMenu(title: "", children: [moveCards])
         case .installed(let app):
             return installedUIMenu(app)
-        case .installing:
+        case .installing(let inst):
             let cancel = UIAction(
                 title: "lc.flek.cancelInstall".loc,
                 image: UIImage(systemName: "xmark.circle"),
                 attributes: .destructive
-            ) { [self] _ in
-                cancelHomeInstall()
+            ) { _ in
+                LCInstallQueue.shared.cancel(inst)
             }
             return UIMenu(title: "", children: [cancel])
         case .placeholder:
@@ -1435,33 +1398,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     
     func startInstallApp(_ fileUrl:URL) async {
-        do {
-            self.installprogressVisible = true
-            UIApplication.shared.isIdleTimerDisabled = true
-            defer { UIApplication.shared.isIdleTimerDisabled = false }
-            try await installIpaFile(fileUrl)
-            try FileManager.default.removeItem(at: fileUrl)
-        } catch {
-            errorInfo = error.localizedDescription
-            errorShow = true
-            self.installprogressVisible = false
-        }
+        installQueue.enqueue(url: fileUrl.absoluteString, name: nil, iconURL: nil)
     }
     
     nonisolated func decompress(_ path: String, _ destination: String ,_ progress: Progress) async -> Int32 {
         extract(path, destination, progress)
     }
     
-    func installIpaFile(_ url:URL) async throws {
+    func installIpaFile(_ url:URL, item: InstallItem) async throws {
         let fm = FileManager()
         
         let installProgress = Progress.discreteProgress(totalUnitCount: 100)
-        self.installProgressPercentage = 0.0
-        self.installObserver = installProgress.observe(\.fractionCompleted) { p, v in
+        let observedItem = item
+        let queue = installQueue
+        let installObserver = installProgress.observe(\.fractionCompleted) { p, v in
             DispatchQueue.main.async {
-                self.installProgressPercentage = Float(p.fractionCompleted)
+                queue.updateInstallProgress(observedItem, fraction: p.fractionCompleted)
             }
         }
+        // Keep observer alive for the duration of this method
+        _ = installObserver
         let decompressProgress = Progress.discreteProgress(totalUnitCount: 100)
         installProgress.addChild(decompressProgress, withPendingUnitCount: 80)
         let payloadPath = fm.temporaryDirectory.appendingPathComponent("Payload")
@@ -1498,9 +1454,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 initVal: newAppInfo.bundleIdentifier()!
             ) else {
                 // User cancelled
-                self.installprogressVisible = false
                 try fm.removeItem(at: payloadPath)
-                return
+                throw CancellationError()
             }
             let trimmed = chosenBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty && trimmed != newAppInfo.bundleIdentifier()! {
@@ -1524,14 +1479,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if sameBundleIdApp.count > 0 && !sharedModel.isHiddenAppUnlocked {
                 do {
                     if !(try await LCUtils.authenticateUser()) {
-                        self.installprogressVisible = false
-                        return
+                        throw CancellationError()
                     }
                 } catch {
-                    errorInfo = error.localizedDescription
-                    errorShow = true
-                    self.installprogressVisible = false
-                    return
+                    throw error
                 }
             }
             
@@ -1548,9 +1499,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             
             guard let installOptionChosen = await installReplaceAlert.open() else {
                 // user cancelled
-                self.installprogressVisible = false
                 try fm.removeItem(at: payloadPath)
-                return
+                throw CancellationError()
             }
             
             if let appToReplace = installOptionChosen.appToReplace, appToReplace.uiIsShared {
@@ -1633,19 +1583,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         finalNewApp.installationDate = Date.now
         
         await MainActor.run {
-            // Mark this URL as successfully installed so the installer row
-            // can show a checkmark animation before reverting to the download button.
-            sharedModel.lastCompletedInstallURL = sharedModel.installingURL
-
-            // Remove the installing card before adding the new app so that
-            // homeItems never contains both .installing and the new .installed
-            // item at the same time (which caused an empty grid slot).
-            // Using MainActor.run (not DispatchQueue.main.async) so this
-            // completes before installIpaFile returns – otherwise callers
-            // with a defer that clears installprogressVisible would remove
-            // the installing card one frame before the new app appears.
-            self.installprogressVisible = false
-
             if let appToReplace {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
                 
@@ -1682,14 +1619,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             await installFromPlist(urlStr: installUrlStr)
             return
         }
-        await installFromUrl(urlStr: installUrlStr)
+        installFromUrl(urlStr: installUrlStr)
     }
     
     func installFromPlist(urlStr: String) async {
-        if self.installprogressVisible {
-            return
-        }
-        
         if sharedModel.multiLCStatus == 2 {
             errorInfo = "lc.appList.manageInPrimaryTip".loc
             errorShow = true
@@ -1743,7 +1676,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 return
             }
             
-            await installFromUrl(urlStr: ipaUrlStr)
+            installFromUrl(urlStr: ipaUrlStr)
             
         } catch {
             errorInfo = error.localizedDescription
@@ -1751,94 +1684,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
     
-    func installFromUrl(urlStr: String) async {
-        // ignore any install request if we are installing another app
-        if self.installprogressVisible {
-            return
-        }
-        
+    func installFromUrl(urlStr: String) {
         if sharedModel.multiLCStatus == 2 {
             errorInfo = "lc.appList.manageInPrimaryTip".loc
             errorShow = true
             return
         }
         
-        guard let installUrl = URL(string: urlStr) else {
-            errorInfo = "lc.appList.urlInvalidError".loc
-            errorShow = true
-            return
-        }
-        
-        self.installprogressVisible = true
-        UIApplication.shared.isIdleTimerDisabled = true
-        defer {
-            self.installprogressVisible = false
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
-        
-        if installUrl.isFileURL {
-            // install from local, we directly call local install method
-            if !installUrl.lastPathComponent.hasSuffix(".ipa") && !installUrl.lastPathComponent.hasSuffix(".tipa") {
-                errorInfo = "lc.appList.urlFileIsNotIpaError".loc
-                errorShow = true
-                return
-            }
-            
-            let fm = FileManager.default
-            if !fm.isReadableFile(atPath: installUrl.path) && !installUrl.startAccessingSecurityScopedResource() {
-                errorInfo = "lc.appList.ipaAccessError".loc
-                errorShow = true
-                return
-            }
-            
-            defer {
-                installUrl.stopAccessingSecurityScopedResource()
-            }
-            
-            do {
-                try await installIpaFile(installUrl)
-            } catch {
-                errorInfo = error.localizedDescription
-                errorShow = true
-            }
-            
-            do {
-                // delete ipa if it's in inbox
-                var shouldDelete = false
-                if let documentsDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
-                    let inboxURL = documentsDirectory.appendingPathComponent("Inbox")
-                    let fileURL = inboxURL.appendingPathComponent(installUrl.lastPathComponent)
-                    
-                    shouldDelete = fm.fileExists(atPath: fileURL.path)
-                }
-                if shouldDelete {
-                    try fm.removeItem(at: installUrl)
-                }
-            } catch {
-                errorInfo = error.localizedDescription
-                errorShow = true
-            }
-            return
-        }
-        
-        do {
-            let fileManager = FileManager.default
-            let destinationURL = fileManager.temporaryDirectory.appendingPathComponent(installUrl.lastPathComponent)
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
-            }
-            
-            try await downloadHelper.download(url: installUrl, to: destinationURL)
-            if downloadHelper.cancelled {
-                return
-            }
-            try await installIpaFile(destinationURL)
-            try fileManager.removeItem(at: destinationURL)
-        } catch {
-            errorInfo = error.localizedDescription
-            errorShow = true
-        }
-        
+        installQueue.enqueue(url: urlStr, name: nil, iconURL: nil)
     }
     
     func removeApp(app: LCAppModel) {
@@ -2052,7 +1905,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     func handleURL(url : URL) {
         if url.isFileURL {
-            Task { await installFromUrl(urlStr: url.absoluteString) }
+            installFromUrl(urlStr: url.absoluteString)
             return
         }
         
@@ -2104,7 +1957,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     }
                 }
                 if let installUrl {
-                    Task { await installFromUrl(urlStr: installUrl) }
+                    installFromUrl(urlStr: installUrl)
                 }
             }
         }

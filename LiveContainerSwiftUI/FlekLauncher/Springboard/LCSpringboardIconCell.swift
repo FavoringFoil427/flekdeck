@@ -320,7 +320,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     /// Current install fraction for progress fill layout.
     private var currentFraction: Double = 0
 
-    func configure(with item: FlekHomeItem, darkMode: Bool, installState: FlekInstallState? = nil) {
+    func configure(with item: FlekHomeItem, darkMode: Bool) {
         configuredItem = item
         switch item {
         case .defaultApp(let kind):
@@ -334,9 +334,9 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
             isPlaceholderCell = false
 
-        case .installing:
+        case .installing(let inst):
             isPlaceholderCell = false
-            configureInstallState(installState)
+            configureInstallState(inst.installState)
 
         case .placeholder:
             iconImageView.image = nil
@@ -349,20 +349,20 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     }
 
     /// Update just the install state (progress/icon) without full reconfigure.
-    func updateInstallState(_ state: FlekInstallState?) {
-        guard case .installing = configuredItem else { return }
-        configureInstallState(state)
+    func updateInstallState() {
+        guard case .installing(let inst) = configuredItem else { return }
+        configureInstallState(inst.installState)
     }
 
-    private func configureInstallState(_ state: FlekInstallState?) {
+    private func configureInstallState(_ state: FlekInstallState) {
         // Name
-        nameLabel.text = state?.name ?? "Installing..."
+        nameLabel.text = state.name ?? "Installing..."
 
         // Icon from URL — only start a new load when the URL changes.
         // configureInstallState is called on every progress tick, so
         // cancelling + restarting the load each time prevented the
         // icon from ever finishing its download.
-        if let urlStr = state?.iconURL, let url = URL(string: urlStr) {
+        if let urlStr = state.iconURL, let url = URL(string: urlStr) {
             if urlStr != loadingIconURL || iconImageView.image == nil {
                 loadingIconURL = urlStr
                 iconLoadTask?.cancel()
@@ -374,7 +374,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
                 }
                 iconLoadTask?.resume()
             }
-        } else if state?.iconURL == nil && loadingIconURL != nil {
+        } else if state.iconURL == nil && loadingIconURL != nil {
             // URL was removed — clear the icon
             loadingIconURL = nil
             iconLoadTask?.cancel()
@@ -385,7 +385,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Show overlay
         installOverlay.isHidden = false
 
-        if let state, !state.indeterminate {
+        if !state.indeterminate {
             // Determinate: show percentage + progress bar
             activityIndicator.stopAnimating()
             progressLabel.isHidden = false

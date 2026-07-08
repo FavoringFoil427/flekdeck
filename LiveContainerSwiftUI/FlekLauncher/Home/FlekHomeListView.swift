@@ -18,8 +18,7 @@ struct FlekHomeListView<Menu: View>: View {
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onDropCompleted: () -> Void = {}
-    var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
-    var onCancelInstall: () -> Void = {}
+    var onCancelInstall: (InstallItem) -> Void = { _ in }
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var draggedItem: FlekHomeItem?
@@ -39,16 +38,16 @@ struct FlekHomeListView<Menu: View>: View {
                     }) { item in
                         rowButton(for: item)
                     }
-                    // Installing row rendered outside ForEach — uses UIKit
+                    // Installing rows rendered outside ForEach — uses UIKit
                     // UIContextMenuInteraction instead of SwiftUI .contextMenu
                     // to avoid cross-contamination with installed app menus.
-                    if items.contains(where: { item in
-                        if case .installing = item { return true }
-                        return false
-                    }) {
-                        FlekInstallRow(state: installState)
+                    ForEach(items.compactMap { item -> InstallItem? in
+                        if case .installing(let inst) = item { return inst }
+                        return nil
+                    }) { inst in
+                        FlekInstallRow(state: inst.installState)
                             .overlay {
-                                CancelInstallContextMenu { onCancelInstall() }
+                                CancelInstallContextMenu { onCancelInstall(inst) }
                             }
                     }
                 }
@@ -62,8 +61,8 @@ struct FlekHomeListView<Menu: View>: View {
 
     @ViewBuilder
     private func editRowWithDrag(for item: FlekHomeItem) -> some View {
-        if case .installing = item {
-            FlekInstallRow(state: installState)
+        if case .installing(let inst) = item {
+            FlekInstallRow(state: inst.installState)
         } else if item.isDraggable {
             editRow(for: item)
                 .hidden()
@@ -151,7 +150,7 @@ struct FlekHomeListView<Menu: View>: View {
         switch item {
         case .defaultApp(let kind): return kind.title
         case .installed(let app): return app.appInfo.displayName() ?? "?"
-        case .installing: return installState.name ?? ""
+        case .installing(let inst): return inst.name ?? ""
         case .placeholder: return ""
         }
     }

@@ -19,8 +19,7 @@ struct FlekSpringboardView<Menu: View>: View {
     var onTap: (FlekHomeItem) -> Void
     var onDelete: (FlekHomeItem) -> Void
     var onDropCompleted: () -> Void = {}
-    var installState: FlekInstallState = FlekInstallState(name: nil, iconURL: nil, fraction: 0, indeterminate: true)
-    var onCancelInstall: () -> Void = {}
+    var onCancelInstall: (InstallItem) -> Void = { _ in }
     /// Set by the parent to request scrolling to a specific page.
     /// Resets to nil after the scroll is performed.
     var scrollToPage: Binding<Int?> = .constant(nil)
@@ -98,11 +97,11 @@ struct FlekSpringboardView<Menu: View>: View {
                                     ForEach(pageItems) { item in
                                         if item.isPlaceholder {
                                             Color.clear.frame(height: cardHeight)
-                                        } else if case .installing = item {
-                                            FlekInstallingCard(state: installState, cardHeight: cardHeight)
+                                        } else if case .installing(let inst) = item {
+                                            FlekInstallingCard(state: inst.installState, cardHeight: cardHeight)
                                                 .contextMenu {
                                                     Button(role: .destructive) {
-                                                        onCancelInstall()
+                                                        onCancelInstall(inst)
                                                     } label: {
                                                         Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
                                                     }
@@ -325,8 +324,8 @@ struct FlekSpringboardView<Menu: View>: View {
                     pages: $editPages,
                     draggedItem: $draggedItem
                 ))
-        } else if case .installing = item {
-            FlekInstallingCard(state: installState, cardHeight: cardHeight)
+        } else if case .installing(let inst) = item {
+            FlekInstallingCard(state: inst.installState, cardHeight: cardHeight)
         } else if item.isDraggable {
             editCard(for: item, cardHeight: cardHeight)
                 .hidden()
@@ -469,7 +468,7 @@ struct FlekSpringboardView<Menu: View>: View {
         switch item {
         case .defaultApp(let kind): return kind.title
         case .installed(let app): return app.appInfo.displayName() ?? "?"
-        case .installing: return installState.name ?? ""
+        case .installing(let inst): return inst.name ?? ""
         case .placeholder: return ""
         }
     }

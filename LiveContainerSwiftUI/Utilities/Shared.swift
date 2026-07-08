@@ -69,14 +69,6 @@ class SharedModel: ObservableObject {
     @Published var hiddenApps : [LCAppModel] = []
     
     @Published var pidCallback : ((NSNumber, Error?) -> Void)? = nil
-    @Published var urlToInstall: String?
-    @Published var installingName: String?
-    @Published var installingIconURL: String?
-    @Published var installingURL: String?
-    @Published var installFraction: Double = 0
-    @Published var installIndeterminate: Bool = true
-    @Published var cancelInstallRequested = false
-    @Published var lastCompletedInstallURL: String?
 
     static let isPhone: Bool = {
         UIDevice.current.userInterfaceIdiom == .phone

@@ -56,7 +56,7 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
 enum FlekHomeItem: Identifiable, DragulaItem {
     case defaultApp(FlekDefaultAppKind)
     case installed(LCAppModel)
-    case installing
+    case installing(InstallItem)
     /// Empty grid slot that preserves an item's position on the grid.
     case placeholder(String)
 
@@ -64,7 +64,7 @@ enum FlekHomeItem: Identifiable, DragulaItem {
         switch self {
         case .defaultApp(let kind): return "default.\(kind.rawValue)"
         case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? "unknown")"
-        case .installing: return "installing"
+        case .installing(let item): return "installing.\(item.id)"
         case .placeholder(let uid): return "placeholder.\(uid)"
         }
     }

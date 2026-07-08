@@ -32,7 +32,7 @@ struct LCTabView: View {
     @EnvironmentObject var sceneDelegate: SceneDelegate
     @State var shouldToggleMainWindowOpen = false
     @Environment(\.scenePhase) var scenePhase
-    @StateObject var downloadHelper = DownloadHelper()
+
     
     @StateObject var searchContextAppList = SearchContext()
     @StateObject var searchContextSource = SearchContext()
@@ -62,7 +62,6 @@ struct LCTabView: View {
                 LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
             }
         }
-        .environmentObject(downloadHelper)
         .alert("lc.common.error".loc, isPresented: $errorShow) {
             Button("lc.common.ok".loc) {}
             Button("lc.common.copy".loc) { copyError() }

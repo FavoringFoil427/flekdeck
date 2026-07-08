@@ -24,7 +24,6 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     var items: [FlekHomeItem] = []
     var draggedItemId: String?
     var darkModeIcon: Bool = false
-    var installState: FlekInstallState?
     private(set) var isEditing = false
     private var isContextMenuActive = false
     private var pendingReloadItems: [FlekHomeItem]?
@@ -201,7 +200,7 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "IconCell", for: indexPath) as! LCSpringboardIconCell
         let item = items[indexPath.item]
 
-        cell.configure(with: item, darkMode: darkModeIcon, installState: installState)
+        cell.configure(with: item, darkMode: darkModeIcon)
 
         // Edit mode state
         if isEditing && !cell.isPlaceholderCell {

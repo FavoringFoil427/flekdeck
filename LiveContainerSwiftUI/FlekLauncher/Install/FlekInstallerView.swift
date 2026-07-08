@@ -10,8 +10,8 @@
 //   - app rows with a download button
 //   - a bottom bar with Import IPA, a back-to-home chevron, and search
 //
-//  Installs are triggered through sharedModel.urlToInstall so they run on the
-//  home engine (and keep running) even while the Installer cover is shown.
+//  Installs are triggered through LCInstallQueue.shared so multiple downloads
+//  can run concurrently while installs run serially.
 //
 
 import SwiftUI
@@ -22,6 +22,7 @@ struct FlekInstallerView: View {
     var onClose: () -> Void
 
     @EnvironmentObject private var sharedModel: SharedModel
+    @ObservedObject private var installQueue = LCInstallQueue.shared
     @StateObject private var viewModel = FlekstoreAppsListViewModel()
     @StateObject private var repoSearch = MultiRepoSearchModel()
 
@@ -93,7 +94,9 @@ struct FlekInstallerView: View {
             PremiumRequiredView()
         }
         .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa], multiple: false, callback: { urls in
-            if let u = urls.first { sharedModel.urlToInstall = u.absoluteString }
+            if let u = urls.first {
+                LCInstallQueue.shared.enqueue(url: u.absoluteString, name: nil, iconURL: nil)
+            }
         }, onDismiss: { choosingIPA = false })
         .textFieldAlert(
             isPresented: $importUrlHelper.show,
@@ -102,7 +105,9 @@ struct FlekInstallerView: View {
             placeholder: "https://",
             action: { newText in
                 importUrlHelper.close(result: newText)
-                if let t = newText, !t.isEmpty { sharedModel.urlToInstall = t }
+                if let t = newText, !t.isEmpty {
+                    LCInstallQueue.shared.enqueue(url: t, name: nil, iconURL: nil)
+                }
             },
             actionCancel: { _ in importUrlHelper.close(result: nil) }
         )
@@ -208,14 +213,12 @@ struct FlekInstallerView: View {
                         FlekInstallerRow(
                             app: app,
                             accent: Self.flekBlue,
-                            installState: sharedModel.installingURL == app.install_url
-                                ? FlekInstallState(name: app.app_name, iconURL: app.app_icon,
-                                                   fraction: sharedModel.installFraction,
-                                                   indeterminate: sharedModel.installIndeterminate)
-                                : nil,
-                            isCompleted: sharedModel.lastCompletedInstallURL == app.install_url,
+                            installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
+                            isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
                             onInstall: { install(app) },
-                            onCancel: { sharedModel.cancelInstallRequested = true }
+                            onCancel: {
+                                LCInstallQueue.shared.cancel(url: app.install_url)
+                            }
                         )
                         .onAppear {
                             if app.id == viewModel.visibleApps.last?.id {
@@ -266,14 +269,12 @@ struct FlekInstallerView: View {
                                 FlekInstallerRow(
                                     app: app,
                                     accent: Self.flekBlue,
-                                    installState: sharedModel.installingURL == app.install_url
-                                        ? FlekInstallState(name: app.app_name, iconURL: app.app_icon,
-                                                           fraction: sharedModel.installFraction,
-                                                           indeterminate: sharedModel.installIndeterminate)
-                                        : nil,
-                                    isCompleted: sharedModel.lastCompletedInstallURL == app.install_url,
+                                    installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
+                                    isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
                                     onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
-                                    onCancel: { sharedModel.cancelInstallRequested = true }
+                                    onCancel: {
+                                        LCInstallQueue.shared.cancel(url: app.install_url)
+                                    }
                                 )
                             }
                         }
@@ -423,31 +424,30 @@ struct FlekInstallerView: View {
     // MARK: Actions
 
     private func install(_ app: FSAppModel) {
-        // Don't start a new install while one is in progress
-        guard sharedModel.installingURL == nil else { return }
         if viewModel.repository != .flekstore && !viewModel.hasSubscription {
             showPremium = true
             return
         }
-        sharedModel.installingName = app.app_name
-        sharedModel.installingIconURL = app.app_icon
-        sharedModel.installingURL = app.install_url
-        sharedModel.urlToInstall = app.install_url
+        LCInstallQueue.shared.enqueue(
+            url: app.install_url,
+            name: app.app_name,
+            iconURL: app.app_icon
+        )
         if viewModel.repository == .flekstore {
             FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
         }
     }
 
     private func installSearchResult(_ app: FSAppModel, fromFlekstore: Bool) {
-        guard sharedModel.installingURL == nil else { return }
         if !fromFlekstore && !viewModel.hasSubscription {
             showPremium = true
             return
         }
-        sharedModel.installingName = app.app_name
-        sharedModel.installingIconURL = app.app_icon
-        sharedModel.installingURL = app.install_url
-        sharedModel.urlToInstall = app.install_url
+        LCInstallQueue.shared.enqueue(
+            url: app.install_url,
+            name: app.app_name,
+            iconURL: app.app_icon
+        )
         if fromFlekstore {
             FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
         }

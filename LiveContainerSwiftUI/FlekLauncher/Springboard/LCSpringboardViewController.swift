@@ -27,7 +27,6 @@ final class LCSpringboardViewController: UIViewController {
     private(set) var isInEditMode: Bool = false
 
     var darkModeIcon: Bool = false
-    var installState: FlekInstallState?
     
 
     // MARK: - Callbacks (set by Representable)
@@ -75,7 +74,7 @@ final class LCSpringboardViewController: UIViewController {
                 updateItems(pending)
                 // If the pending items include .installing, scroll to its page
                 // (the original scroll-to-page may have been consumed behind the cover).
-                if let idx = pending.firstIndex(where: { $0.id == "installing" }) {
+                if let idx = pending.firstIndex(where: { $0.id.hasPrefix("installing.") }) {
                     let page = pageForFlatIndex(idx)
                     if page < pages.count {
                         DispatchQueue.main.async { [weak self] in
@@ -207,7 +206,6 @@ final class LCSpringboardViewController: UIViewController {
                     guard let indexPath = outerCollectionView.indexPath(for: pageCell) else { continue }
                     let pageIndex = indexPath.item
                     guard pageIndex < pages.count else { continue }
-                    pageCell.installState = installState
                     pageCell.safeReloadItems(pages[pageIndex])
                 }
             }
@@ -451,10 +449,9 @@ final class LCSpringboardViewController: UIViewController {
     func updateInstallProgress() {
         for cell in outerCollectionView.visibleCells {
             guard let pageCell = cell as? LCSpringboardPageCell else { continue }
-            pageCell.installState = installState
             for iconCell in pageCell.collectionView.visibleCells {
                 guard let ic = iconCell as? LCSpringboardIconCell else { continue }
-                ic.updateInstallState(installState)
+                ic.updateInstallState()
             }
         }
     }
@@ -546,8 +543,6 @@ extension LCSpringboardViewController: UICollectionViewDataSource {
         cell.items = pages[indexPath.item]
         cell.delegate = self
         cell.darkModeIcon = darkModeIcon
-        cell.installState = installState
-    
         cell.draggedItemId = dragManager.currentOperation?.itemId
         cell.collectionView.reloadData()
 
@@ -572,7 +567,6 @@ extension LCSpringboardViewController: UICollectionViewDelegate {
         dragManager.adoptDragOnVisiblePage(pageCell, pageIndex: indexPath.item)
 
         pageCell.items = pages[indexPath.item]
-        pageCell.installState = installState
         pageCell.draggedItemId = dragManager.currentOperation?.itemId
         pageCell.collectionView.reloadData()
 
