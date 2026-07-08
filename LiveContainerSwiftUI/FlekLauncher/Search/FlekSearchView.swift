@@ -322,7 +322,7 @@ class MultiRepoSearchModel: ObservableObject {
 
         if let flekRepo = repos.first(where: { FlekInstallerView.isFlekstore($0) }),
            !flekstoreVM.apps.isEmpty {
-            results.append(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re", iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps))
+            results.insert(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re", iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps), at: 0)
         }
 
         if !Task.isCancelled {
