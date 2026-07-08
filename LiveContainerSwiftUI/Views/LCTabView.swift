@@ -97,6 +97,7 @@ struct LCTabView: View {
         }
         .task {
             setupInitialRepositoriesIfNeeded()
+            Task { await MultiRepoSearchModel.prefetchAllRepos() }
             await refreshBlockedStatus()
 
             guard !isBlocked, !didFailBlockedStatusCheck else {

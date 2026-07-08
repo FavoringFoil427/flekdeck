@@ -218,6 +218,7 @@ class MultiRepoSearchModel: ObservableObject {
 
     func setup() {
         repos = FlekInstallerView.loadRepos()
+        cachedApps = RepoCatalogCache.shared.loadAllCached(repos: repos)
         flekstoreVM.repository = .flekstore
         Task { await flekstoreVM.refreshSubscriptionStatus() }
     }
@@ -244,24 +245,64 @@ class MultiRepoSearchModel: ObservableObject {
         isLoading = false
     }
 
-    private func performSearch(_ query: String) async {
-        // Fetch custom repos that haven't been cached yet
-        await fetchCustomReposIfNeeded()
+    /// Fetches all custom-repo catalogs and writes them to disk cache.
+    /// Call from app launch (background) and installer tab open (refresh).
+    static func prefetchAllRepos() async {
+        let repos = FlekInstallerView.loadRepos()
+        let cache = RepoCatalogCache.shared
+        await withTaskGroup(of: Void.self) { group in
+            for repo in repos where !FlekInstallerView.isFlekstore(repo) {
+                let url = repo.sourceURL
+                group.addTask { @MainActor in
+                    let vm = FlekstoreAppsListViewModel()
+                    vm.repository = .custom(url: url)
+                    await vm.fetchApps()
+                    if !vm.apps.isEmpty {
+                        cache.store(apps: vm.apps, for: url)
+                    }
+                }
+            }
+        }
+    }
 
-        // Search FlekStore via API
-        flekstoreVM.searchQuery = query
-        await flekstoreVM.resetAndFetchApps()
+    private func performSearch(_ query: String) async {
+        // Reload disk cache (may have been updated by background pre-fetch)
+        let cache = RepoCatalogCache.shared
+        for repo in repos where !FlekInstallerView.isFlekstore(repo) {
+            if cachedApps[repo.sourceURL] == nil,
+               let apps = cache.cachedApps(for: repo.sourceURL) {
+                cachedApps[repo.sourceURL] = apps
+            }
+        }
+
+        // Fetch any custom repos that still aren't cached
+        let uncachedRepos = repos.filter { !FlekInstallerView.isFlekstore($0) && cachedApps[$0.sourceURL] == nil }
+        if !uncachedRepos.isEmpty {
+            await withTaskGroup(of: (String, [FSAppModel]).self) { group in
+                for repo in uncachedRepos {
+                    let url = repo.sourceURL
+                    group.addTask { @MainActor in
+                        let vm = FlekstoreAppsListViewModel()
+                        vm.repository = .custom(url: url)
+                        await vm.fetchApps()
+                        return (url, vm.apps)
+                    }
+                }
+                for await (url, apps) in group {
+                    if !apps.isEmpty {
+                        cachedApps[url] = apps
+                        cache.store(apps: apps, for: url)
+                    }
+                }
+            }
+        }
 
         guard !Task.isCancelled else { return }
 
+        // Filter custom repos locally
         var results: [RepoSection] = []
-        for repo in repos {
-            let isFS = FlekInstallerView.isFlekstore(repo)
-            if isFS {
-                if !flekstoreVM.apps.isEmpty {
-                    results.append(RepoSection(id: repo.sourceURL, name: "FlekSt0re", iconUrl: repo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps))
-                }
-            } else if let allApps = cachedApps[repo.sourceURL] {
+        for repo in repos where !FlekInstallerView.isFlekstore(repo) {
+            if let allApps = cachedApps[repo.sourceURL] {
                 let filtered = allApps.filter { $0.app_name.localizedCaseInsensitiveContains(query) }
                 if !filtered.isEmpty {
                     results.append(RepoSection(id: repo.sourceURL, name: repo.name, iconUrl: repo.iconUrl, isFlekstore: false, apps: filtered))
@@ -271,26 +312,22 @@ class MultiRepoSearchModel: ObservableObject {
 
         if !Task.isCancelled {
             sections = results
-            isLoading = false
         }
-    }
 
-    private func fetchCustomReposIfNeeded() async {
-        await withTaskGroup(of: (String, [FSAppModel]).self) { group in
-            for repo in repos where !FlekInstallerView.isFlekstore(repo) && cachedApps[repo.sourceURL] == nil {
-                let url = repo.sourceURL
-                group.addTask { @MainActor in
-                    let vm = FlekstoreAppsListViewModel()
-                    vm.repository = .custom(url: url)
-                    await vm.fetchApps()
-                    return (url, vm.apps)
-                }
-            }
-            for await (url, apps) in group {
-                if !apps.isEmpty {
-                    cachedApps[url] = apps
-                }
-            }
+        // FlekStore: server-side search (requires API call)
+        flekstoreVM.searchQuery = query
+        await flekstoreVM.resetAndFetchApps()
+
+        guard !Task.isCancelled else { return }
+
+        if let flekRepo = repos.first(where: { FlekInstallerView.isFlekstore($0) }),
+           !flekstoreVM.apps.isEmpty {
+            results.append(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re", iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps))
+        }
+
+        if !Task.isCancelled {
+            sections = results
+            isLoading = false
         }
     }
 }

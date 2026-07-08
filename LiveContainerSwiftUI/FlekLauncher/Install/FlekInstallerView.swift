@@ -81,6 +81,7 @@ struct FlekInstallerView: View {
             }
             await viewModel.refreshSubscriptionStatus()
             await viewModel.resetAndFetchApps()
+            Task { await MultiRepoSearchModel.prefetchAllRepos() }
         }
         .sheet(isPresented: $showSources, onDismiss: { repos = Self.loadRepos() }) {
             FlekSourcesPopup(repos: $repos) { repo in
