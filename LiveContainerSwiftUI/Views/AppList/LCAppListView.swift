@@ -647,10 +647,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             for (slotIndex, id) in storedOrder.enumerated() {
                 if id == "__empty__" {
                     result.append(.placeholder("slot.\(slotIndex)"))
+                } else if id.hasPrefix("__installing.") && id.hasSuffix("__") {
+                    // Persisted as "__installing.<UUID>__" — extract the
+                    // inner key so the installing item can reclaim its slot.
+                    let inner = String(id.dropFirst(2).dropLast(2)) // "installing.<UUID>"
+                    // Check if this install is still active; if not, the slot
+                    // becomes available for new apps (uses "installing." prefix
+                    // so it's preferred over generic placeholders).
+                    let uuidStr = String(inner.dropFirst("installing.".count))
+                    let stillActive = installQueue.activeItems.contains { $0.id.uuidString == uuidStr }
+                    result.append(.placeholder(stillActive ? inner : "installing.\(slotIndex)"))
                 } else if id == "__installing__" {
-                    // Distinct marker for the installing icon's position.
-                    // Uses a recognisable prefix so the new app can be
-                    // placed at the exact same slot after install finishes.
+                    // Legacy single-install marker
                     result.append(.placeholder("installing.\(slotIndex)"))
                 } else if let item = available.removeValue(forKey: id) {
                     result.append(item)
@@ -672,12 +680,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if case .installed = item { return item }
                 return nil
             }
-            let isInstallingSlot: (FlekHomeItem) -> Bool = { item in
-                if case .placeholder(let id) = item { return id.hasPrefix("installing.") }
+            // Only consume freed installing slots (where the install already
+            // completed), not slots reserved for still-active queue items.
+            let activeIDs = Set(installQueue.activeItems.map { "installing.\($0.id)" })
+            let isFreedInstallingSlot: (FlekHomeItem) -> Bool = { item in
+                if case .placeholder(let id) = item {
+                    return id.hasPrefix("installing.") && !activeIDs.contains(id)
+                }
                 return false
             }
             for newItem in remainingDefaults + remainingInstalled {
-                if let installIdx = result.firstIndex(where: isInstallingSlot) {
+                if let installIdx = result.firstIndex(where: isFreedInstallingSlot) {
                     result[installIdx] = newItem
                     lastNewIdx = installIdx
                 } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
@@ -749,11 +762,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
 
         // Place installing indicators for each active queue item.
+        // Each item reclaims its previously-persisted slot (keyed by UUID)
+        // so positions stay stable across rebuilds.
         var scrollIdx: Int?
+        var didPlaceInstalling = false
         for item in installQueue.activeItems {
-            let itemKey = "installing.\(item.id)."
+            let itemKey = "installing.\(item.id)"
             let isInstallingSlot: (FlekHomeItem) -> Bool = { homeItem in
-                if case .placeholder(let id) = homeItem { return id.hasPrefix(itemKey) }
+                if case .placeholder(let id) = homeItem { return id == itemKey }
                 return false
             }
             let installingItem = FlekHomeItem.installing(item)
@@ -763,9 +779,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             } else if let placeholderIdx = result.firstIndex(where: { $0.isPlaceholder }) {
                 result[placeholderIdx] = installingItem
                 scrollIdx = scrollIdx ?? placeholderIdx
+                didPlaceInstalling = true
             } else {
                 scrollIdx = scrollIdx ?? result.count
                 result.append(installingItem)
+                didPlaceInstalling = true
             }
         }
 
@@ -784,9 +802,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         orderedHomeItems = result
 
         // Persist immediately when the grid changed (new items placed at
-        // placeholder slots, or deleted apps replaced with placeholders) so
-        // subsequent rebuilds produce a stable layout.
-        if lastNewIdx != nil || didReplaceDeleted {
+        // placeholder slots, installing items placed, or deleted apps
+        // replaced with placeholders) so subsequent rebuilds produce a
+        // stable layout.
+        if lastNewIdx != nil || didReplaceDeleted || didPlaceInstalling {
             persistHomeOrder()
         }
 
