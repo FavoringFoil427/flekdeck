@@ -169,7 +169,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
             homeContentView
             .padding(.top, 8)
-            .padding(.bottom, 84)
+            .padding(.bottom, 89)
             .id(homeRefreshToggle)
             .blur(radius: showSearch ? 20 : 0)
 
@@ -183,7 +183,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         doneButtonLabel
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 5)
                 } else {
                     HStack(spacing: 10) {
                         // Show running multitask app icons when in home state
@@ -277,7 +277,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     }
                     .animation(.easeInOut(duration: 0.25), value: isMultitaskHomeState)
                     .id(colorScheme)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 5)
                 }
             }
             }
@@ -556,7 +556,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .foregroundStyle(Color.primary.opacity(0.75))
         .padding(.horizontal, 18)
-        .frame(height: FlekTheme.searchPillSize)
+        .frame(height: FlekTheme.searchPillSize * 1.3)
 
         if #available(iOS 26.0, *) {
             label.glassEffect(.regular.interactive(false))
