@@ -176,7 +176,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     private func setupGlassBackground() {
         let effectView: UIVisualEffectView
         if #available(iOS 26, *) {
-            effectView = UIVisualEffectView(effect: UIGlassEffect())
+            effectView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
         } else {
             effectView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         }
@@ -493,7 +493,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         if let glass = glassBackgroundView {
             let bgCopy: UIVisualEffectView
             if #available(iOS 26, *) {
-                bgCopy = UIVisualEffectView(effect: UIGlassEffect())
+                bgCopy = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
             } else {
                 bgCopy = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
                 let tint = UIView()

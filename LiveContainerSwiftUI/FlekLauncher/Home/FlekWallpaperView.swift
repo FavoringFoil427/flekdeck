@@ -167,7 +167,7 @@ struct FlekBlurredWallpaperOverlay: View {
                 Image(uiImage: blurred)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(width: geo.size.width, height: geo.size.height + 6)
                     .clipped()
                     .mask(
                         LinearGradient(
