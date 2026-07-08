@@ -199,14 +199,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                                 MultitaskDockManager.shared.showAppSwitcher()
                                             } label: {
                                                 Image(systemName: "square.stack")
-                                                    .font(.system(size: FlekTheme.searchPillSize * 0.4, weight: .regular))
+                                                    .font(.system(size: FlekTheme.searchPillSize * 0.52, weight: .regular))
                                                     .foregroundStyle(Color.primary.opacity(0.6))
-                                                    .frame(width: FlekTheme.searchPillSize * 0.8, height: FlekTheme.searchPillSize * 0.8)
+                                                    .frame(width: FlekTheme.searchPillSize * 1.04, height: FlekTheme.searchPillSize * 1.04)
                                             }
                                             .buttonStyle(.plain)
                                         }
-                                        .padding(.horizontal, 6)
-                                        .frame(height: FlekTheme.searchPillSize)
+                                        .padding(.leading, 16)
+                                        .padding(.trailing, 10)
+                                        .frame(height: FlekTheme.searchPillSize * 1.3)
                                         .glassEffect(in: .capsule)
 
                                         // Search button with native glass
@@ -214,9 +215,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                             showSearch = true
                                         } label: {
                                             Image(systemName: "magnifyingglass")
-                                                .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                                .font(.system(size: FlekTheme.searchPillSize * 0.65, weight: .regular))
                                                 .foregroundStyle(Color.primary.opacity(0.6))
-                                                .frame(width: FlekTheme.searchPillSize, height: FlekTheme.searchPillSize)
+                                                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                         }
                                         .buttonStyle(.plain)
                                         .glassEffect(in: .circle)
@@ -232,14 +233,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                         MultitaskDockManager.shared.showAppSwitcher()
                                     } label: {
                                         Image(systemName: "square.stack")
-                                            .font(.system(size: FlekTheme.searchPillSize * 0.4, weight: .regular))
+                                            .font(.system(size: FlekTheme.searchPillSize * 0.52, weight: .regular))
                                             .foregroundStyle(Color.primary.opacity(0.6))
-                                            .frame(width: FlekTheme.searchPillSize * 0.8, height: FlekTheme.searchPillSize * 0.8)
+                                            .frame(width: FlekTheme.searchPillSize * 1.04, height: FlekTheme.searchPillSize * 1.04)
                                     }
                                     .buttonStyle(.plain)
                                 }
-                                .padding(.horizontal, 6)
-                                .frame(height: FlekTheme.searchPillSize)
+                                .padding(.leading, 16)
+                                .padding(.trailing, 10)
+                                .frame(height: FlekTheme.searchPillSize * 1.3)
                                 .background(
                                     Capsule()
                                         .fill(.ultraThinMaterial)
@@ -258,16 +260,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                     showSearch = true
                                 } label: {
                                     Image(systemName: "magnifyingglass")
-                                        .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                        .font(.system(size: FlekTheme.searchPillSize * 0.65, weight: .regular))
                                         .foregroundStyle(Color.primary.opacity(0.6))
-                                        .frame(width: FlekTheme.searchPillSize, height: FlekTheme.searchPillSize)
+                                        .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                 }
                                 .buttonStyle(.plain)
                                 .glassEffect(in: .circle)
                             }
                         } else {
                             FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                                  size: FlekTheme.searchPillSize, iconScale: 0.5) {
+                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.5) {
                                 showSearch = true
                             }
                         }

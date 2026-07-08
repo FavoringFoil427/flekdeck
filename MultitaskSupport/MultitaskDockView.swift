@@ -1851,7 +1851,7 @@ struct AppSwitcherCard: View {
 struct MultitaskHomeIcons: View {
     @ObservedObject var dockManager = MultitaskDockManager.shared
     let darkModeIcon: Bool
-    private let iconSize: CGFloat = FlekTheme.searchPillSize * 0.72
+    private let iconSize: CGFloat = FlekTheme.searchPillSize * 0.94
     
     var body: some View {
         ForEach(Array(dockManager.apps.suffix(4))) { app in
