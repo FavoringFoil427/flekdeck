@@ -1562,6 +1562,7 @@ struct AppSwitcherOverlay: View {
                     .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 cardHStack
@@ -1784,8 +1785,6 @@ struct AppSwitcherCard: View {
             }
         }
         .offset(y: dragOffset + closeAllOffset)
-        .scaleEffect(dragOffset < 0 ? max(0.7, 1 + dragOffset / 500) : 1.0)
-        .opacity(isDismissing ? 0 : (dragOffset < 0 ? Double(1 + dragOffset / 300) : 1))
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
                 .onChanged { value in
@@ -1813,14 +1812,33 @@ struct AppSwitcherCard: View {
                     }
                 }
                 .onEnded { value in
-                    if isVerticalDrag && (value.translation.height < dismissThreshold || value.predictedEndTranslation.height < dismissThreshold * 1.5) {
-                        // Swipe up to close
+                    let velocity = value.velocity.height
+                    let translation = value.translation.height
+                    
+                    // Dismiss based on distance OR velocity (inertia):
+                    // - Dragged past threshold, OR
+                    // - Fast upward flick (velocity < -800), OR
+                    // - Predicted end position flies well past threshold
+                    let shouldDismiss = isVerticalDrag && (
+                        translation < dismissThreshold ||
+                        velocity < -800 ||
+                        value.predictedEndTranslation.height < dismissThreshold * 2
+                    )
+                    
+                    if shouldDismiss {
                         isDismissing = true
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation(.easeIn(duration: 0.2)) {
-                            dragOffset = -UIScreen.main.bounds.height
+                        
+                        // Spring with initial velocity for smooth momentum handoff from gesture
+                        let screenH = UIScreen.main.bounds.height
+                        let totalChange = -screenH - dragOffset // negative (going further up)
+                        // Normalize gesture velocity to proportion of remaining distance per second
+                        let springVelocity = totalChange != 0 ? velocity / totalChange : 0
+                        
+                        withAnimation(.interpolatingSpring(stiffness: 350, damping: 38, initialVelocity: springVelocity)) {
+                            dragOffset = -screenH
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                             dockManager.closeApp(uuid: app.appUUID)
                         }
                     } else {
