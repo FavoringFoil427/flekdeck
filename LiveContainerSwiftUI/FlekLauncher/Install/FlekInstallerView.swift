@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
+    var preselectRepoURL: String? = nil
     var onClose: () -> Void
 
     @EnvironmentObject private var sharedModel: SharedModel
@@ -71,7 +72,10 @@ struct FlekInstallerView: View {
         .task {
             repoSearch.setup()
             repos = Self.loadRepos()
-            if preselectFlekstore, let flek = repos.first(where: { Self.isFlekstore($0) }) {
+            if let repoURL = preselectRepoURL, let match = repos.first(where: { $0.sourceURL == repoURL }) {
+                selectedRepoID = match.id
+                viewModel.repository = Self.source(for: match)
+            } else if preselectFlekstore, let flek = repos.first(where: { Self.isFlekstore($0) }) {
                 selectedRepoID = flek.id
                 viewModel.repository = .flekstore
             } else if let selected = repos.first(where: { $0.isSelected }) {

@@ -16,6 +16,7 @@ struct FlekSearchView: View {
     let darkModeIcon: Bool
     var onSelect: (LCAppModel) -> Void
     var onInstallStoreApp: (FSAppModel) -> Void = { _ in }
+    var onOpenRepo: (String) -> Void = { _ in }
 
     @State private var query = ""
     @State private var debouncedQuery = ""
@@ -97,7 +98,10 @@ struct FlekSearchView: View {
                         }
                     }
                     ForEach(repoSearch.sections) { repoSection in
-                        section(title: repoSection.name, iconUrl: repoSection.iconUrl) {
+                        section(title: repoSection.name, iconUrl: repoSection.iconUrl, onOpen: {
+                            onOpenRepo(repoSection.id)
+                            close()
+                        }) {
                             ForEach(repoSection.apps) { app in
                                 Button {
                                     if repoSection.isFlekstore {
@@ -124,7 +128,7 @@ struct FlekSearchView: View {
     }
 
     @ViewBuilder
-    private func section<Content: View>(title: String, iconUrl: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(title: String, iconUrl: String? = nil, onOpen: (() -> Void)? = nil, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 if let iconUrl, let url = URL(string: iconUrl) {
@@ -139,6 +143,19 @@ struct FlekSearchView: View {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.7))
+                if let onOpen {
+                    Spacer()
+                    Button(action: onOpen) {
+                        HStack(spacing: 4) {
+                            Text("lc.flek.openRepo".loc)
+                                .font(.system(size: 13, weight: .medium))
+                            Image(systemName: "arrow.up.forward")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.white.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.leading, 6)
             content()

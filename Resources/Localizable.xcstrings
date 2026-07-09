@@ -29940,6 +29940,17 @@
         }
       }
     },
+    "lc.flek.openRepo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open repo"
+          }
+        }
+      }
+    },
     "lc.flek.connectedSources": {
       "extractionState": "manual",
       "localizations": {

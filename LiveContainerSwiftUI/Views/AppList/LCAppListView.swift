@@ -94,6 +94,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var showInstallerCover = false
     @State private var showSearch = false
     @State private var installerPreselectFlekstore = false
+    @State private var installerPreselectRepoURL: String?
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
     @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
 
@@ -254,6 +255,20 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             name: app.app_name,
                             iconURL: app.app_icon
                         )
+                    },
+                    onOpenRepo: { repoURL in
+                        let isMultitaskAvailable: Bool = {
+                            guard #available(iOS 16.0, *) else { return false }
+                            let mode = MultitaskMode(rawValue: LCUtils.appGroupUserDefault.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
+                            return mode == .virtualWindow && sharedModel.multiLCStatus != 2
+                        }()
+                        if #available(iOS 16.0, *), isMultitaskAvailable {
+                            openInternalPageForKind(.installer, preselectRepoURL: repoURL)
+                        } else {
+                            installerPreselectFlekstore = false
+                            installerPreselectRepoURL = repoURL
+                            showInstallerCover = true
+                        }
                     }
                 )
                 .transition(.opacity)
@@ -295,8 +310,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 LCSettingsView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
             }
         }
-        .fullScreenCover(isPresented: $showInstallerCover) {
-            FlekInstallerView(preselectFlekstore: installerPreselectFlekstore) {
+        .fullScreenCover(isPresented: $showInstallerCover, onDismiss: {
+            installerPreselectRepoURL = nil
+        }) {
+            FlekInstallerView(preselectFlekstore: installerPreselectFlekstore, preselectRepoURL: installerPreselectRepoURL) {
                 showInstallerCover = false
             }
         }
@@ -888,9 +905,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     showSettingsCover = true
                 case .installer:
                     installerPreselectFlekstore = false
+                    installerPreselectRepoURL = nil
                     showInstallerCover = true
                 case .flekstore:
                     installerPreselectFlekstore = true
+                    installerPreselectRepoURL = nil
                     showInstallerCover = true
                 }
             }
@@ -909,7 +928,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     @available(iOS 16.0, *)
-    private func openInternalPageForKind(_ kind: FlekDefaultAppKind) {
+    private func openInternalPageForKind(_ kind: FlekDefaultAppKind, preselectRepoURL: String? = nil) {
         let dockManager = MultitaskDockManager.shared
         
         switch kind {
@@ -921,7 +940,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         case .installer:
             dockManager.openInternalPage(kind: "installer", uuid: "internal-installer", name: "Installer") {
-                FlekInstallerView(preselectFlekstore: false) {
+                FlekInstallerView(preselectFlekstore: false, preselectRepoURL: preselectRepoURL) {
                     dockManager.closeApp(uuid: "internal-installer")
                 }
                 .environmentObject(sharedModel)
