@@ -275,6 +275,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         .onChange(of: installQueue.items.count) { _ in
             rebuildOrderedHomeItems()
         }
+        .onChange(of: installQueue.completedURLs.count) { _ in
+            rebuildOrderedHomeItems()
+        }
         .onReceive({
             if #available(iOS 16.0, *) {
                 return MultitaskDockManager.shared.$isHomeState.eraseToAnyPublisher()
@@ -1588,9 +1591,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 }
             }
             
-            // Explicitly rebuild home items so the new app icon appears
-            // immediately (onChange handlers may miss it due to batching).
-            rebuildOrderedHomeItems()
+            // Don't rebuild here — the install item is still in
+            // .installing phase so its slot won't be freed for the new
+            // app.  The rebuild is triggered after markCompleted() sets
+            // .completed, via .onChange(of: completedURLs.count).
         }
     }
     
