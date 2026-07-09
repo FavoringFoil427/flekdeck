@@ -107,7 +107,7 @@ final class LCSpringboardViewController: UIViewController {
         }
 
         // Page control overlays the bottom of the CV.
-        let pageControlTopPadding: CGFloat = 20
+        let pageControlTopPadding: CGFloat = 4
         let pageControlHeight: CGFloat = 10
         pageControl.frame = CGRect(
             x: 0,
