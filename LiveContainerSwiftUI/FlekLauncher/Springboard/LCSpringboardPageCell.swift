@@ -244,6 +244,8 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
     /// the menu (e.g. toggling launch mode) without dismissing it.
     private(set) static weak var activeContextMenuInteraction: UIContextMenuInteraction?
     private static var activeContextMenuRefresh: (() -> UIMenu?)?
+    private static weak var activeContextMenuPageCell: LCSpringboardPageCell?
+    private static var activeContextMenuIndexPath: IndexPath?
 
     /// Rebuilds the currently visible context menu in-place so that state
     /// changes (like launch-mode toggles) are reflected immediately.
@@ -256,13 +258,24 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         }
     }
 
+    /// Updates the badge on the icon cell that currently has an active
+    /// context menu, without reloading the entire cell.
+    static func refreshActiveCellBadge() {
+        guard let pageCell = activeContextMenuPageCell,
+              let ip = activeContextMenuIndexPath,
+              let cell = pageCell.collectionView.cellForItem(at: ip) as? LCSpringboardIconCell else { return }
+        cell.updateBadge()
+    }
+
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard !isEditing else { return nil }
         let item = items[indexPath.item]
         guard !item.isPlaceholder else { return nil }
         guard let menu = delegate?.pageCell(self, contextMenuFor: item) else { return nil }
 
-        // Store a refresh closure so the menu can be rebuilt while visible.
+        // Store references so the menu and badge can be updated while visible.
+        Self.activeContextMenuPageCell = self
+        Self.activeContextMenuIndexPath = indexPath
         Self.activeContextMenuRefresh = { [weak self] in
             guard let self else { return nil }
             return self.delegate?.pageCell(self, contextMenuFor: item)
@@ -313,6 +326,8 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, willEndContextMenuInteraction configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
         Self.activeContextMenuInteraction = nil
         Self.activeContextMenuRefresh = nil
+        Self.activeContextMenuPageCell = nil
+        Self.activeContextMenuIndexPath = nil
         let menuIndexPath = configuration.identifier as? IndexPath
         animator?.addCompletion { [weak self] in
             guard let self else { return }

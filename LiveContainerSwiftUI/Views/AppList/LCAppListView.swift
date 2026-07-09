@@ -1026,6 +1026,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         ) { _ in
             FlekLaunchModeStore.shared.set(.single, for: app)
             LCSpringboardPageCell.refreshActiveContextMenu()
+            LCSpringboardPageCell.refreshActiveCellBadge()
         }
         let runParallel = UIAction(
             title: "lc.appBanner.runParallel".loc,
@@ -1035,6 +1036,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         ) { _ in
             FlekLaunchModeStore.shared.set(.parallel, for: app)
             LCSpringboardPageCell.refreshActiveContextMenu()
+            LCSpringboardPageCell.refreshActiveCellBadge()
         }
         let launchGroup = UIMenu(title: "", options: [.displayInline, .singleSelection], children: [runSingle, runParallel])
         if #available(iOS 16.0, *) {

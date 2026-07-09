@@ -345,6 +345,12 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         }
     }
 
+    /// Update just the single-mode badge visibility without full reconfigure.
+    func updateBadge() {
+        guard case .installed(let app) = configuredItem else { return }
+        singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
+    }
+
     /// Update just the install state (progress/icon) without full reconfigure.
     func updateInstallState() {
         guard case .installing(let inst) = configuredItem else { return }
