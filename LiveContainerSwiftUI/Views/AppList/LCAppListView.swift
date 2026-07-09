@@ -188,32 +188,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             if #available(iOS 26.0, *) {
                                 GlassEffectContainer(spacing: 10) {
                                     HStack(spacing: 10) {
-                                        // App icons + switcher in unified glass pill
-                                        HStack(spacing: 8) {
-                                            MultitaskHomeIcons(darkModeIcon: darkModeIcon)
-
-                                            // App switcher button
-                                            Button {
-                                                MultitaskDockManager.shared.showAppSwitcher()
-                                            } label: {
-                                                Image(systemName: "square.stack")
-                                                    .font(.system(size: FlekTheme.searchPillSize * 0.52, weight: .regular))
-                                                    .foregroundStyle(Color.primary.opacity(0.6))
-                                                    .frame(width: FlekTheme.searchPillSize * 1.04, height: FlekTheme.searchPillSize * 1.04)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                        .padding(.leading, 16)
-                                        .padding(.trailing, 10)
-                                        .frame(height: FlekTheme.searchPillSize * 1.3)
-                                        .glassEffect(in: .capsule)
+                                        MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
 
                                         // Search button with native glass
                                         Button {
                                             showSearch = true
                                         } label: {
                                             Image(systemName: "magnifyingglass")
-                                                .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
                                                 .foregroundStyle(Color.primary.opacity(0.6))
                                                 .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                         }
@@ -223,30 +205,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                 }
                                 .transition(.scale.combined(with: .opacity))
                             } else {
-                                HStack(spacing: 8) {
-                                    MultitaskHomeIcons(darkModeIcon: darkModeIcon)
-
-                                    // App switcher button
-                                    Button {
-                                        MultitaskDockManager.shared.showAppSwitcher()
-                                    } label: {
-                                        Image(systemName: "square.stack")
-                                            .font(.system(size: FlekTheme.searchPillSize * 0.52, weight: .regular))
-                                            .foregroundStyle(Color.primary.opacity(0.6))
-                                            .frame(width: FlekTheme.searchPillSize * 1.04, height: FlekTheme.searchPillSize * 1.04)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(.leading, 16)
-                                .padding(.trailing, 10)
-                                .frame(height: FlekTheme.searchPillSize * 1.3)
-                                .background(
-                                    Capsule()
-                                        .fill(.ultraThinMaterial)
-                                        .overlay(Capsule().fill(Color.primary.opacity(0.15)))
-                                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
-                                )
-                                .transition(.scale.combined(with: .opacity))
+                                MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
+                                    .transition(.scale.combined(with: .opacity))
                             }
                         }
 
@@ -258,7 +218,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                     showSearch = true
                                 } label: {
                                     Image(systemName: "magnifyingglass")
-                                        .font(.system(size: FlekTheme.searchPillSize * 0.5, weight: .regular))
+                                        .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
                                         .foregroundStyle(Color.primary.opacity(0.6))
                                         .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
                                 }
@@ -267,7 +227,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             }
                         } else {
                             FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.38) {
+                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.42) {
                                 showSearch = true
                             }
                         }

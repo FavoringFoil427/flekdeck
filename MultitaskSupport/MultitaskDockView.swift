@@ -1878,6 +1878,80 @@ struct MultitaskHomeIcons: View {
     }
 }
 
+// MARK: - Multitask Home Dock Pill
+/// The pill/circle shown at the bottom of the springboard when in multitask home state.
+/// Observes the dock manager so it reactively switches between a capsule (when running
+/// apps are present) and a circle (when only the switcher button remains).
+@available(iOS 16.0, *)
+struct MultitaskHomeDockPill: View {
+    @ObservedObject private var dockManager = MultitaskDockManager.shared
+    let darkModeIcon: Bool
+
+    private var hasApps: Bool { !dockManager.apps.isEmpty }
+    private let pillHeight: CGFloat = FlekTheme.searchPillSize * 1.3
+
+    var body: some View {
+        if hasApps {
+            HStack(spacing: 8) {
+                MultitaskHomeIcons(darkModeIcon: darkModeIcon)
+                switcherButton
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .frame(height: pillHeight)
+            .modifier(DockPillBackground(isCircle: false))
+        } else {
+            switcherButton
+                .frame(width: pillHeight, height: pillHeight)
+                .modifier(DockPillBackground(isCircle: true))
+        }
+    }
+
+    private var switcherButton: some View {
+        Button {
+            MultitaskDockManager.shared.showAppSwitcher()
+        } label: {
+            Image(systemName: "square.stack")
+                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+                .foregroundStyle(Color.primary.opacity(0.6))
+                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Applies either a capsule or circle glass/material background depending on iOS version.
+@available(iOS 16.0, *)
+private struct DockPillBackground: ViewModifier {
+    let isCircle: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if isCircle {
+                content.glassEffect(in: .circle)
+            } else {
+                content.glassEffect(in: .capsule)
+            }
+        } else {
+            if isCircle {
+                content.background(
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Circle().fill(Color.primary.opacity(0.15)))
+                        .overlay(Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
+                )
+            } else {
+                content.background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color.primary.opacity(0.15)))
+                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
+                )
+            }
+        }
+    }
+}
+
 // MARK: - Glass Capsule Background (native Liquid Glass on iOS 26+, fallback on older)
 struct GlassCapsuleBackground: ViewModifier {
     func body(content: Content) -> some View {
