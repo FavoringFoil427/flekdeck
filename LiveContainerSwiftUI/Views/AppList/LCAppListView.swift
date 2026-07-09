@@ -1023,18 +1023,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             image: UIImage(systemName: "macwindow"),
             attributes: keepOpen,
             state: effectiveIsParallel ? .off : .on
-        ) { [self] _ in
+        ) { _ in
             FlekLaunchModeStore.shared.set(.single, for: app)
-            homeRefreshToggle.toggle()
+            LCSpringboardPageCell.refreshActiveContextMenu()
         }
         let runParallel = UIAction(
             title: "lc.appBanner.runParallel".loc,
             image: UIImage(systemName: "macwindow.on.rectangle"),
             attributes: keepOpen,
             state: effectiveIsParallel ? .on : .off
-        ) { [self] _ in
+        ) { _ in
             FlekLaunchModeStore.shared.set(.parallel, for: app)
-            homeRefreshToggle.toggle()
+            LCSpringboardPageCell.refreshActiveContextMenu()
         }
         let launchGroup = UIMenu(title: "", options: [.displayInline, .singleSelection], children: [runSingle, runParallel])
         if #available(iOS 16.0, *) {
@@ -1124,7 +1124,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         let currentMode = FlekLaunchModeStore.shared.mode(for: app)
         let effectiveIsParallel = currentMode != nil ? (currentMode == .parallel) : app.shouldLaunchInMultitaskMode
 
-        if #available(iOS 16.0, *) {
+        if #available(iOS 16.4, *) {
+            ControlGroup {
+                Button {
+                    FlekLaunchModeStore.shared.set(.single, for: app)
+                    homeRefreshToggle.toggle()
+                } label: {
+                    Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
+                }
+                Button {
+                    FlekLaunchModeStore.shared.set(.parallel, for: app)
+                    homeRefreshToggle.toggle()
+                } label: {
+                    Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
+                }
+            }
+            .menuActionDismissBehavior(.disabled)
+        } else if #available(iOS 16.0, *) {
             ControlGroup {
                 Button {
                     FlekLaunchModeStore.shared.set(.single, for: app)

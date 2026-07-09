@@ -240,11 +240,33 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         return false
     }
 
+    /// The currently active context menu interaction, used to live-update
+    /// the menu (e.g. toggling launch mode) without dismissing it.
+    private(set) static weak var activeContextMenuInteraction: UIContextMenuInteraction?
+    private static var activeContextMenuRefresh: (() -> UIMenu?)?
+
+    /// Rebuilds the currently visible context menu in-place so that state
+    /// changes (like launch-mode toggles) are reflected immediately.
+    static func refreshActiveContextMenu() {
+        guard #available(iOS 16.0, *),
+              let interaction = activeContextMenuInteraction,
+              let refresh = activeContextMenuRefresh else { return }
+        interaction.updateVisibleMenu { _ in
+            refresh() ?? UIMenu(children: [])
+        }
+    }
+
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard !isEditing else { return nil }
         let item = items[indexPath.item]
         guard !item.isPlaceholder else { return nil }
         guard let menu = delegate?.pageCell(self, contextMenuFor: item) else { return nil }
+
+        // Store a refresh closure so the menu can be rebuilt while visible.
+        Self.activeContextMenuRefresh = { [weak self] in
+            guard let self else { return nil }
+            return self.delegate?.pageCell(self, contextMenuFor: item)
+        }
 
         return UIContextMenuConfiguration(identifier: indexPath as NSCopying, previewProvider: nil) { _ in
             menu
@@ -279,9 +301,19 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
 
     func collectionView(_ collectionView: UICollectionView, willDisplayContextMenu configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
         isContextMenuActive = true
+        // Grab the UIContextMenuInteraction so we can call updateVisibleMenu later.
+        for interaction in collectionView.interactions {
+            if let cmi = interaction as? UIContextMenuInteraction {
+                Self.activeContextMenuInteraction = cmi
+                break
+            }
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, willEndContextMenuInteraction configuration: UIContextMenuConfiguration, animator: (any UIContextMenuInteractionAnimating)?) {
+        Self.activeContextMenuInteraction = nil
+        Self.activeContextMenuRefresh = nil
+        let menuIndexPath = configuration.identifier as? IndexPath
         animator?.addCompletion { [weak self] in
             guard let self else { return }
             self.isContextMenuActive = false
@@ -289,6 +321,9 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
                 self.pendingReloadItems = nil
                 self.items = pending
                 self.collectionView.reloadData()
+            } else if let ip = menuIndexPath {
+                // Refresh the cell to update the launch-mode badge.
+                self.collectionView.reloadItems(at: [ip])
             }
         }
         // Fallback if no animator
@@ -298,6 +333,8 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
                 pendingReloadItems = nil
                 items = pending
                 collectionView.reloadData()
+            } else if let ip = menuIndexPath {
+                collectionView.reloadItems(at: [ip])
             }
         }
     }

@@ -43,16 +43,15 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return btn
     }()
 
-    /// Badge for single-mode apps (top-right of icon).
-    private let singleBadge: UILabel = {
-        let label = UILabel()
-        label.text = "1"
-        label.font = .systemFont(ofSize: 12, weight: .bold)
-        label.textColor = .white
-        label.textAlignment = .center
-        label.backgroundColor = .systemBlue
-        label.isHidden = true
-        return label
+    /// Badge for single-mode apps (top-right corner of glass card).
+    private let singleBadge: UIImageView = {
+        let iv = UIImageView()
+        let config = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        iv.image = UIImage(systemName: "square.dashed", withConfiguration: config)
+        iv.tintColor = .secondaryLabel
+        iv.contentMode = .center
+        iv.isHidden = true
+        return iv
     }()
 
     /// Dimming overlay for `.installing` state (covers icon).
@@ -241,16 +240,14 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             height: Self.labelHeight
         )
 
-        // Single-mode badge (top-right of icon)
-        let badgeSize: CGFloat = 20
+        // Single-mode badge (top-right corner of glass card)
+        let badgeSize: CGFloat = 16
         singleBadge.frame = CGRect(
-            x: iconImageView.frame.maxX - badgeSize / 2,
-            y: iconImageView.frame.minY - badgeSize / 3,
+            x: bounds.maxX - badgeSize - 3,
+            y: 3,
             width: badgeSize,
             height: badgeSize
         )
-        singleBadge.layer.cornerRadius = badgeSize / 2
-        singleBadge.layer.masksToBounds = true
 
         let dbSize = Self.deleteButtonSize
         deleteButton.frame = CGRect(
