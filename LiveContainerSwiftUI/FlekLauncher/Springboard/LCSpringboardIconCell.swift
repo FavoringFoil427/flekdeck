@@ -15,7 +15,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     let iconImageView: UIImageView = {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFill
-        iv.clipsToBounds = true
+        iv.clipsToBounds = false
+        iv.backgroundColor = .clear
         return iv
     }()
 
@@ -215,7 +216,6 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         let iconX = (bounds.width - iconS) / 2
         iconImageView.frame = CGRect(x: iconX, y: contentY, width: iconS, height: iconS)
-        applySquircleMask()
 
         installOverlay.frame = iconImageView.bounds
         installOverlay.layer.cornerRadius = Self.iconCornerRadius
@@ -277,14 +277,19 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         }
     }
 
-    private func applySquircleMask() {
-        let path = UIBezierPath(
-            roundedRect: iconImageView.bounds,
-            cornerRadius: Self.iconCornerRadius
-        )
-        let mask = CAShapeLayer()
-        mask.path = path.cgPath
-        iconImageView.layer.mask = mask
+    /// Pre-renders an image with rounded corners baked into the pixels.
+    /// Avoids using a layer mask which iOS 26 detects and applies an
+    /// unwanted Liquid Glass specular highlight to.
+    private static func roundedImage(_ image: UIImage?, size: CGFloat, radius: CGFloat) -> UIImage? {
+        guard let image else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: size, height: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = UIScreen.main.scale
+        return UIGraphicsImageRenderer(size: rect.size, format: format).image { _ in
+            UIBezierPath(roundedRect: rect, cornerRadius: radius).addClip()
+            image.draw(in: rect)
+        }
     }
 
     override func prepareForReuse() {
@@ -321,12 +326,12 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         configuredItem = item
         switch item {
         case .defaultApp(let kind):
-            iconImageView.image = UIImage(named: kind.iconAssetName)
+            iconImageView.image = Self.roundedImage(UIImage(named: kind.iconAssetName), size: Self.iconSize, radius: Self.iconCornerRadius)
             nameLabel.text = kind.title
             isPlaceholderCell = false
 
         case .installed(let app):
-            iconImageView.image = app.appInfo.iconIsDarkIcon(darkMode)
+            iconImageView.image = Self.roundedImage(app.appInfo.iconIsDarkIcon(darkMode), size: Self.iconSize, radius: Self.iconCornerRadius)
             nameLabel.text = app.appInfo.displayName()
             singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
             isPlaceholderCell = false
@@ -371,8 +376,9 @@ final class LCSpringboardIconCell: UICollectionViewCell {
                 iconLoadTask?.cancel()
                 iconLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
                     guard let data, let image = UIImage(data: data) else { return }
+                    let rounded = LCSpringboardIconCell.roundedImage(image, size: LCSpringboardIconCell.iconSize, radius: LCSpringboardIconCell.iconCornerRadius)
                     DispatchQueue.main.async {
-                        self?.iconImageView.image = image
+                        self?.iconImageView.image = rounded
                     }
                 }
                 iconLoadTask?.resume()

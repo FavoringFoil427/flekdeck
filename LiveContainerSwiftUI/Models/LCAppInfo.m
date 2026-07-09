@@ -212,7 +212,7 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
     
     // generate and save icon cache to disk
     if(!uiIcon) {
-        uiIcon = [UIImage generateIconForBundleURL:[NSURL fileURLWithPath:_bundlePath] style:isDarkIcon hasBorder:YES];
+        uiIcon = [UIImage generateIconForBundleURL:[NSURL fileURLWithPath:_bundlePath] style:isDarkIcon hasBorder:NO];
         saveCGImage([uiIcon CGImage], cachedIconUrl);
     }
     
