@@ -198,7 +198,7 @@ struct FlekAppRow<Icon: View>: View {
 
             icon()
                 .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -312,7 +312,7 @@ struct FlekInstallRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            FlekInstallIcon(state: state, size: 48, corner: 12)
+            FlekInstallIcon(state: state, size: 48, corner: 11)
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.name ?? "lc.flek.installing".loc)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))

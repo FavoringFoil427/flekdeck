@@ -406,7 +406,7 @@ struct IconImageView: View {
             Image(uiImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: g.size.width*0.2667))
+                .clipShape(RoundedRectangle(cornerRadius: g.size.width * 0.2237, style: .continuous))
         }
     }
 }

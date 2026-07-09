@@ -996,7 +996,7 @@ private struct LCSourceAppBanner: View {
             HStack(alignment: .center, spacing: 12) {
                 SourceIconView(url: app.iconURL)
                     .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text(app.name)

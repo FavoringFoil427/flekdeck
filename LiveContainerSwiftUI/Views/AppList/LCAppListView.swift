@@ -161,14 +161,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     var body: some View {
         ZStack {
-            FlekWallpaperView()
-            FlekBlurredWallpaperOverlay(radius: 30)
+            ZStack {
+                FlekWallpaperView()
+                FlekBlurredWallpaperOverlay(radius: 30)
 
-            homeContentView
-            .padding(.top, 8)
-            .padding(.bottom, 89)
-            .id(homeRefreshToggle)
-            .blur(radius: showSearch ? 20 : 0)
+                homeContentView
+                .padding(.top, 8)
+                .padding(.bottom, 89)
+                .id(homeRefreshToggle)
 
             if !showSearch {
             VStack {
@@ -238,6 +238,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 }
             }
             }
+            }
+            .blur(radius: showSearch ? 15 : 0)
 
 
             if showSearch {
@@ -257,6 +259,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 .transition(.opacity)
             }
         }
+        .animation(.easeOut(duration: 0.25), value: showSearch)
         .onAppear {
             if !didAppear { onAppear() }
             if flekstoreSharedModel.appInstallURL != "" {

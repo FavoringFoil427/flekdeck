@@ -126,7 +126,7 @@ struct FlekInstallerView: View {
                             Task { await switchTo(repo) }
                         } label: {
                             HStack(spacing: 8) {
-                                FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 8)
+                                FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 7)
                                 Text(repo.name)
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(.primary)
@@ -258,7 +258,7 @@ struct FlekInstallerView: View {
                     ForEach(repoSearch.sections) { repoSection in
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 6) {
-                                FlekRemoteIcon(url: repoSection.iconUrl, size: 20, corner: 5)
+                                FlekRemoteIcon(url: repoSection.iconUrl, size: 20, corner: 4)
                                 Text(repoSection.name)
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundStyle(.primary)

@@ -121,7 +121,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     // MARK: - Layout constants
 
     static let iconSize: CGFloat = 75
-    private static let iconCornerRadius: CGFloat = 17   // ~0.2237 * iconSize
+    private static let iconCornerRadius: CGFloat = 17   // 22.37% of iconSize (75 * 0.2237)
     private static let deleteButtonSize: CGFloat = 24
     
     private static let cardCorner: CGFloat = 24
