@@ -47,7 +47,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     private let singleBadge: UIImageView = {
         let iv = UIImageView()
         let config = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-        iv.image = UIImage(systemName: "square.dashed", withConfiguration: config)
+        iv.image = UIImage(systemName: "app.dashed", withConfiguration: config)
         iv.tintColor = .secondaryLabel
         iv.contentMode = .center
         iv.isHidden = true
@@ -211,7 +211,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Content block: icon + spacing + label
         let iconS = Self.iconSize
         let contentHeight = iconS + Self.labelTopSpacing + Self.labelHeight
-        let contentY = (bounds.height - contentHeight) / 2
+        let contentY = (bounds.height - contentHeight) / 2 + 4
 
         let iconX = (bounds.width - iconS) / 2
         iconImageView.frame = CGRect(x: iconX, y: contentY, width: iconS, height: iconS)
@@ -243,8 +243,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Single-mode badge (top-right corner of glass card)
         let badgeSize: CGFloat = 16
         singleBadge.frame = CGRect(
-            x: bounds.maxX - badgeSize - 3,
-            y: 3,
+            x: bounds.maxX - badgeSize - 8,
+            y: 8,
             width: badgeSize,
             height: badgeSize
         )
