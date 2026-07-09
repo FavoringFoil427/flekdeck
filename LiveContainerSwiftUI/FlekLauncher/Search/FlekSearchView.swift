@@ -40,6 +40,7 @@ struct FlekSearchView: View {
 
             ZStack(alignment: .bottom) {
                 resultsArea
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 bottomBar
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
@@ -122,7 +123,7 @@ struct FlekSearchView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 80)
-                .padding(.bottom, 74)
+                .padding(.bottom, 8)
             }
         }
     }
