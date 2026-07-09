@@ -497,7 +497,9 @@ class AppInfoProvider {
             ) { _ in
                 hostingController.view.isHidden = true
                 hostingController.view.transform = .identity
-                self.showNavAssist(in: keyWindow)
+                if !self.isHomeState {
+                    self.showNavAssist(in: keyWindow)
+                }
             }
         }
     }
@@ -1109,7 +1111,7 @@ class AppInfoProvider {
         ) {
             overlay.view.alpha = 0
             overlay.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
-            if self.isSwitcherBarVisible {
+            if self.isSwitcherBarVisible && !self.isHomeState {
                 self.hostingController?.view.alpha = 1
             }
         } completion: { _ in
