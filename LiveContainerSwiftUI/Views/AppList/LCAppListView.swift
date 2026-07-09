@@ -1008,25 +1008,35 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     private func installedUIMenu(_ app: LCAppModel) -> UIMenu {
+        let currentMode = FlekLaunchModeStore.shared.mode(for: app)
+        let effectiveIsParallel = currentMode != nil ? (currentMode == .parallel) : app.shouldLaunchInMultitaskMode
+
+        let keepOpen: UIMenuElement.Attributes
+        if #available(iOS 16.0, *) {
+            keepOpen = .keepsMenuPresented
+        } else {
+            keepOpen = []
+        }
+
         let runSingle = UIAction(
             title: "lc.appBanner.runSingle".loc,
-            image: UIImage(systemName: "macwindow")
+            image: UIImage(systemName: "macwindow"),
+            attributes: keepOpen,
+            state: effectiveIsParallel ? .off : .on
         ) { [self] _ in
             FlekLaunchModeStore.shared.set(.single, for: app)
             homeRefreshToggle.toggle()
-            FlekLaunchTracker.shared.markLaunched(app)
-            Task { await launchHomeApp(app, parallel: false) }
         }
         let runParallel = UIAction(
             title: "lc.appBanner.runParallel".loc,
-            image: UIImage(systemName: "macwindow.on.rectangle")
+            image: UIImage(systemName: "macwindow.on.rectangle"),
+            attributes: keepOpen,
+            state: effectiveIsParallel ? .on : .off
         ) { [self] _ in
             FlekLaunchModeStore.shared.set(.parallel, for: app)
             homeRefreshToggle.toggle()
-            FlekLaunchTracker.shared.markLaunched(app)
-            Task { await launchHomeApp(app, parallel: true) }
         }
-        var launchGroup = UIMenu(title: "", options: .displayInline, children: [runSingle, runParallel])
+        let launchGroup = UIMenu(title: "", options: [.displayInline, .singleSelection], children: [runSingle, runParallel])
         if #available(iOS 16.0, *) {
             launchGroup.preferredElementSize = .medium
         }
@@ -1111,33 +1121,36 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
     @ViewBuilder
     private func installedContextMenu(_ app: LCAppModel) -> some View {
+        let currentMode = FlekLaunchModeStore.shared.mode(for: app)
+        let effectiveIsParallel = currentMode != nil ? (currentMode == .parallel) : app.shouldLaunchInMultitaskMode
+
         if #available(iOS 16.0, *) {
             ControlGroup {
                 Button {
                     FlekLaunchModeStore.shared.set(.single, for: app)
                     homeRefreshToggle.toggle()
-                    FlekLaunchTracker.shared.markLaunched(app)
-                    Task { await launchHomeApp(app, parallel: false) }
                 } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                    Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
                 }
                 Button {
                     FlekLaunchModeStore.shared.set(.parallel, for: app)
                     homeRefreshToggle.toggle()
-                    FlekLaunchTracker.shared.markLaunched(app)
-                    Task { await launchHomeApp(app, parallel: true) }
                 } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
+                    Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
                 }
             }
         } else {
             Button {
                 FlekLaunchModeStore.shared.set(.single, for: app)
                 homeRefreshToggle.toggle()
-                FlekLaunchTracker.shared.markLaunched(app)
-                Task { await launchHomeApp(app, parallel: false) }
             } label: {
-                Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
+            }
+            Button {
+                FlekLaunchModeStore.shared.set(.parallel, for: app)
+                homeRefreshToggle.toggle()
+            } label: {
+                Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
             }
         }
 
