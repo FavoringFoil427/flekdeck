@@ -75,9 +75,9 @@ struct FlekSearchView: View {
             VStack(spacing: 12) {
                 Image(systemName: "app.grid")
                     .font(.system(size: 48, weight: .thin))
-                    .foregroundStyle(Color.primary.opacity(0.4))
+                    .foregroundStyle(Color.white.opacity(0.4))
                 Text("lc.flek.noResults".loc)
-                    .foregroundStyle(Color.primary.opacity(0.6))
+                    .foregroundStyle(Color.white.opacity(0.6))
             }
             Spacer()
         } else {
@@ -138,8 +138,9 @@ struct FlekSearchView: View {
                 }
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .foregroundStyle(Color.white.opacity(0.7))
             }
+            .padding(.leading, 6)
             content()
         }
     }
@@ -351,25 +352,27 @@ private struct FlekSearchRow: View {
         HStack(spacing: 12) {
             Image(uiImage: app.appInfo.iconIsDarkIcon(darkModeIcon))
                 .resizable().scaledToFill()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.appInfo.displayName() ?? "?")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Color.white)
                     .lineLimit(1)
                 Text("\(app.appInfo.version() ?? "?") - \(app.appInfo.bundleIdentifier() ?? "?")")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Color.white.opacity(0.7))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            Image(systemName: "arrow.up.forward.app")
-                .foregroundStyle(Color.primary.opacity(0.5))
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.6))
+                .padding(.trailing, 10)
         }
-        .padding(.horizontal, 12)
-        .frame(height: 68)
-        .flekGlassCard(cornerRadius: 16)
+        .padding(.horizontal, 6)
+        .frame(height: 74)
+        .background(Color(.systemBackground).opacity(0.2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -378,31 +381,27 @@ private struct FlekStoreSearchRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            FlekRemoteIcon(url: app.app_icon, size: 48, corner: 11)
+            FlekRemoteIcon(url: app.app_icon, size: 64, corner: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.app_name)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Color.white)
                     .lineLimit(1)
                 Text("\(app.app_version)")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Color.white.opacity(0.7))
                     .lineLimit(1)
-                if !app.app_short_description.isEmpty {
-                    Text(app.app_short_description)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                }
+
             }
             Spacer(minLength: 4)
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 24))
-                .foregroundStyle(Color.primary.opacity(0.5))
+                .foregroundStyle(Color.white)
+                .padding(.trailing, 10)
         }
-        .padding(.horizontal, 12)
-        .frame(height: 68)
-        .flekGlassCard(cornerRadius: 16)
+        .padding(.horizontal, 6)
+        .frame(height: 74)
+        .background(Color(.systemBackground).opacity(0.2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
