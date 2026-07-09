@@ -38,7 +38,7 @@ struct FlekSearchView: View {
             Color.black.opacity(colorScheme == .dark ? 0.5 : 0.3).ignoresSafeArea()
                 .onTapGesture { close() }
 
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 resultsArea
                 bottomBar
                     .padding(.horizontal, 14)
@@ -122,7 +122,7 @@ struct FlekSearchView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 80)
-                .padding(.bottom, 8)
+                .padding(.bottom, 74)
             }
         }
     }
