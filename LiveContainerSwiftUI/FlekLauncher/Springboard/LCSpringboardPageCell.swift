@@ -328,7 +328,6 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         Self.activeContextMenuRefresh = nil
         Self.activeContextMenuPageCell = nil
         Self.activeContextMenuIndexPath = nil
-        let menuIndexPath = configuration.identifier as? IndexPath
         animator?.addCompletion { [weak self] in
             guard let self else { return }
             self.isContextMenuActive = false
@@ -336,9 +335,6 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
                 self.pendingReloadItems = nil
                 self.items = pending
                 self.collectionView.reloadData()
-            } else if let ip = menuIndexPath {
-                // Refresh the cell to update the launch-mode badge.
-                self.collectionView.reloadItems(at: [ip])
             }
         }
         // Fallback if no animator
@@ -348,8 +344,6 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
                 pendingReloadItems = nil
                 items = pending
                 collectionView.reloadData()
-            } else if let ip = menuIndexPath {
-                collectionView.reloadItems(at: [ip])
             }
         }
     }
