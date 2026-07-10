@@ -44,6 +44,7 @@ struct FlekSearchView: View {
                 bottomBar
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
+                    .contentShape(Rectangle())
             }
         }
         .onAppear {
@@ -151,7 +152,7 @@ struct FlekSearchView: View {
                         HStack(spacing: 4) {
                             Text("lc.flek.openRepo".loc)
                                 .font(.system(size: 13, weight: .medium))
-                            Image(systemName: "arrow.up.forward")
+                            Image(systemName: "arrow.up.forward.app.fill")
                                 .font(.system(size: 11, weight: .semibold))
                         }
                         .foregroundStyle(Color.white.opacity(0.6))
