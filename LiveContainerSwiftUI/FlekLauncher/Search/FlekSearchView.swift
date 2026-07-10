@@ -35,7 +35,7 @@ struct FlekSearchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(colorScheme == .dark ? 0.5 : 0.3).ignoresSafeArea()
+            Color.black.opacity(colorScheme == .dark ? 0.5 : 0.45).ignoresSafeArea()
                 .onTapGesture { close() }
 
             ZStack(alignment: .bottom) {
@@ -171,10 +171,11 @@ struct FlekSearchView: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20))
-                    .foregroundStyle(Color.primary.opacity(0.5))
+                    .foregroundStyle(Color.white.opacity(0.6))
                 TextField("lc.flek.search".loc, text: $query)
                     .font(.system(size: 18))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Color.white)
+                    .tint(Color.white)                     // caret color
                     .focused($fieldFocused)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -185,7 +186,7 @@ struct FlekSearchView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(Color.primary.opacity(0.35))
+                            .foregroundStyle(Color.white.opacity(0.5))
                     }
                     .buttonStyle(.plain)
                 }
@@ -193,7 +194,7 @@ struct FlekSearchView: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .modifier(SearchPillBackground())
+            .searchPillBackground()
 
             // Clear + close button (returns to the home screen)
             Button {
@@ -201,12 +202,12 @@ struct FlekSearchView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 22))
-                    .foregroundStyle(Color.primary.opacity(0.6))
+                    .foregroundStyle(Color.white.opacity(0.7))
                     .frame(width: 50, height: 50)
-                    .modifier(SearchCloseBackground())
-                    .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 4)
+                    .searchCircleBackground()
             }
             .buttonStyle(.plain)
+            .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 4)  // single shadow, on the button
         }
     }
 
@@ -393,7 +394,7 @@ private struct FlekSearchRow: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 74)
-        .background(Color(.systemBackground).opacity(0.2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -422,46 +423,47 @@ private struct FlekStoreSearchRow: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 74)
-        .background(Color(.systemBackground).opacity(0.2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
-// MARK: - Glass background modifiers
+// MARK: - Glass background
 
-/// Applies Liquid Glass capsule on iOS 26+, thin material fallback otherwise.
-private struct SearchPillBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
+/// Stable Liquid Glass, independent of theme AND of the wallpaper behind it.
+///
+/// Keeps the real translucent/refractive glass (Telegram's approach) instead of
+/// hiding it behind an opaque plate. `StableLiquidGlass` pins the glass tone via
+/// a swizzled luma clamp (see LiquidGlassStable.swift), so it never re-tints to
+/// match the content behind it. Fixed dark look to match the white UI.
+private struct GlassBackground<S: InsettableShape>: ViewModifier {
+    let shape: S
+
+    // Dark, pinned glass. Subtle white tint = Telegram's dark "panel" tintColor.
+    private let isDark = true
+    private let glassTint = UIColor(white: 1.0, alpha: 0.03)
 
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             content
-                .glassEffect(.regular, in: .capsule)
+                .background {
+                    StableLiquidGlass(isDark: isDark, tint: glassTint)
+                        .clipShape(shape)
+                }
         } else {
-            let tint = colorScheme == .dark ? 0.15 : 0.45
             content
-                .background(Capsule().fill(.ultraThinMaterial))
-                .overlay(Capsule().fill(Color.white.opacity(tint)).allowsHitTesting(false))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
+                .background {
+                    ZStack {
+                        shape.fill(.ultraThinMaterial)
+                        shape.fill(Color.black.opacity(0.35))
+                        shape.strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    }
+                }
                 .compositingGroup()
         }
     }
 }
 
-/// Applies Liquid Glass circle on iOS 26+, thin material fallback otherwise.
-private struct SearchCloseBackground: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content
-                .glassEffect(.regular, in: .circle)
-        } else {
-            let tint = colorScheme == .dark ? 0.15 : 0.45
-            content
-                .background(Circle().fill(.ultraThinMaterial))
-                .overlay(Circle().fill(Color.white.opacity(tint)).allowsHitTesting(false))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5).allowsHitTesting(false))
-                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
-        }
-    }
+private extension View {
+    func searchPillBackground()   -> some View { modifier(GlassBackground(shape: Capsule())) }
+    func searchCircleBackground() -> some View { modifier(GlassBackground(shape: Circle())) }
 }
