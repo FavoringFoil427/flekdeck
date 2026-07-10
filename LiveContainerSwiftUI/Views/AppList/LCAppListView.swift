@@ -240,11 +240,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             }
             }
+            .blur(radius: showSearch ? 20 : 0)
+
             if showSearch {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
                 FlekSearchView(
                     isPresented: $showSearch,
                     apps: sortedApps,

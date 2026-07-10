@@ -217,5 +217,3 @@ struct FlekBlurredWallpaperOverlay: View {
     }
 }
 
-
-
