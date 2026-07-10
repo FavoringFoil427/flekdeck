@@ -170,12 +170,12 @@ struct FlekSearchView: View {
             // Search field pill
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .font(.system(size: 23))
+                    .foregroundStyle(Color.primary.opacity(0.6))
                 TextField("lc.flek.search".loc, text: $query)
                     .font(.system(size: 18))
-                    .foregroundStyle(Color.white)
-                    .tint(Color.white)                     // caret color
+                    .foregroundStyle(Color.primary)
+                    .tint(Color.primary)                   // caret color
                     .focused($fieldFocused)
                     .submitLabel(.search)
                     .autocorrectionDisabled()
@@ -186,7 +186,7 @@ struct FlekSearchView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(Color.white.opacity(0.5))
+                            .foregroundStyle(Color.primary.opacity(0.4))
                     }
                     .buttonStyle(.plain)
                 }
@@ -202,7 +202,7 @@ struct FlekSearchView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 22))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(Color.primary.opacity(0.7))
                     .frame(width: 50, height: 50)
                     .searchCircleBackground()
             }
@@ -437,10 +437,16 @@ private struct FlekStoreSearchRow: View {
 /// match the content behind it. Fixed dark look to match the white UI.
 private struct GlassBackground<S: InsettableShape>: ViewModifier {
     let shape: S
+    @Environment(\.colorScheme) private var colorScheme
 
-    // Dark, pinned glass. Subtle white tint = Telegram's dark "panel" tintColor.
-    private let isDark = true
-    private let glassTint = UIColor(white: 1.0, alpha: 0.03)
+    private var isDark: Bool { colorScheme == .dark }
+
+    // Pinned per theme. Subtle sheen on dark glass; a stronger white tint in
+    // light theme so the pill reads as bright frosted glass, not thin/see-through.
+    private var glassTint: UIColor {
+        isDark ? UIColor(white: 1.0, alpha: 0.03)
+               : UIColor(white: 1.0, alpha: 0.06)   // pale white sheen in light theme
+    }
 
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
@@ -454,7 +460,7 @@ private struct GlassBackground<S: InsettableShape>: ViewModifier {
                 .background {
                     ZStack {
                         shape.fill(.ultraThinMaterial)
-                        shape.fill(Color.black.opacity(0.35))
+                        shape.fill((isDark ? Color.black : Color.white).opacity(isDark ? 0.35 : 0.06))
                         shape.strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
                     }
                 }

@@ -171,8 +171,8 @@ struct StableLiquidGlass: UIViewRepresentable {
             container.lumaMin = 0.0
             container.lumaMax = 0.15
         } else {
-            container.lumaMin = 0.8
-            container.lumaMax = 0.801
+            container.lumaMin = 0.35
+            container.lumaMax = 0.351
         }
     }
 }
