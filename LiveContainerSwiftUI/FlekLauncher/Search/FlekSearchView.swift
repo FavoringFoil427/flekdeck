@@ -204,6 +204,7 @@ struct FlekSearchView: View {
                     .foregroundStyle(Color.primary.opacity(0.6))
                     .frame(width: 50, height: 50)
                     .modifier(SearchCloseBackground())
+                    .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 4)
             }
             .buttonStyle(.plain)
         }
