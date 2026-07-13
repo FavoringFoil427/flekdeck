@@ -363,41 +363,52 @@ struct FlekInstallerView: View {
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16))
-                .foregroundStyle(Color(.systemGray))
+            // Search pill
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color(.systemGray))
 
-            TextField("lc.flek.search".loc, text: $viewModel.searchQuery)
-                .font(.system(size: 17))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .focused($searchFocused)
-                .onChange(of: viewModel.searchQuery) { q in
-                    searchDebounceTask?.cancel()
-                    let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed.isEmpty {
-                        repoSearch.cancelSearch()
-                        return
+                TextField("lc.flek.search".loc, text: $viewModel.searchQuery)
+                    .font(.system(size: 17))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .focused($searchFocused)
+                    .onChange(of: viewModel.searchQuery) { q in
+                        searchDebounceTask?.cancel()
+                        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            repoSearch.cancelSearch()
+                            return
+                        }
+                        searchDebounceTask = Task {
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            guard !Task.isCancelled else { return }
+                            repoSearch.search(trimmed)
+                        }
                     }
-                    searchDebounceTask = Task {
-                        try? await Task.sleep(nanoseconds: 350_000_000)
-                        guard !Task.isCancelled else { return }
-                        repoSearch.search(trimmed)
-                    }
-                }
 
-            if !viewModel.searchQuery.isEmpty {
-                Button {
-                    viewModel.searchQuery = ""
-                    Task { await viewModel.resetAndFetchApps() }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color(.systemGray))
+                if !viewModel.searchQuery.isEmpty {
+                    Button {
+                        viewModel.searchQuery = ""
+                        Task { await viewModel.resetAndFetchApps() }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 19))
+                            .foregroundStyle(Color(.systemGray))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(
+                Capsule().fill(Color(.secondarySystemGroupedBackground))
+                    .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
+            )
 
+            // Close button — separate circle to the right
             Button {
                 withAnimation {
                     searchFocused = false
@@ -407,19 +418,19 @@ struct FlekInstallerView: View {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 24, weight: .regular))
                     .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(Color(.systemGray5)))
+                    .frame(width: 48, height: 48)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                    )
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
-        .background(
-            Capsule().fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
-        )
         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
     }
 
