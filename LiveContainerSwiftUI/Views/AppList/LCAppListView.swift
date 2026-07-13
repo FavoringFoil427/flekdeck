@@ -240,7 +240,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             }
             }
-            .blur(radius: showSearch ? 20 : 0)
+
+            if showSearch {
+                BlurBackdropView(style: .systemUltraThinMaterialDark, intensity: 0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture { showSearch = false }
+            }
 
             if showSearch {
                 FlekSearchView(
