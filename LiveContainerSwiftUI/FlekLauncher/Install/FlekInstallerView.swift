@@ -59,7 +59,7 @@ struct FlekInstallerView: View {
             }
             .overlay(alignment: .bottom) {
                 bottomBar
-                    .padding(.horizontal, 25)
+                    .padding(.horizontal, 10)
                     .padding(.bottom, switcherBarVisible ? 12 : -20)
             }
         }
@@ -348,7 +348,7 @@ struct FlekInstallerView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 48, height: 48)
+                    .frame(width: 50, height: 50)
                     .background(
                         Circle()
                             .fill(.ultraThinMaterial)
