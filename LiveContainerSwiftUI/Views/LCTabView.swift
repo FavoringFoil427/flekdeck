@@ -62,6 +62,7 @@ struct LCTabView: View {
                 LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
             }
         }
+        .modifier(HomeIndicatorHiddenModifier())
         .alert("lc.common.error".loc, isPresented: $errorShow) {
             Button("lc.common.ok".loc) {}
             Button("lc.common.copy".loc) { copyError() }
@@ -481,6 +482,20 @@ private struct AccessVerificationFailedView: View {
                     .fill(Color.white.opacity(0.10))
             )
             .padding(.horizontal, 24)
+        }
+    }
+}
+
+/// Hides the home indicator and requires a double-swipe to trigger the
+/// system edge gesture (home bar), preventing accidental exits.
+private struct HomeIndicatorHiddenModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content
+                .persistentSystemOverlays(.hidden)
+                .defersSystemGestures(on: .bottom)
+        } else {
+            content
         }
     }
 }
