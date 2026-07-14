@@ -142,7 +142,7 @@ struct FlekInstallerView: View {
     // MARK: Source carousel
 
     private var sourceCarousel: some View {
-        HStack(spacing: 8) {
+        ZStack(alignment: .trailing) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(repos) { repo in
@@ -165,26 +165,44 @@ struct FlekInstallerView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    // Extra trailing space so content doesn't hide behind the icon
+                    Spacer().frame(width: 40)
                 }
                 .padding(4)
             }
-            .frame(height: 52)
-            .background(
-                Capsule().fill(Color(.secondarySystemGroupedBackground))
-                    .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
-            )
 
-            Button {
-                showSources = true
-            } label: {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
+            // Manage-sources icon pinned to the right, with a blur fade
+            // so scrolling repos don't visually overlap it.
+            HStack(spacing: 0) {
+                // Gradient fade from clear → background
+                LinearGradient(
+                    colors: [
+                        Color(.secondarySystemGroupedBackground).opacity(0),
+                        Color(.secondarySystemGroupedBackground)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 24)
+
+                Button {
+                    showSources = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.7))
+                        .frame(width: 48, height: 52)
+                }
+                .buttonStyle(.plain)
+                .background(Color(.secondarySystemGroupedBackground))
             }
-            .buttonStyle(.plain)
         }
+        .frame(height: 52)
+        .background(
+            Capsule().fill(Color(.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+        )
+        .clipShape(Capsule())
     }
 
     // MARK: Category bar
