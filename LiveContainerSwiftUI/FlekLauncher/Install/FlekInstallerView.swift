@@ -404,8 +404,11 @@ struct FlekInstallerView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 50)
             .background(
-                Capsule().fill(Color(.secondarySystemGroupedBackground))
-                    .shadow(color: .black.opacity(0.25), radius: 20, y: 4)
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
             )
 
             // Close button — separate circle to the right
