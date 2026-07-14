@@ -65,6 +65,12 @@ final class LCSpringboardViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Lock orientation to portrait while the springboard is visible.
+        AppDelegate.orientationLock = .portrait
+        if #available(iOS 16.0, *) {
+            setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+
         // When the view reappears (e.g. after a fullScreenCover is dismissed),
         // apply any items that were synced while we were hidden.
         if let pending = pendingItems {
@@ -85,6 +91,12 @@ final class LCSpringboardViewController: UIViewController {
             }
             pendingItems = nil
         }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Restore rotation support for other parts of the app.
+        AppDelegate.orientationLock = .allButUpsideDown
     }
 
     override func viewDidLayoutSubviews() {

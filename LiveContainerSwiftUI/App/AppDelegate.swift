@@ -3,6 +3,10 @@ import SwiftUI
 import Intents
 
 @objc class AppDelegate: UIResponder, UIApplicationDelegate {
+    
+    /// Set to `.portrait` when the springboard is visible so that only the
+    /// home screen is locked to portrait while the rest of the app can rotate.
+    static var orientationLock: UIInterfaceOrientationMask = .allButUpsideDown
         
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? ) -> Bool {
         application.shortcutItems = nil
@@ -56,6 +60,10 @@ import Intents
         LCUtils.appGroupUserDefault.set(certData, forKey: "LCCertificateData")
         LCUtils.appGroupUserDefault.set(password, forKey: "LCCertificatePassword")
         LCUtils.appGroupUserDefault.set(Date(), forKey: "LCCertificateUpdateDate")
+    }
+    
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        return Self.orientationLock
     }
     
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
