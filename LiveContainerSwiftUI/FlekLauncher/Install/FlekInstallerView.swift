@@ -58,6 +58,25 @@ struct FlekInstallerView: View {
                 content
             }
             .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: .black.opacity(0.4), location: 0.35),
+                                .init(color: .black, location: 0.7)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: 120)
+                    .offset(y: switcherBarVisible ? 0 : 52)
+                    .allowsHitTesting(false)
+                    .ignoresSafeArea()
+            }
+            .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 10)
                     .padding(.bottom, switcherBarVisible ? 12 : -20)
