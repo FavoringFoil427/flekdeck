@@ -53,17 +53,21 @@ final class InstallItem: Identifiable, Equatable {
     var installState: FlekInstallState {
         let fraction: Double
         let indeterminate: Bool
+        let isInstalling: Bool
 
         switch phase {
         case .queued:
             fraction = 0
             indeterminate = true
+            isInstalling = false
         case .downloading:
             fraction = 0.8 * downloadProgress
             indeterminate = false
+            isInstalling = false
         case .waitingForInstall:
             fraction = 0.8
             indeterminate = true
+            isInstalling = true
         case .installing:
             if downloadProgress > 0.01 {
                 // Had a download phase → install fills 80%→100%
@@ -73,19 +77,24 @@ final class InstallItem: Identifiable, Equatable {
                 fraction = installProgress
             }
             indeterminate = installProgress == 0
+            isInstalling = true
         case .completed:
             fraction = 1.0
             indeterminate = false
+            isInstalling = false
         case .failed, .cancelled:
             fraction = 0
             indeterminate = true
+            isInstalling = false
         }
 
         return FlekInstallState(
             name: name,
             iconURL: iconURL,
             fraction: fraction,
-            indeterminate: indeterminate
+            indeterminate: indeterminate,
+            isInstalling: isInstalling,
+            installFraction: installProgress
         )
     }
 

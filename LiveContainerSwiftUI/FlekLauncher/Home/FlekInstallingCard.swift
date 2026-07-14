@@ -32,21 +32,43 @@ struct FlekInstallIcon: View {
             .overlay(Color.black.opacity(0.5))
 
             if state.indeterminate {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .tint(.white)
-                    .scaleEffect(size > 60 ? 1.4 : 1.0)
+                // Spinning partial ring matching the install ring style
+                FlekSpinningRing(size: size * 0.55, lineWidth: size > 60 ? 5 : 4)
+            } else if state.isInstalling {
+                // Circular ring progress during install phase (counter-clockwise)
+                let ringSize = size * 0.55
+                let lineW: CGFloat = size > 60 ? 5 : 4
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.25), lineWidth: lineW)
+                    Circle()
+                        .trim(from: 0, to: max(0.02, state.installFraction))
+                        .stroke(flekBlue, style: StrokeStyle(lineWidth: lineW, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: ringSize, height: ringSize)
             } else {
-                // Centered percentage (Figma: bold 18, white, centered on the icon)
-                Text("\(Int((state.fraction * 100).rounded()))%")
-                    .font(.system(size: size > 60 ? 18 : 13, weight: .bold))
-                    .foregroundStyle(.white)
+                // Centered percentage during download
+                let fontSize: CGFloat = size > 60 ? 18 : 13
+                if #available(iOS 16.0, *) {
+                    Text("\(Int((state.fraction * 100).rounded()))%")
+                        .font(.system(size: fontSize, weight: .bold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: Int((state.fraction * 100).rounded()))
+                        .frame(width: "100%".size(withAttributes: [.font: UIFont.systemFont(ofSize: fontSize, weight: .bold)]).width)
+                } else {
+                    Text("\(Int((state.fraction * 100).rounded()))%")
+                        .font(.system(size: fontSize, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: "100%".size(withAttributes: [.font: UIFont.systemFont(ofSize: fontSize, weight: .bold)]).width)
+                }
             }
         }
         .frame(width: size, height: size)
         .overlay(alignment: .bottom) {
-            // Progress pill near the bottom of the icon (only on the large grid icon)
-            if !state.indeterminate && size > 60 {
+            // Progress pill near the bottom of the icon (only during download on large icon)
+            if !state.indeterminate && !state.isInstalling && size > 60 {
                 let trackW = size * 0.78          // ≈ 58 on a 74pt icon
                 let trackH: CGFloat = 18
                 ZStack(alignment: .leading) {
@@ -88,5 +110,30 @@ struct FlekInstallingCard: View {
         .frame(maxWidth: .infinity)
         .frame(height: cardHeight)
         .flekGlassCard(cornerRadius: FlekTheme.cardCorner * min(1, scale))
+    }
+}
+
+/// A partial ring that spins continuously, matching the install ring style.
+private struct FlekSpinningRing: View {
+    let size: CGFloat
+    let lineWidth: CGFloat
+
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.25), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: 0.3)
+                .stroke(flekBlue, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(rotation))
+        }
+        .frame(width: size, height: size)
+        .onAppear {
+            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+        }
     }
 }

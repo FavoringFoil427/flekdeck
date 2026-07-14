@@ -549,8 +549,8 @@ struct FlekInstallerView: View {
 }
 
 /// App row in the installer: icon, name, version·bundle, description, download.
-/// While this app is installing, the download button is replaced by a circular
-/// progress indicator (tap to cancel) — mirroring the home screen install state.
+/// While installing, the app icon shows a dimmed overlay with progress (same as
+/// the springboard). A checkmark overlay appears on the icon when done.
 struct FlekInstallerRow: View {
     let app: FSAppModel
     let accent: Color
@@ -563,7 +563,13 @@ struct FlekInstallerRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            FlekRemoteIcon(url: app.app_icon, size: 74, corner: 17)
+            // Icon — shows progress overlay when installing
+            if let installState {
+                FlekInstallIcon(state: installState, size: 74, corner: 17)
+            } else {
+                FlekRemoteIcon(url: app.app_icon, size: 74, corner: 17)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 Text(app.app_name).font(.system(size: 18, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
                 Text(app.app_version).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(1)
@@ -572,9 +578,11 @@ struct FlekInstallerRow: View {
                 }
             }
             Spacer(minLength: 8)
-            if let installState {
+            if installState != nil {
                 Button(action: onCancel) {
-                    FlekRowProgress(state: installState, accent: accent)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             } else if showCheckmark {
@@ -603,29 +611,6 @@ struct FlekInstallerRow: View {
     }
 }
 
-/// Circular install progress shown in an installer row (determinate ring while
-/// downloading, spinner during prepare/sign). Tapping it cancels.
-struct FlekRowProgress: View {
-    let state: FlekInstallState
-    let accent: Color
-
-    var body: some View {
-        ZStack {
-            if state.indeterminate {
-                ProgressView().progressViewStyle(.circular)
-            } else {
-                Circle().stroke(accent.opacity(0.25), lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: max(0.02, state.fraction))
-                    .stroke(accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(accent)
-            }
-        }
-        .frame(width: 30, height: 30)
-    }
-}
-
 /// Animated checkmark shown briefly after a successful install.
 struct FlekRowCheckmark: View {
     let accent: Color
@@ -635,7 +620,6 @@ struct FlekRowCheckmark: View {
         ZStack {
             Circle()
                 .fill(Color.green)
-            // Checkmark drawn with a trim animation
             CheckmarkShape()
                 .trim(from: 0, to: trimEnd)
                 .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
@@ -643,8 +627,7 @@ struct FlekRowCheckmark: View {
         }
         .frame(width: 30, height: 30)
         .onAppear {
-            let generator = UIImpactFeedbackGenerator(style: .light)
-            generator.impactOccurred()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
                 trimEnd = 1
             }

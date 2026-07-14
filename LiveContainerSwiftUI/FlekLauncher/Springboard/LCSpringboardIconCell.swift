@@ -63,25 +63,43 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return v
     }()
 
-    /// Spinner for indeterminate install state.
-    private let activityIndicator: UIActivityIndicatorView = {
-        let spinner = UIActivityIndicatorView(style: .medium)
-        spinner.color = .white
-        spinner.hidesWhenStopped = true
-        return spinner
+    /// Spinning ring for indeterminate install state.
+    private let spinnerRingView: UIView = {
+        let v = UIView()
+        v.isHidden = true
+        return v
+    }()
+
+    private let spinnerTrackLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = nil
+        layer.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        layer.lineWidth = 5
+        return layer
+    }()
+
+    private let spinnerFillLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = nil
+        layer.strokeColor = UIColor(red: 0/255, green: 117/255, blue: 255/255, alpha: 1).cgColor
+        layer.lineWidth = 5
+        layer.lineCap = .round
+        layer.strokeStart = 0
+        layer.strokeEnd = 0.3
+        return layer
     }()
 
     /// Percentage label centered on icon during download.
     private let progressLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 13, weight: .bold)
+        label.font = .systemFont(ofSize: 18, weight: .bold)
         label.textColor = .white
         label.textAlignment = .center
         label.isHidden = true
         return label
     }()
 
-    /// Blue progress bar near bottom of icon.
+    /// Blue progress bar near bottom of icon (download phase).
     private let progressTrack: UIView = {
         let v = UIView()
         v.backgroundColor = UIColor.white.withAlphaComponent(0.5)
@@ -93,6 +111,28 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         let v = UIView()
         v.backgroundColor = UIColor(red: 0/255, green: 117/255, blue: 255/255, alpha: 1)
         return v
+    }()
+
+    /// Circular ring progress shown during install phase.
+    private let ringTrackLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = nil
+        layer.strokeColor = UIColor.white.withAlphaComponent(0.25).cgColor
+        layer.lineWidth = 5
+        layer.isHidden = true
+        return layer
+    }()
+
+    private let ringFillLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = nil
+        layer.strokeColor = UIColor(red: 0/255, green: 117/255, blue: 255/255, alpha: 1).cgColor
+        layer.lineWidth = 5
+        layer.lineCap = .round
+        layer.strokeStart = 0
+        layer.strokeEnd = 0
+        layer.isHidden = true
+        return layer
     }()
 
     /// Current icon URL loading task.
@@ -162,10 +202,14 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         // Install overlay on top of icon
         iconImageView.addSubview(installOverlay)
-        installOverlay.addSubview(activityIndicator)
+        spinnerRingView.layer.addSublayer(spinnerTrackLayer)
+        spinnerRingView.layer.addSublayer(spinnerFillLayer)
+        installOverlay.addSubview(spinnerRingView)
         installOverlay.addSubview(progressLabel)
         progressTrack.addSubview(progressFill)
         installOverlay.addSubview(progressTrack)
+        installOverlay.layer.addSublayer(ringTrackLayer)
+        installOverlay.layer.addSublayer(ringFillLayer)
 
         deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
 
@@ -220,18 +264,49 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         installOverlay.frame = iconImageView.bounds
         installOverlay.layer.cornerRadius = Self.iconCornerRadius
         installOverlay.clipsToBounds = true
-        activityIndicator.center = CGPoint(x: iconS / 2, y: iconS / 2)
+        // Spinning ring (indeterminate state)
+        let spinnerSize = iconS * 0.55
+        let spinnerFrame = CGRect(
+            x: (iconS - spinnerSize) / 2,
+            y: (iconS - spinnerSize) / 2,
+            width: spinnerSize,
+            height: spinnerSize
+        )
+        spinnerRingView.frame = spinnerFrame
+        let spinnerBounds = CGRect(origin: .zero, size: spinnerFrame.size)
+        let spinnerPath = UIBezierPath(ovalIn: spinnerBounds)
+        spinnerTrackLayer.path = spinnerPath.cgPath
+        spinnerTrackLayer.frame = spinnerBounds
+        spinnerFillLayer.path = spinnerPath.cgPath
+        spinnerFillLayer.frame = spinnerBounds
+
         progressLabel.frame = CGRect(x: 0, y: 0, width: iconS, height: iconS)
 
-        // Progress bar near bottom of icon
+        // Progress bar near bottom of icon (download phase)
         let trackW = iconS * 0.78
-        let trackH: CGFloat = 14
+        let trackH: CGFloat = 18
         let trackX = (iconS - trackW) / 2
         let trackY = iconS - trackH - 6
         progressTrack.frame = CGRect(x: trackX, y: trackY, width: trackW, height: trackH)
         progressTrack.layer.cornerRadius = trackH / 2
         progressTrack.clipsToBounds = true
         updateProgressFillWidth()
+
+        // Circular ring (install phase)
+        let ringSize = iconS * 0.55
+        let ringRect = CGRect(
+            x: (iconS - ringSize) / 2,
+            y: (iconS - ringSize) / 2,
+            width: ringSize,
+            height: ringSize
+        )
+        let ringPath = UIBezierPath(ovalIn: ringRect)
+        ringTrackLayer.path = ringPath.cgPath
+        ringTrackLayer.frame = installOverlay.bounds
+        ringFillLayer.path = ringPath.cgPath
+        ringFillLayer.frame = installOverlay.bounds
+        // Rotate so stroke starts at top (clockwise)
+        ringFillLayer.transform = CATransform3DMakeRotation(-.pi / 2, 0, 0, 1)
 
         nameLabel.frame = CGRect(
             x: 4,
@@ -301,9 +376,12 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         deleteButton.alpha = 0
         singleBadge.isHidden = true
         installOverlay.isHidden = true
-        activityIndicator.stopAnimating()
+        spinnerRingView.isHidden = true
+        stopSpinnerAnimation()
         progressLabel.isHidden = true
         progressTrack.isHidden = true
+        ringTrackLayer.isHidden = true
+        ringFillLayer.isHidden = true
         iconLoadTask?.cancel()
         iconLoadTask = nil
         loadingIconURL = nil
@@ -394,20 +472,39 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Show overlay
         installOverlay.isHidden = false
 
-        if !state.indeterminate {
-            // Determinate: show percentage + progress bar
-            activityIndicator.stopAnimating()
+        if state.indeterminate {
+            // Indeterminate: show spinning ring, hide everything else
+            spinnerRingView.isHidden = false
+            startSpinnerAnimation()
+            progressLabel.isHidden = true
+            progressTrack.isHidden = true
+            ringTrackLayer.isHidden = true
+            ringFillLayer.isHidden = true
+            currentFraction = 0
+        } else if state.isInstalling {
+            // Install phase: show circular ring
+            spinnerRingView.isHidden = true
+            stopSpinnerAnimation()
+            progressLabel.isHidden = true
+            progressTrack.isHidden = true
+            ringTrackLayer.isHidden = false
+            ringFillLayer.isHidden = false
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ringFillLayer.strokeEnd = max(0.02, state.installFraction)
+            CATransaction.commit()
+            currentFraction = state.fraction
+        } else {
+            // Download phase: show percentage + progress bar
+            spinnerRingView.isHidden = true
+            stopSpinnerAnimation()
             progressLabel.isHidden = false
             progressLabel.text = "\(Int((state.fraction * 100).rounded()))%"
             progressTrack.isHidden = false
+            ringTrackLayer.isHidden = true
+            ringFillLayer.isHidden = true
             currentFraction = state.fraction
             updateProgressFillWidth()
-        } else {
-            // Indeterminate: show spinner
-            activityIndicator.startAnimating()
-            progressLabel.isHidden = true
-            progressTrack.isHidden = true
-            currentFraction = 0
         }
     }
 
@@ -418,6 +515,23 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         let fillW = max(trackH - 4, (trackW - 4) * currentFraction)
         progressFill.frame = CGRect(x: 2, y: 2, width: fillW, height: trackH - 4)
         progressFill.layer.cornerRadius = (trackH - 4) / 2
+    }
+
+    private static let spinnerAnimationKey = "spinnerRotation"
+
+    private func startSpinnerAnimation() {
+        guard spinnerFillLayer.animation(forKey: Self.spinnerAnimationKey) == nil else { return }
+        let anim = CABasicAnimation(keyPath: "transform.rotation.z")
+        anim.fromValue = 0
+        anim.toValue = CGFloat.pi * 2
+        anim.duration = 1.0
+        anim.repeatCount = .infinity
+        anim.isRemovedOnCompletion = false
+        spinnerFillLayer.add(anim, forKey: Self.spinnerAnimationKey)
+    }
+
+    private func stopSpinnerAnimation() {
+        spinnerFillLayer.removeAnimation(forKey: Self.spinnerAnimationKey)
     }
 
     // MARK: - Edit mode

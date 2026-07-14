@@ -98,8 +98,10 @@ enum FlekHomeItem: Identifiable, DragulaItem {
 struct FlekInstallState: Equatable {
     var name: String?
     var iconURL: String?
-    var fraction: Double      // 0...1, only meaningful while downloading
-    var indeterminate: Bool   // true during prepare / decompress / signing
+    var fraction: Double        // 0...1, combined progress for download bar
+    var indeterminate: Bool     // true during prepare / decompress / signing
+    var isInstalling: Bool      // true during install (post-download) phases
+    var installFraction: Double // 0...1, install-only progress for circular ring
 }
 
 /// Per-app launch mode chosen from the home screen context menu. "Single"
