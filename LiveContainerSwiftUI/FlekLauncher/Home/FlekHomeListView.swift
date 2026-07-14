@@ -282,7 +282,7 @@ private struct CancelInstallContextMenu: UIViewRepresentable {
                 UIMenu(title: "", children: [
                     UIAction(
                         title: "lc.flek.cancelInstall".loc,
-                        image: UIImage(systemName: "xmark.circle"),
+                        image: UIImage(systemName: "arrow.down.circle.badge.xmark"),
                         attributes: .destructive
                     ) { _ in cancel() }
                 ])

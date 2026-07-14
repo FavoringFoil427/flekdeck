@@ -103,7 +103,7 @@ struct FlekSpringboardView<Menu: View>: View {
                                                     Button(role: .destructive) {
                                                         onCancelInstall(inst)
                                                     } label: {
-                                                        Label("lc.flek.cancelInstall".loc, systemImage: "xmark.circle")
+                                                        Label("lc.flek.cancelInstall".loc, systemImage: "arrow.down.circle.badge.xmark")
                                                     }
                                                 }
                                         } else {
