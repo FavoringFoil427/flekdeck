@@ -257,6 +257,18 @@ class AppInfoProvider {
             name: UIDevice.orientationDidChangeNotification,
             object: nil
         )
+        // Safety net: whenever LiveContainer returns to the foreground, make sure a
+        // foregrounded app/page always exposes a way to minimize or exit it.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func appDidBecomeActive() {
+        ensureControlAccessible()
     }
     
     deinit {
@@ -347,6 +359,9 @@ class AppInfoProvider {
                         }
                     }
                 }
+                // No apps left: we are effectively on the springboard now. Record the
+                // home state so control-visibility logic stays consistent.
+                self.isHomeState = true
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
@@ -467,6 +482,45 @@ class AppInfoProvider {
         frontmostAppUUID = nil
         updateDockFrame()
     }
+
+    /// True when an app or built-in page (Settings / Installer / FlekStore) is
+    /// actually on screen in the window host.
+    private func hasForegroundAppWindow() -> Bool {
+        return self.windowHostingView.subviews.contains { view in
+            !view.isHidden && view.alpha > 0.1
+        }
+    }
+
+    /// Invariant guard: whenever an app/page is in the foreground (i.e. we are not on
+    /// the springboard), at least one control — the bottom switcher bar OR the floating
+    /// nav-assist button — must be reachable so the user can always minimize or exit.
+    /// If a state desync ever leaves both hidden, this restores the switcher bar.
+    @objc public func ensureControlAccessible() {
+        DispatchQueue.main.async {
+            guard self.isDockEnabled() else { return }
+            // Springboard has its own UI (the app list); no floating control is needed.
+            guard !self.isHomeState else { return }
+            // The app-switcher overlay already provides controls while it is open.
+            guard !self.isAppSwitcherOpen else { return }
+            // Only enforce this when something is actually on screen to control.
+            guard self.hasForegroundAppWindow() else { return }
+
+            let barShown = self.isVisible
+                && self.isSwitcherBarVisible
+                && (self.hostingController?.view.isHidden == false)
+                && ((self.hostingController?.view.alpha ?? 0) > 0.1)
+            let navShown = self.navAssistButton?.window != nil
+
+            guard !barShown && !navShown else { return }
+
+            // Neither control is reachable — bring the switcher bar back.
+            if self.isVisible {
+                self.showSwitcherBar()
+            } else {
+                self.showDock()
+            }
+        }
+    }
     
     /// Hide the switcher bar with slide-down animation and show navigation assist
     @objc public func hideSwitcherBar() {
@@ -497,7 +551,10 @@ class AppInfoProvider {
             ) { _ in
                 hostingController.view.isHidden = true
                 hostingController.view.transform = .identity
-                if !self.isHomeState {
+                // Show the floating button whenever an app/page is still on screen, so the
+                // user is never left without a control. (Do not gate this on isHomeState,
+                // which can be stale and strand the user with no way out.)
+                if !self.isHomeState && self.hasForegroundAppWindow() {
                     self.showNavAssist(in: keyWindow)
                 }
             }
@@ -824,6 +881,7 @@ class AppInfoProvider {
                 } else {
                     self.updateDockFrame()
                 }
+                self.ensureControlAccessible()
                 return true
             }
         }
@@ -942,6 +1000,7 @@ class AppInfoProvider {
             } else {
                 self.updateDockFrame()
             }
+            self.ensureControlAccessible()
         }
     }
     
@@ -986,6 +1045,7 @@ class AppInfoProvider {
             } else {
                 self.updateDockFrame()
             }
+            self.ensureControlAccessible()
         }
     }
     
@@ -1117,6 +1177,7 @@ class AppInfoProvider {
         } completion: { _ in
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
+            self.ensureControlAccessible()
         }
     }
     
@@ -1154,6 +1215,8 @@ class AppInfoProvider {
             if let overlay = self.switcherOverlayController {
                 overlay.view.removeFromSuperview()
             }
+            // All apps closed: we are back on the springboard.
+            self.isHomeState = true
             self.hideDock()
         }
     }
