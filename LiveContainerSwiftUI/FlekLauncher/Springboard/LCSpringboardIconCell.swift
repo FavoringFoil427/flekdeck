@@ -85,7 +85,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         layer.lineWidth = 5
         layer.lineCap = .round
         layer.strokeStart = 0
-        layer.strokeEnd = 0.3
+        layer.strokeEnd = 0.7
         return layer
     }()
 

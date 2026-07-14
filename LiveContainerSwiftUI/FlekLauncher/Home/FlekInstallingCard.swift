@@ -125,7 +125,7 @@ private struct FlekSpinningRing: View {
             Circle()
                 .stroke(Color.white.opacity(0.25), lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: 0.3)
+                .trim(from: 0, to: 0.7)
                 .stroke(flekBlue, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(rotation))
         }
