@@ -185,9 +185,9 @@ class AppInfoProvider {
 
     public struct Constants {
         // MARK: - Switcher Bar Layout
-        static let barHeight: CGFloat = 40.0
-        static let barIconSize: CGFloat = 36.0
-        static let barButtonSize: CGFloat = 36.0
+        static let barHeight: CGFloat = 25.0
+        static let barIconSize: CGFloat = 40.0
+        static let barButtonSize: CGFloat = 40.0
         static let barSpacing: CGFloat = 10.0
         static let barHPadding: CGFloat = 12.0
         static let barVPadding: CGFloat = 4.0
@@ -308,8 +308,9 @@ class AppInfoProvider {
         guard let hostingController = hostingController, isSwitcherBarVisible else { return }
 
         let screenBounds = UIScreen.main.bounds
-        let y = screenBounds.height - Constants.barHeight - safeAreaInsets.bottom
-        let newFrame = CGRect(x: 0, y: y, width: screenBounds.width, height: screenBounds.height - y)
+        let totalHeight = Constants.barHeight + safeAreaInsets.bottom
+        let y = screenBounds.height - totalHeight
+        let newFrame = CGRect(x: 0, y: y, width: screenBounds.width, height: totalHeight)
         
         if animated {
             UIView.animate(
@@ -1236,8 +1237,9 @@ struct SwitcherBarContentView: View {
     var body: some View {
         activeBarContent
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        .padding(.top, MultitaskDockManager.Constants.barVPadding)
-        .frame(maxWidth: .infinity)
+        .padding(.bottom, -2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .ignoresSafeArea()
     }
     
     // MARK: - Active State (app running in foreground)
@@ -1286,7 +1288,7 @@ struct SwitcherBarContentView: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dockManager.goHome()
             }) {
-                Image(systemName: "square")
+                Image(systemName: "app")
                     .foregroundColor(.white)
                     .font(.system(size: 16, weight: .medium))
                     .frame(width: MultitaskDockManager.Constants.barButtonSize,
@@ -1364,7 +1366,7 @@ struct FrontmostAppIconLabel: View {
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 10, weight: .semibold))
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 16)
         .frame(height: MultitaskDockManager.Constants.barButtonSize)
         .onAppear { loadIcon() }
         .onChange(of: dockManager.frontmostAppUUID) { _ in loadIcon() }
