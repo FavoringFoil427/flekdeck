@@ -903,6 +903,16 @@ class AppInfoProvider {
         let clampedX = max(minX, min(maxX, button.center.x))
         let clampedY = max(minY, min(maxY, button.center.y))
 
+        // Resting position when docked to an edge ignores that edge's safe-area
+        // inset so the button can sit right against the physical edge (the notch
+        // inset on the sides, and the home-indicator inset at the bottom,
+        // otherwise push it far inward in landscape). Portrait only uses the
+        // left/right edges, whose insets are zero, so it is unaffected.
+        let edgeMinX = margin + halfSize
+        let edgeMaxX = screenBounds.width - margin - halfSize
+        let edgeMinY = margin + halfSize
+        let edgeMaxY = screenBounds.height - margin - halfSize
+
         if distance(to: edge) < stashThreshold {
             navAssistStashedEdge = edge
             // The stash slides the button off `edge`; `along` is the free-axis
@@ -916,10 +926,10 @@ class AppInfoProvider {
         } else {
             let target: CGPoint
             switch edge {
-            case .left:   target = CGPoint(x: minX, y: clampedY)
-            case .right:  target = CGPoint(x: maxX, y: clampedY)
-            case .top:    target = CGPoint(x: clampedX, y: minY)
-            case .bottom: target = CGPoint(x: clampedX, y: maxY)
+            case .left:   target = CGPoint(x: edgeMinX, y: clampedY)
+            case .right:  target = CGPoint(x: edgeMaxX, y: clampedY)
+            case .top:    target = CGPoint(x: clampedX, y: edgeMinY)
+            case .bottom: target = CGPoint(x: clampedX, y: edgeMaxY)
             }
             restoreNavAssistIcon(button)
             moveNavAssist(button, to: target, alpha: 1.0, animated: animated)

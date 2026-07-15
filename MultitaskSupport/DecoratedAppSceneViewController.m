@@ -40,6 +40,7 @@ void UIKitFixesInit(void) {
 @property(nonatomic) CGRect originalFrame;
 @property(nonatomic) UIBarButtonItem *maximizeButton;
 @property(nonatomic) bool isAppTerminationRequested;
+- (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation;
 @end
 
 @implementation DecoratedAppSceneViewController
@@ -299,15 +300,22 @@ void UIKitFixesInit(void) {
     } else {
         [self updateWindowedFrameWithSettings:newSettings];
     }
-    CGRect newFrame = CGRectMake(0, 0, self.view.frame.size.width/self.scaleRatio, (self.view.frame.size.height - self.navigationBar.frame.size.height)/self.scaleRatio);
-    
-    if(UIInterfaceOrientationIsLandscape(baseSettings.interfaceOrientation)) {
-        newSettings.frame = CGRectMake(0, 0, newFrame.size.height, newFrame.size.width);
-    } else {
-        newSettings.frame = CGRectMake(0, 0, newFrame.size.width, newFrame.size.height);
-    }
-    
+    [self applySceneFrameToSettings:newSettings orientation:baseSettings.interfaceOrientation];
+
     [_appSceneVC.presenter.scene updateSettings:newSettings withTransitionContext:newContext completion:nil];
+}
+
+// Resizes the guest scene's drawable to match the current container view size.
+// Must be called whenever self.view.frame changes (rotation, bar show/hide),
+// otherwise apps that don't push their own settings update keep rendering at the
+// old size and leave a blank strip where the view grew.
+- (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation {
+    CGRect newFrame = CGRectMake(0, 0, self.view.frame.size.width/self.scaleRatio, (self.view.frame.size.height - self.navigationBar.frame.size.height)/self.scaleRatio);
+    if(UIInterfaceOrientationIsLandscape(orientation)) {
+        settings.frame = CGRectMake(0, 0, newFrame.size.height, newFrame.size.width);
+    } else {
+        settings.frame = CGRectMake(0, 0, newFrame.size.width, newFrame.size.height);
+    }
 }
 
 - (void)adjustNavigationBarButtonSpacingWithNegativeSpacing:(CGFloat)spacing rightMargin:(CGFloat)margin {
@@ -399,6 +407,9 @@ void UIKitFixesInit(void) {
     [UIView animateWithDuration:0.3 animations:^{
         [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
             [self updateMaximizedFrameWithSettings:settings];
+            // Keep the guest drawable in sync with the resized container so no
+            // blank strip is left when the bar hides and the view grows.
+            [self applySceneFrameToSettings:settings orientation:UIApplication.sharedApplication.statusBarOrientation];
         }];
     }];
 }
