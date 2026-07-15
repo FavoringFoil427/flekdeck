@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import SwiftUI
 
 final class LCSpringboardIconCell: UICollectionViewCell {
 
@@ -89,15 +90,9 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return layer
     }()
 
-    /// Percentage label centered on icon during download.
-    private let progressLabel: UILabel = {
-        let label = UILabel()
-        label.font = .systemFont(ofSize: 18, weight: .bold)
-        label.textColor = .white
-        label.textAlignment = .center
-        label.isHidden = true
-        return label
-    }()
+    /// Hosted SwiftUI percentage view with `.contentTransition(.numericText())`.
+    private var percentHostingController: UIHostingController<PercentageText>?
+    private var percentHostView: UIView!
 
     /// Blue progress bar near bottom of icon (download phase).
     private let progressTrack: UIView = {
@@ -205,7 +200,13 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         spinnerRingView.layer.addSublayer(spinnerTrackLayer)
         spinnerRingView.layer.addSublayer(spinnerFillLayer)
         installOverlay.addSubview(spinnerRingView)
-        installOverlay.addSubview(progressLabel)
+
+        let hostingVC = UIHostingController(rootView: PercentageText(percent: 0))
+        hostingVC.view.backgroundColor = .clear
+        hostingVC.view.isHidden = true
+        percentHostingController = hostingVC
+        percentHostView = hostingVC.view
+        installOverlay.addSubview(percentHostView)
         progressTrack.addSubview(progressFill)
         installOverlay.addSubview(progressTrack)
         installOverlay.layer.addSublayer(ringTrackLayer)
@@ -280,7 +281,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         spinnerFillLayer.path = spinnerPath.cgPath
         spinnerFillLayer.frame = spinnerBounds
 
-        progressLabel.frame = CGRect(x: 0, y: 0, width: iconS, height: iconS)
+        percentHostView.frame = CGRect(x: 0, y: 0, width: iconS, height: iconS)
 
         // Progress bar near bottom of icon (download phase)
         let trackW = iconS * 0.78
@@ -378,7 +379,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         installOverlay.isHidden = true
         spinnerRingView.isHidden = true
         stopSpinnerAnimation()
-        progressLabel.isHidden = true
+        percentHostView.isHidden = true
+        percentHostingController?.rootView = PercentageText(percent: 0)
         progressTrack.isHidden = true
         ringTrackLayer.isHidden = true
         ringFillLayer.isHidden = true
@@ -476,7 +478,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             // Indeterminate: show spinning ring, hide everything else
             spinnerRingView.isHidden = false
             startSpinnerAnimation()
-            progressLabel.isHidden = true
+            percentHostView.isHidden = true
             progressTrack.isHidden = true
             ringTrackLayer.isHidden = true
             ringFillLayer.isHidden = true
@@ -485,7 +487,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             // Install phase: show circular ring
             spinnerRingView.isHidden = true
             stopSpinnerAnimation()
-            progressLabel.isHidden = true
+            percentHostView.isHidden = true
             progressTrack.isHidden = true
             ringTrackLayer.isHidden = false
             ringFillLayer.isHidden = false
@@ -498,8 +500,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
             // Download phase: show percentage + progress bar
             spinnerRingView.isHidden = true
             stopSpinnerAnimation()
-            progressLabel.isHidden = false
-            progressLabel.text = "\(Int((state.fraction * 100).rounded()))%"
+            percentHostView.isHidden = false
+            percentHostingController?.rootView = PercentageText(percent: Int((state.fraction * 100).rounded()))
             progressTrack.isHidden = false
             ringTrackLayer.isHidden = true
             ringFillLayer.isHidden = true
@@ -678,3 +680,30 @@ final class LCIconCellSnapshotView: UIView {
     /// Reference to the delete button snapshot for animate-in during drag.
     var deleteButtonSnapshot: UIView?
 }
+// MARK: - SwiftUI percentage text with numeric content transition
+
+/// Lightweight SwiftUI view showing a download percentage with
+/// `.contentTransition(.numericText())` for smooth digit animations.
+private struct PercentageText: View {
+    let percent: Int
+
+    private static let font = UIFont.monospacedDigitSystemFont(ofSize: 18, weight: .bold)
+    private static let fixedWidth = "100%".size(withAttributes: [.font: font]).width
+
+    var body: some View {
+        Group {
+            if #available(iOS 16.0, *) {
+                Text("\(percent)%")
+                    .contentTransition(.numericText())
+                    .animation(.default, value: percent)
+            } else {
+                Text("\(percent)%")
+            }
+        }
+        .font(.system(size: 18, weight: .bold).monospacedDigit())
+        .foregroundStyle(.white)
+        .frame(width: Self.fixedWidth)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+

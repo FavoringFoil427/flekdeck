@@ -52,16 +52,16 @@ struct FlekInstallIcon: View {
                 let fontSize: CGFloat = size > 60 ? 18 : 13
                 if #available(iOS 16.0, *) {
                     Text("\(Int((state.fraction * 100).rounded()))%")
-                        .font(.system(size: fontSize, weight: .bold))
+                        .font(.system(size: fontSize, weight: .bold).monospacedDigit())
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())
                         .animation(.default, value: Int((state.fraction * 100).rounded()))
-                        .frame(width: "100%".size(withAttributes: [.font: UIFont.systemFont(ofSize: fontSize, weight: .bold)]).width)
+                        .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
                 } else {
                     Text("\(Int((state.fraction * 100).rounded()))%")
-                        .font(.system(size: fontSize, weight: .bold))
+                        .font(.system(size: fontSize, weight: .bold).monospacedDigit())
                         .foregroundStyle(.white)
-                        .frame(width: "100%".size(withAttributes: [.font: UIFont.systemFont(ofSize: fontSize, weight: .bold)]).width)
+                        .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
                 }
             }
         }
