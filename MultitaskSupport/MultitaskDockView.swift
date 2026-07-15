@@ -1276,15 +1276,30 @@ class AppInfoProvider {
               let appView = app.view,
               !appView.isHidden, appView.alpha > 0.1 else { return }
         
-        let viewSize = appView.bounds.size
+        // Internal pages pin their bottom controls (e.g. the Installer's Import
+        // IPA / search row and blur) above the switcher-bar edge, so in the live
+        // app they clear the bar. That reserved region is the full bottom safe
+        // area — the device inset plus the extra strip we add via
+        // additionalSafeAreaInsets — and the page also pads its controls further
+        // up while the bar is shown. The switcher card has no bar, so that region
+        // reads as empty space below the controls. Trim the whole reserved
+        // safe-area region (bottom in portrait, right in landscape) from the
+        // capture so the controls sit flush against the card edge.
+        var captureRect = appView.bounds
+        if app.isInternalPage {
+            let reserved = appView.safeAreaInsets
+            captureRect.size.height -= reserved.bottom
+            captureRect.size.width -= reserved.right
+        }
+        let viewSize = captureRect.size
         guard viewSize.width > 0 && viewSize.height > 0 else { return }
-        
+
         // Snapshot the app view directly to capture only this app's content.
         // Using the view (not the window) ensures we get this specific app's
         // layer tree including CARemoteLayer content, rather than whatever
         // happens to be visually on top at the same screen position.
         if let viewSnapshot = appView.resizableSnapshotView(
-            from: appView.bounds,
+            from: captureRect,
             afterScreenUpdates: false,
             withCapInsets: .zero
         ) {
