@@ -635,13 +635,24 @@ class AppInfoProvider {
     @objc public func refreshOrientationLock() {
         guard isDockEnabled() else { return }
         DispatchQueue.main.async {
-            AppDelegate.orientationLock = self.isAnyControlVisible ? .allButUpsideDown : .portrait
-            UIApplication.shared.connectedScenes
+            // The app switcher overlay is portrait-only. Otherwise: rotatable
+            // while a control is on screen, portrait-locked on the springboard.
+            let lockPortrait = self.isAppSwitcherOpen || !self.isAnyControlVisible
+            AppDelegate.orientationLock = lockPortrait ? .portrait : .allButUpsideDown
+
+            let keyWindow = UIApplication.shared.connectedScenes
                 .compactMap { $0 as? UIWindowScene }
                 .flatMap { $0.windows }
-                .first { $0.isKeyWindow }?
-                .rootViewController?
-                .setNeedsUpdateOfSupportedInterfaceOrientations()
+                .first { $0.isKeyWindow }
+            keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+
+            // If the switcher opened while the device is held in landscape,
+            // actively rotate the interface to portrait so it's always upright.
+            if self.isAppSwitcherOpen,
+               let scene = keyWindow?.windowScene,
+               scene.interfaceOrientation.isLandscape {
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            }
         }
     }
 
@@ -1321,7 +1332,9 @@ class AppInfoProvider {
         
         captureSnapshots()
         isAppSwitcherOpen = true
-        
+        // The switcher overlay is portrait-only — lock/rotate to portrait now.
+        refreshOrientationLock()
+
         // Always recreate the overlay so it picks up the latest apps & snapshots
         switcherOverlayController?.view.removeFromSuperview()
         
@@ -1360,7 +1373,9 @@ class AppInfoProvider {
     
     func dismissAppSwitcher() {
         isAppSwitcherOpen = false
-        
+        // Restore normal rotation now that the portrait-only overlay is closing.
+        refreshOrientationLock()
+
         guard let overlay = switcherOverlayController else { return }
         
         // Show the switcher bar again
@@ -1777,8 +1792,12 @@ struct AppSwitcherOverlay: View {
                 }
             
             VStack(spacing: 0) {
+                // Pin the content near the top with a small margin below the
+                // safe area (the overlay ignores the safe area, so add it back
+                // here) instead of pushing everything toward the bottom.
                 Spacer()
-                
+                    .frame(height: dockManager.safeAreaInsets.top + 12)
+
                 // Horizontal scrolling app cards
                 ScrollViewReader { proxy in
                     cardScrollView
@@ -1792,25 +1811,27 @@ struct AppSwitcherOverlay: View {
                     }
                 }
                 
-                Spacer()
-                    .frame(height: 20)
-                
-                // Bottom actions
-                VStack(spacing: 10) {
+                // Flexible gap so the cards sit up top and the bottom actions
+                // fall to the bottom edge.
+                Spacer(minLength: 20)
+
+                // Bottom actions — Hide Switcher Bar stays pinned at the very
+                // bottom; the larger spacing lifts Close all a bit higher.
+                VStack(spacing: 28) {
                     // Close all button
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         dockManager.closeAllApps()
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 7) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 16, weight: .semibold))
                             Text("Close all")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 18, weight: .medium))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
                         .modifier(GlassCapsuleBackground())
                     }
                     
@@ -1828,7 +1849,10 @@ struct AppSwitcherOverlay: View {
                         .foregroundColor(.white.opacity(0.6))
                     }
                 }
-                .padding(.bottom, MultitaskDockManager.Constants.barHeight + 16)
+                // The switcher bar is hidden while this overlay is open, so keep
+                // only a small margin — Hide Switcher Bar sits at the very bottom
+                // with no empty strip below it.
+                .padding(.bottom, 8)
             }
         }
         .ignoresSafeArea()
