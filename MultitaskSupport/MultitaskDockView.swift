@@ -199,6 +199,22 @@ class AppInfoProvider {
         return Constants.barHeight + safeAreaInsets.bottom
     }
 
+    /// Reserves (or clears) space for the switcher bar on an internal page,
+    /// on the axis where the bar actually lives — the bottom edge in portrait,
+    /// the right edge in landscape. Reserving the bottom in landscape (where the
+    /// bar is on the right) left a stale inset that pushed bottom content up and
+    /// broke the hide-to-bottom-edge behaviour.
+    func applyBarInset(to controller: UIHostingController<AnyView>, reserved: Bool) {
+        let amount: CGFloat = reserved ? Constants.barHeight : 0
+        if isBarLandscape {
+            controller.additionalSafeAreaInsets.right = amount
+            controller.additionalSafeAreaInsets.bottom = 0
+        } else {
+            controller.additionalSafeAreaInsets.bottom = amount
+            controller.additionalSafeAreaInsets.right = 0
+        }
+    }
+
     public struct Constants {
         // MARK: - Switcher Bar Layout
         static let barHeight: CGFloat = 25.0
@@ -330,6 +346,12 @@ class AppInfoProvider {
                 if let button = self.navAssistButton {
                     self.snapNavAssistToEdge(button, animated: false)
                 }
+            }
+            // Move the internal-page bar reservation to the correct edge for the
+            // new orientation (bottom in portrait, right in landscape).
+            let reserved = self.isVisible && self.isSwitcherBarVisible
+            for (_, controller) in self.internalPageControllers {
+                self.applyBarInset(to: controller, reserved: reserved)
             }
         }
     }
@@ -468,11 +490,11 @@ class AppInfoProvider {
             self.isSwitcherBarVisible = true
             self.refreshOrientationLock()
 
-            // Apply bottom inset to internal pages for the dock bar
+            // Reserve space for the bar on its current edge for internal pages
             for (_, controller) in self.internalPageControllers {
-                controller.additionalSafeAreaInsets.bottom = Constants.barHeight
+                self.applyBarInset(to: controller, reserved: true)
             }
-            
+
             if hostingController.view.superview == nil {
                 keyWindow.addSubview(hostingController.view)
             }
@@ -501,9 +523,9 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             self.isVisible = false
 
-            // Remove bottom inset from internal pages
+            // Remove the bar reservation from internal pages
             for (_, controller) in self.internalPageControllers {
-                controller.additionalSafeAreaInsets.bottom = 0
+                self.applyBarInset(to: controller, reserved: false)
             }
 
             // Also remove nav assist if visible
@@ -662,10 +684,10 @@ class AppInfoProvider {
             self.isSwitcherBarVisible = false
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
-            // Remove bottom inset from internal pages so they stretch to full screen
+            // Remove the bar reservation from internal pages so they stretch full
             for (_, controller) in self.internalPageControllers {
                 UIView.animate(withDuration: Constants.standardAnimationDuration) {
-                    controller.additionalSafeAreaInsets.bottom = 0
+                    self.applyBarInset(to: controller, reserved: false)
                 }
             }
             
@@ -716,10 +738,10 @@ class AppInfoProvider {
             self.updateDockFrame(animated: false)
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
-            // Restore bottom inset on internal pages to account for dock bar
+            // Restore the bar reservation on internal pages
             for (_, controller) in self.internalPageControllers {
                 UIView.animate(withDuration: Constants.standardAnimationDuration) {
-                    controller.additionalSafeAreaInsets.bottom = Constants.barHeight
+                    self.applyBarInset(to: controller, reserved: true)
                 }
             }
             
@@ -1167,7 +1189,7 @@ class AppInfoProvider {
         hostVC.view.frame = windowHostingView.bounds
         hostVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         if isSwitcherBarVisible {
-            hostVC.additionalSafeAreaInsets.bottom = Constants.barHeight
+            applyBarInset(to: hostVC, reserved: true)
         }
 
         // Add as child view controller so the hosting controller inherits

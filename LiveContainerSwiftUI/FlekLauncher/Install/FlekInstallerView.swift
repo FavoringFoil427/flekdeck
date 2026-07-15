@@ -15,6 +15,7 @@
 //
 
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct FlekInstallerView: View {
@@ -38,6 +39,12 @@ struct FlekInstallerView: View {
     @StateObject private var importUrlHelper = InputHelper()
     @State private var choosingIPA = false
     @State private var switcherBarVisible = true
+    @State private var barIsLandscape = false
+
+    /// The bottom bar/blur only need to make room when the switcher bar actually
+    /// sits along the bottom edge — i.e. portrait. In landscape the bar is on the
+    /// right edge, so bottom content stays pinned to the bottom edge.
+    private var barOccupiesBottom: Bool { switcherBarVisible && !barIsLandscape }
 
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
     private static let screenBG = Color(.systemGroupedBackground)
@@ -73,7 +80,7 @@ struct FlekInstallerView: View {
                             )
                         )
                         .frame(height: 120)
-                        .offset(y: switcherBarVisible ? 0 : 52)
+                        .offset(y: barOccupiesBottom ? 0 : 52)
                         .allowsHitTesting(false)
                         .ignoresSafeArea()
                         .transition(.opacity)
@@ -82,10 +89,15 @@ struct FlekInstallerView: View {
             .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 10)
-                    .padding(.bottom, switcherBarVisible ? 12 : -20)
+                    // -18 (not -20) leaves a 2pt margin above the bottom edge for
+                    // the buttons; the blur keeps its own separate offset.
+                    .padding(.bottom, barOccupiesBottom ? 12 : -18)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .multitaskBarVisibilityChanged)) { _ in
+            updateSwitcherBarState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateSwitcherBarState()
         }
         .onAppear {
@@ -520,6 +532,15 @@ struct FlekInstallerView: View {
     }
 
     private func updateSwitcherBarState() {
+        // Read the interface orientation directly so it is always current — the
+        // dock manager's cached flag only updates while the bar is visible and
+        // can be stale when the page first opens in landscape.
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })
+            ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
+            barIsLandscape = scene.interfaceOrientation.isLandscape
+        }
         if #available(iOS 16.0, *) {
             let mgr = MultitaskDockManager.shared
             // Only override the default when the dock is actually set up;
