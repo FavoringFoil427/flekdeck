@@ -445,7 +445,11 @@ class AppInfoProvider {
         guard isDockEnabled() else { return }
         
         DispatchQueue.main.async {
-            self.apps.removeAll { $0.appUUID == appUUID }
+            // Animate the list mutation so the remaining switcher cards slide in
+            // to fill the gap smoothly instead of snapping into place.
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                self.apps.removeAll { $0.appUUID == appUUID }
+            }
             self.appSnapshotViews.removeValue(forKey: appUUID)
             if let hostVC = self.internalPageControllers.removeValue(forKey: appUUID) {
                 hostVC.willMove(toParent: nil)
@@ -1373,7 +1377,21 @@ class AppInfoProvider {
             vc.closeWindow()
         }
     }
-    
+
+    /// Kicks off a guest app's (asynchronous) process termination WITHOUT
+    /// mutating the `apps` list. The switcher removes the card separately on a
+    /// fixed, short schedule via `removeRunningApp`, so the reflow of the
+    /// remaining cards never has to wait for the app process to actually exit.
+    /// Internal pages tear down instantly and are handled entirely by
+    /// `removeRunningApp`, so nothing extra is needed for them here.
+    func beginAppTeardown(uuid: String) {
+        guard let app = apps.first(where: { $0.appUUID == uuid }) else { return }
+        if !app.isInternalPage,
+           let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+            vc.closeWindow()
+        }
+    }
+
     func closeAllApps() {
         isClosingAll = true
         
@@ -1829,6 +1847,8 @@ struct AppSwitcherOverlay: View {
                     cardIndex: pair.offset
                 )
                 .id(pair.element.appUUID)
+                // Graceful exit if the card is removed while still partly on-screen.
+                .transition(.move(edge: .top).combined(with: .opacity))
                 .scaleEffect(isPresented ? 1.0 : 0.85)
                 .opacity(isPresented ? 1.0 : 0)
                 .animation(
@@ -2083,11 +2103,18 @@ struct AppSwitcherCard: View {
                         // Normalize gesture velocity to proportion of remaining distance per second
                         let springVelocity = totalChange != 0 ? velocity / totalChange : 0
                         
+                        // Fling the card off-screen with momentum handoff from the gesture.
                         withAnimation(.interpolatingSpring(stiffness: 350, damping: 38, initialVelocity: springVelocity)) {
                             dragOffset = -screenH
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            dockManager.closeApp(uuid: app.appUUID)
+                        // As soon as the card has cleared the screen, start the real
+                        // (async) teardown AND remove the card from the switcher list in
+                        // one animated step. The remaining cards slide in to fill the gap
+                        // on this fixed, short schedule instead of waiting on asynchronous
+                        // app termination — so the reflow is both smooth and immediate.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            dockManager.beginAppTeardown(uuid: app.appUUID)
+                            dockManager.removeRunningApp(app.appUUID)
                         }
                     } else {
                         // Snap back
