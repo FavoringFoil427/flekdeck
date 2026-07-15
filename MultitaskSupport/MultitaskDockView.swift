@@ -1873,9 +1873,11 @@ struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var isPresented = false
     
-    private let cardCornerRadius: CGFloat = 24
     private let cardSpacing: CGFloat = 16
-    
+
+    // Fixed corner radius (matches the Figma design spec).
+    private let cardCornerRadius: CGFloat = 34
+
     // Card dimensions — proportional to screen like iOS app switcher
     private var cardWidth: CGFloat {
         UIScreen.main.bounds.width * 0.62
