@@ -452,10 +452,17 @@ void UIKitFixesInit(void) {
 - (void)updateMaximizedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
     if(MultitaskDockManager.shared.barVisible) {
-        // Leave space at bottom for the static switcher bar (content + safe area)
-        CGFloat barContentHeight = 40.0;
-        CGFloat bottomBarSpace = barContentHeight + self.view.window.safeAreaInsets.bottom;
-        maxFrame.size.height -= bottomBarSpace;
+        // Reserve exactly the bar's strip thickness so the app sits flush with
+        // it — no background gap showing through. The bar lives on the current
+        // short edge (bottom in portrait, right edge in landscape), so reserve
+        // from the matching dimension. Previously the bottom reserved a larger
+        // fixed value (40) than the bar's real height, leaving an empty strip.
+        CGFloat barThickness = MultitaskDockManager.shared.barReservedThickness;
+        if(UIInterfaceOrientationIsLandscape(UIApplication.sharedApplication.statusBarOrientation)) {
+            maxFrame.size.width -= barThickness;
+        } else {
+            maxFrame.size.height -= barThickness;
+        }
     }
     self.view.frame = maxFrame;
 }

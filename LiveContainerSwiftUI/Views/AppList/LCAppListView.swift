@@ -542,6 +542,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 installFromUrl(urlStr: installUrl.absoluteString)
             }
         }
+        .modifier(OrientationLockModifier(
+            showSettingsCover: showSettingsCover,
+            showInstallerCover: showInstallerCover,
+            webViewOpened: webViewOpened,
+            safariViewOpened: safariViewOpened,
+            helpPresent: helpPresent,
+            customSortViewPresent: customSortViewPresent,
+            hasNavigationTarget: navigationTarget != nil,
+            hasGameWarningTarget: gameWarningTarget != nil
+        ))
     }
 
     @ViewBuilder
@@ -2012,3 +2022,37 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 extension View {
     func apply<V: View>(@ViewBuilder _ block: (Self) -> V) -> V { block(self) }
 }
+/// Unlocks rotation when any overlay is presented over the springboard,
+/// re-locks to portrait when the bare springboard is visible.
+private struct OrientationLockModifier: ViewModifier {
+    let showSettingsCover: Bool
+    let showInstallerCover: Bool
+    let webViewOpened: Bool
+    let safariViewOpened: Bool
+    let helpPresent: Bool
+    let customSortViewPresent: Bool
+    let hasNavigationTarget: Bool
+    let hasGameWarningTarget: Bool
+
+    private var anyOverlay: Bool {
+        showSettingsCover || showInstallerCover || webViewOpened
+            || safariViewOpened || helpPresent || customSortViewPresent
+            || hasNavigationTarget || hasGameWarningTarget
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: anyOverlay) { showing in
+                AppDelegate.orientationLock = showing ? .allButUpsideDown : .portrait
+                if #available(iOS 16.0, *) {
+                    UIApplication.shared.connectedScenes
+                        .compactMap { $0 as? UIWindowScene }
+                        .flatMap { $0.windows }
+                        .first { $0.isKeyWindow }?
+                        .rootViewController?
+                        .setNeedsUpdateOfSupportedInterfaceOrientations()
+                }
+            }
+    }
+}
+

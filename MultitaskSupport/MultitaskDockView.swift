@@ -166,6 +166,10 @@ class AppInfoProvider {
     @Published var isHomeState: Bool = false
     @Published var isAppSwitcherOpen: Bool = false
     @Published var isClosingAll: Bool = false
+    /// Published mirror of `isBarLandscape` so the SwiftUI bar content can react
+    /// to rotation (its own local geometry is always a horizontal strip and
+    /// can't reveal orientation).
+    @Published var isLandscapeBar: Bool = false
     var appSnapshotViews: [String: UIView] = [:]
     var internalPageControllers: [String: UIHostingController<AnyView>] = [:]
 
@@ -175,13 +179,25 @@ class AppInfoProvider {
     private var navAssistButton: UIView?
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
-    private var navAssistStashedOnRight: Bool = true
+
+    /// Which edge the floating button stashes against. Portrait uses the
+    /// horizontal edges (left/right); landscape uses the vertical edges
+    /// (top/bottom) so the button tucks away along the long edges instead.
+    private enum NavAssistEdge { case left, right, top, bottom }
+    private var navAssistStashedEdge: NavAssistEdge = .right
 
     // Backward compatibility — always false since collapsed dock concept was removed
     @objc public var isCollapsed: Bool { return false }
     
     /// ObjC-accessible flag for whether the switcher bar is currently shown
     @objc public var barVisible: Bool { return isSwitcherBarVisible }
+
+    /// The exact on-screen thickness of the switcher bar strip on its short edge
+    /// (matches `updateDockFrame`). App windows reserve this so their content
+    /// sits flush against the bar with no background gap showing through.
+    @objc public var barReservedThickness: CGFloat {
+        return Constants.barHeight + safeAreaInsets.bottom
+    }
 
     public struct Constants {
         // MARK: - Switcher Bar Layout
@@ -220,7 +236,35 @@ class AppInfoProvider {
     public var safeAreaInsets: UIEdgeInsets {
         keyWindow?.safeAreaInsets ?? .zero
     }
-    
+
+    // MARK: - Bar Edge / Orientation
+
+    /// Whether the switcher bar should sit on a vertical (short) edge, i.e. the
+    /// device is in landscape. The bar always lives on a *short* edge: the
+    /// bottom in portrait, the right edge in landscape.
+    private var isBarLandscape: Bool {
+        if let orientation = keyWindow?.windowScene?.interfaceOrientation {
+            return orientation.isLandscape
+        }
+        return UIScreen.main.bounds.width > UIScreen.main.bounds.height
+    }
+
+    /// The resting transform of the bar's hosting view. Identity in portrait;
+    /// rotated -90° in landscape so the (otherwise identical) horizontal pill
+    /// runs vertically along the right edge. Applying this transform to a view
+    /// whose local bounds are a horizontal strip yields the vertical bar.
+    private var barBaseTransform: CGAffineTransform {
+        isBarLandscape ? CGAffineTransform(rotationAngle: -.pi / 2) : .identity
+    }
+
+    /// The transform used while the bar is hidden/off-screen. The slide offset
+    /// is applied in the bar's *local* space (before rotation), so a local
+    /// downward slide becomes an off-bottom slide in portrait and an off-right
+    /// slide in landscape — the bar always exits through its own short edge.
+    private func barHiddenTransform(offset: CGFloat = 50) -> CGAffineTransform {
+        CGAffineTransform(translationX: 0, y: offset).concatenating(barBaseTransform)
+    }
+
     // MARK: - Bar Width Calculation
     private func barWidth() -> CGFloat {
         // Side buttons: hide + home
@@ -278,7 +322,10 @@ class AppInfoProvider {
     @objc private func deviceOrientationDidChange() {
         DispatchQueue.main.async {
             if self.isVisible {
-                self.updateDockFrame()
+                // Snap (not animate) so the bar lands on its new short edge as the
+                // system's own rotation animation completes, avoiding a compounded
+                // spin from animating our -90° transform at the same time.
+                self.updateDockFrame(animated: false)
                 // Reposition nav assist if visible
                 if let button = self.navAssistButton {
                     self.snapNavAssistToEdge(button, animated: false)
@@ -304,14 +351,54 @@ class AppInfoProvider {
     }
 
     // MARK: - Frame Management
+
+    /// Positions the switcher bar on the current short edge — bottom in
+    /// portrait, right edge in landscape — keeping identical portrait sizing.
+    ///
+    /// The hosting view's *local* bounds are always a horizontal strip
+    /// (`length × thickness`, thickness = barHeight + outer safe-area inset).
+    /// In landscape the view is rotated -90° via `barBaseTransform`, turning the
+    /// horizontal pill into a vertical one hugging the right edge. Because the
+    /// view carries a transform, we drive it with bounds + center + transform
+    /// rather than `frame` (setting `frame` under a non-identity transform is
+    /// undefined).
     private func updateDockFrame(animated: Bool = true) {
         guard let hostingController = hostingController, isSwitcherBarVisible else { return }
 
+        // Keep the published orientation flag in sync so the bar content picks
+        // the right edge margin (-2 portrait, -10 landscape).
+        if isLandscapeBar != isBarLandscape {
+            isLandscapeBar = isBarLandscape
+        }
+
         let screenBounds = UIScreen.main.bounds
-        let totalHeight = Constants.barHeight + safeAreaInsets.bottom
-        let y = screenBounds.height - totalHeight
-        let newFrame = CGRect(x: 0, y: y, width: screenBounds.width, height: totalHeight)
-        
+        let insets = safeAreaInsets
+
+        // Cross-thickness of the bar. Deliberately the same slim value in both
+        // orientations so the landscape bar matches the portrait one instead of
+        // ballooning to include the large horizontal safe-area inset (e.g. the
+        // notch), which previously made it a wide full-height sidebar.
+        let thickness = Constants.barHeight + insets.bottom
+
+        let boundsSize: CGSize
+        let center: CGPoint
+        if isBarLandscape {
+            // Vertical strip on the right edge. Local strip length spans the
+            // screen height; thickness extends inward from the right edge.
+            boundsSize = CGSize(width: screenBounds.height, height: thickness)
+            center = CGPoint(x: screenBounds.width - thickness / 2, y: screenBounds.height / 2)
+        } else {
+            // Horizontal strip on the bottom edge (unchanged portrait layout).
+            boundsSize = CGSize(width: screenBounds.width, height: thickness)
+            center = CGPoint(x: screenBounds.width / 2, y: screenBounds.height - thickness / 2)
+        }
+
+        let apply = {
+            hostingController.view.bounds = CGRect(origin: .zero, size: boundsSize)
+            hostingController.view.transform = self.barBaseTransform
+            hostingController.view.center = center
+        }
+
         if animated {
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
@@ -320,10 +407,10 @@ class AppInfoProvider {
                 initialSpringVelocity: Constants.standardSpringVelocity,
                 options: .curveEaseOut
             ) {
-                hostingController.view.frame = newFrame
+                apply()
             }
         } else {
-            hostingController.view.frame = newFrame
+            apply()
         }
     }
     
@@ -379,7 +466,8 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             self.isVisible = true
             self.isSwitcherBarVisible = true
-            
+            self.refreshOrientationLock()
+
             // Apply bottom inset to internal pages for the dock bar
             for (_, controller) in self.internalPageControllers {
                 controller.additionalSafeAreaInsets.bottom = Constants.barHeight
@@ -390,10 +478,10 @@ class AppInfoProvider {
             }
             
             self.updateDockFrame(animated: false)
-            
+
             hostingController.view.alpha = 0
-            hostingController.view.transform = CGAffineTransform(translationX: 0, y: 50)
-            
+            hostingController.view.transform = self.barHiddenTransform()
+
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
                 delay: 0,
@@ -402,25 +490,28 @@ class AppInfoProvider {
                 options: .curveEaseOut
             ) {
                 hostingController.view.alpha = 1
-                hostingController.view.transform = .identity
+                hostingController.view.transform = self.barBaseTransform
             }
         }
     }
-    
+
     @objc public func hideDock() {
         guard isVisible, let hostingController = hostingController else { return }
         
         DispatchQueue.main.async {
             self.isVisible = false
-            
+
             // Remove bottom inset from internal pages
             for (_, controller) in self.internalPageControllers {
                 controller.additionalSafeAreaInsets.bottom = 0
             }
-            
+
             // Also remove nav assist if visible
             self.navAssistButton?.removeFromSuperview()
             self.navAssistButton = nil
+
+            // No control on screen anymore → back to portrait (springboard).
+            self.refreshOrientationLock()
             
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
@@ -430,9 +521,9 @@ class AppInfoProvider {
                 options: .curveEaseOut
             ) {
                 hostingController.view.alpha = 0
-                hostingController.view.transform = CGAffineTransform(translationX: 0, y: 50)
+                hostingController.view.transform = self.barHiddenTransform()
             } completion: { _ in
-                hostingController.view.transform = .identity
+                hostingController.view.transform = self.barBaseTransform
             }
         }
     }
@@ -492,6 +583,42 @@ class AppInfoProvider {
         }
     }
 
+    // MARK: - Orientation
+
+    /// Whether a multitask control — the bottom switcher bar OR the floating
+    /// nav-assist button — is currently on screen. This is the single flag used
+    /// to decide if the device may rotate: when a control is present an app is
+    /// on stage and should be rotatable; the bare springboard (no control)
+    /// stays portrait-locked.
+    ///
+    /// Uses the logical visibility flags (not view alpha) so the value is
+    /// correct immediately, before show/hide animations settle.
+    var isAnyControlVisible: Bool {
+        let barShown = isVisible
+            && isSwitcherBarVisible
+            && (hostingController?.view.isHidden == false)
+        let navShown = navAssistButton != nil
+        return barShown || navShown
+    }
+
+    /// Drives `AppDelegate.orientationLock` from control visibility:
+    /// rotatable (`.allButUpsideDown`) while the switcher bar or floating button
+    /// is shown, portrait-locked otherwise. No-op outside virtual-window
+    /// multitask mode, where the SwiftUI `OrientationLockModifier` owns
+    /// orientation instead.
+    @objc public func refreshOrientationLock() {
+        guard isDockEnabled() else { return }
+        DispatchQueue.main.async {
+            AppDelegate.orientationLock = self.isAnyControlVisible ? .allButUpsideDown : .portrait
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }?
+                .rootViewController?
+                .setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+    }
+
     /// Invariant guard: whenever an app/page is in the foreground (i.e. we are not on
     /// the springboard), at least one control — the bottom switcher bar OR the floating
     /// nav-assist button — must be reachable so the user can always minimize or exit.
@@ -499,6 +626,9 @@ class AppInfoProvider {
     @objc public func ensureControlAccessible() {
         DispatchQueue.main.async {
             guard self.isDockEnabled() else { return }
+            // Reconcile rotation with current control visibility every time we
+            // re-check (e.g. on foreground), self-healing against any stale lock.
+            self.refreshOrientationLock()
             // Springboard has its own UI (the app list); no floating control is needed.
             guard !self.isHomeState else { return }
             // The app-switcher overlay already provides controls while it is open.
@@ -547,21 +677,24 @@ class AppInfoProvider {
                 options: .curveEaseOut,
                 animations: {
                     hostingController.view.alpha = 0
-                    hostingController.view.transform = CGAffineTransform(translationX: 0, y: 80)
+                    hostingController.view.transform = self.barHiddenTransform(offset: 80)
                 }
             ) { _ in
                 hostingController.view.isHidden = true
-                hostingController.view.transform = .identity
+                hostingController.view.transform = self.barBaseTransform
                 // Show the floating button whenever an app/page is still on screen, so the
                 // user is never left without a control. (Do not gate this on isHomeState,
                 // which can be stale and strand the user with no way out.)
                 if !self.isHomeState && self.hasForegroundAppWindow() {
                     self.showNavAssist(in: keyWindow)
                 }
+                // Bar hidden; rotation now follows whether the floating button
+                // was shown (app on stage) or not (home).
+                self.refreshOrientationLock()
             }
         }
     }
-    
+
     /// Show the switcher bar with slide-up animation and hide navigation assist
     @objc public func showSwitcherBar() {
         guard let hostingController = hostingController else { return }
@@ -579,6 +712,7 @@ class AppInfoProvider {
             }
             
             self.isSwitcherBarVisible = true
+            self.refreshOrientationLock()
             self.updateDockFrame(animated: false)
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
@@ -591,8 +725,8 @@ class AppInfoProvider {
             
             hostingController.view.isHidden = false
             hostingController.view.alpha = 0
-            hostingController.view.transform = CGAffineTransform(translationX: 0, y: 50)
-            
+            hostingController.view.transform = self.barHiddenTransform()
+
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
                 delay: 0.15,
@@ -601,7 +735,7 @@ class AppInfoProvider {
                 options: .curveEaseOut
             ) {
                 hostingController.view.alpha = 1
-                hostingController.view.transform = .identity
+                hostingController.view.transform = self.barBaseTransform
             }
         }
     }
@@ -628,7 +762,9 @@ class AppInfoProvider {
         
         window.addSubview(button)
         self.navAssistButton = button
-        
+        // Floating button now on stage → allow rotation.
+        self.refreshOrientationLock()
+
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
             delay: 0.15,
@@ -718,74 +854,112 @@ class AppInfoProvider {
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         let stashThreshold: CGFloat = halfSize + margin // How close to edge before stashing
-        
-        let onRight = button.center.x >= screenBounds.width / 2
-        
-        // Check if close enough to screen edge to stash
-        let distanceToEdge: CGFloat
-        if onRight {
-            distanceToEdge = screenBounds.width - button.center.x
-        } else {
-            distanceToEdge = button.center.x
+
+        // Portrait keeps the button on the vertical (left/right) edges; in
+        // landscape it may dock/stash against any of the four edges.
+        let allowedEdges: [NavAssistEdge] = isBarLandscape
+            ? [.left, .right, .top, .bottom]
+            : [.left, .right]
+
+        // Distance from the button center to a given screen edge.
+        func distance(to edge: NavAssistEdge) -> CGFloat {
+            switch edge {
+            case .left:   return button.center.x
+            case .right:  return screenBounds.width - button.center.x
+            case .top:    return button.center.y
+            case .bottom: return screenBounds.height - button.center.y
+            }
         }
-        
-        let shouldStash = distanceToEdge < stashThreshold
-        
+
+        // Snap to whichever allowed edge is nearest.
+        let edge = allowedEdges.min(by: { distance(to: $0) < distance(to: $1) })!
+
+        let minX = safeArea.left + margin + halfSize
+        let maxX = screenBounds.width - safeArea.right - margin - halfSize
         let minY = safeArea.top + margin + halfSize
         let maxY = screenBounds.height - safeArea.bottom - margin - halfSize
-        let targetY = max(minY, min(maxY, button.center.y))
-        
-        if shouldStash {
-            navAssistStashedOnRight = onRight
-            stashNavAssist(button, onRight: onRight, targetY: targetY, animated: animated)
+        let clampedX = max(minX, min(maxX, button.center.x))
+        let clampedY = max(minY, min(maxY, button.center.y))
+
+        if distance(to: edge) < stashThreshold {
+            navAssistStashedEdge = edge
+            // The stash slides the button off `edge`; `along` is the free-axis
+            // coordinate (Y for left/right edges, X for top/bottom edges).
+            let along: CGFloat
+            switch edge {
+            case .left, .right:  along = clampedY
+            case .top, .bottom:  along = clampedX
+            }
+            stashNavAssist(button, edge: edge, along: along, animated: animated)
         } else {
-            let targetX: CGFloat
-            if onRight {
-                targetX = screenBounds.width - safeArea.right - margin - halfSize
-            } else {
-                targetX = safeArea.left + margin + halfSize
+            let target: CGPoint
+            switch edge {
+            case .left:   target = CGPoint(x: minX, y: clampedY)
+            case .right:  target = CGPoint(x: maxX, y: clampedY)
+            case .top:    target = CGPoint(x: clampedX, y: minY)
+            case .bottom: target = CGPoint(x: clampedX, y: maxY)
             }
-            
-            isNavAssistStashed = false
-            navAssistChevron?.removeFromSuperview()
-            navAssistChevron = nil
-            button.viewWithTag(100)?.isHidden = false
-            
-            let newCenter = CGPoint(x: targetX, y: targetY)
-            if animated {
-                UIView.animate(
-                    withDuration: Constants.standardAnimationDuration,
-                    delay: 0,
-                    usingSpringWithDamping: Constants.standardSpringDamping,
-                    initialSpringVelocity: Constants.standardSpringVelocity,
-                    options: .curveEaseOut
-                ) {
-                    button.center = newCenter
-                    button.alpha = 1.0
-                }
-            } else {
-                button.center = newCenter
-                button.alpha = 1.0
+            restoreNavAssistIcon(button)
+            moveNavAssist(button, to: target, alpha: 1.0, animated: animated)
+        }
+    }
+
+    /// Clears the stashed chevron and restores the normal square.stack icon.
+    private func restoreNavAssistIcon(_ button: UIView) {
+        isNavAssistStashed = false
+        navAssistChevron?.removeFromSuperview()
+        navAssistChevron = nil
+        button.viewWithTag(100)?.isHidden = false
+    }
+
+    /// Animates (or snaps) the floating button to a center point.
+    private func moveNavAssist(_ button: UIView, to center: CGPoint, alpha: CGFloat, animated: Bool) {
+        if animated {
+            UIView.animate(
+                withDuration: Constants.standardAnimationDuration,
+                delay: 0,
+                usingSpringWithDamping: Constants.standardSpringDamping,
+                initialSpringVelocity: Constants.standardSpringVelocity,
+                options: .curveEaseOut
+            ) {
+                button.center = center
+                button.alpha = alpha
             }
+        } else {
+            button.center = center
+            button.alpha = alpha
         }
     }
     
-    private func stashNavAssist(_ button: UIView, onRight: Bool, targetY: CGFloat, animated: Bool) {
+    private func stashNavAssist(_ button: UIView, edge: NavAssistEdge, along: CGFloat, animated: Bool) {
         let screenBounds = keyWindow!.bounds
         let size = Constants.navAssistSize
         // Show half the button so the chevron arrow is always visible
         let visibleAmount: CGFloat = size * 0.50
-        let targetX: CGFloat
-        if onRight {
-            targetX = screenBounds.width - visibleAmount + size / 2
-        } else {
-            targetX = visibleAmount - size / 2
+
+        // Center for the half-off-screen stashed position, and the chevron that
+        // points back toward the screen interior. `along` is the free-axis
+        // coordinate (Y for left/right edges, X for top/bottom edges).
+        let newCenter: CGPoint
+        let chevronName: String
+        switch edge {
+        case .right:
+            newCenter = CGPoint(x: screenBounds.width - visibleAmount + size / 2, y: along)
+            chevronName = "chevron.left"
+        case .left:
+            newCenter = CGPoint(x: visibleAmount - size / 2, y: along)
+            chevronName = "chevron.right"
+        case .bottom:
+            newCenter = CGPoint(x: along, y: screenBounds.height - visibleAmount + size / 2)
+            chevronName = "chevron.up"
+        case .top:
+            newCenter = CGPoint(x: along, y: visibleAmount - size / 2)
+            chevronName = "chevron.down"
         }
-        
+
         isNavAssistStashed = true
-        
+
         // Add or update chevron indicator
-        let chevronName = onRight ? "chevron.left" : "chevron.right"
         let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
         let chevronImage = UIImage(systemName: chevronName, withConfiguration: config)
 
@@ -802,23 +976,8 @@ class AppInfoProvider {
             button.addSubview(chevronView)
             navAssistChevron = chevronView
         }
-        
-        let newCenter = CGPoint(x: targetX, y: targetY)
-        if animated {
-            UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
-                delay: 0,
-                usingSpringWithDamping: Constants.standardSpringDamping,
-                initialSpringVelocity: Constants.standardSpringVelocity,
-                options: .curveEaseOut
-            ) {
-                button.center = newCenter
-                button.alpha = 0.85
-            }
-        } else {
-            button.center = newCenter
-            button.alpha = 0.85
-        }
+
+        moveNavAssist(button, to: newCenter, alpha: 0.85, animated: animated)
     }
     
     private func unstashNavAssist() {
@@ -828,30 +987,19 @@ class AppInfoProvider {
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         
-        isNavAssistStashed = false
-        
         // Remove chevron, restore square.stack icon
-        navAssistChevron?.removeFromSuperview()
-        navAssistChevron = nil
-        button.viewWithTag(100)?.isHidden = false
-        
-        let targetX: CGFloat
-        if navAssistStashedOnRight {
-            targetX = screenBounds.width - safeArea.right - margin - halfSize
-        } else {
-            targetX = safeArea.left + margin + halfSize
+        restoreNavAssistIcon(button)
+
+        // Slide back in from whichever edge it was stashed against.
+        var newCenter = button.center
+        switch navAssistStashedEdge {
+        case .right: newCenter.x = screenBounds.width - safeArea.right - margin - halfSize
+        case .left:  newCenter.x = safeArea.left + margin + halfSize
+        case .bottom: newCenter.y = screenBounds.height - safeArea.bottom - margin - halfSize
+        case .top:    newCenter.y = safeArea.top + margin + halfSize
         }
-        
-        UIView.animate(
-            withDuration: Constants.standardAnimationDuration,
-            delay: 0,
-            usingSpringWithDamping: Constants.standardSpringDamping,
-            initialSpringVelocity: Constants.standardSpringVelocity,
-            options: .curveEaseOut
-        ) {
-            button.center.x = targetX
-            button.alpha = 1.0
-        }
+
+        moveNavAssist(button, to: newCenter, alpha: 1.0, animated: true)
     }
     
     // Find and bring corresponding multitask view to front
@@ -1237,7 +1385,10 @@ struct SwitcherBarContentView: View {
     var body: some View {
         activeBarContent
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        .padding(.bottom, -2)
+        // Offset of the buttons from the outer screen edge (the bottom in
+        // portrait, the right edge in landscape once the bar is rotated).
+        // Negative pushes them tighter to the edge; landscape sits a touch closer.
+        .padding(.bottom, dockManager.isLandscapeBar ? -10 : -2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
     }

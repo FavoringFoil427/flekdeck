@@ -93,12 +93,6 @@ final class LCSpringboardViewController: UIViewController {
         }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        // Restore rotation support for other parts of the app.
-        AppDelegate.orientationLock = .allButUpsideDown
-    }
-
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
