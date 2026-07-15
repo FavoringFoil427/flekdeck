@@ -1885,7 +1885,7 @@ struct AppSwitcherOverlay: View {
     }
     
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             // Blurred dark background
             Color.black.opacity(0.55)
                 .background(.thinMaterial)
@@ -1936,28 +1936,39 @@ struct AppSwitcherOverlay: View {
                 }
                 .padding(.bottom, 20)
 
-                // Control preference toggle, styled as the switcher bar it hides:
-                // a full-width black bar pinned to the very bottom edge. Stays on
-                // the switcher screen; the choice is applied when an app opens.
-                Button(action: {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
-                            .font(.system(size: 15, weight: .medium))
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    // Sit flush on the very bottom edge of the screen, ignoring
-                    // the safe area, like the real switcher bar.
-                    .frame(height: MultitaskDockManager.Constants.barButtonSize)
-                    .background(Color.black)
-                }
-                .buttonStyle(.plain)
+                // Reserve the bar's footprint so Close all sits above the bottom
+                // bar (which is a separate bottom-anchored layer below).
+                Spacer()
+                    .frame(height: 50)
             }
+
+            // Control preference toggle, styled as the switcher bar it hides: a
+            // full-width black bar anchored flush to the very bottom edge with
+            // exactly the real bar's thickness (bar height + bottom safe area).
+            // As its own bottom-aligned ZStack layer it can't be shifted by the
+            // VStack's flow, so its height matches the real bar precisely.
+            Button(action: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
+                        .font(.system(size: 15, weight: .medium))
+                        .contentTransition(.opacity)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // Background outside the label so a press can't dim it and reveal
+            // content through the bar.
+            .background(Color.black)
         }
         .ignoresSafeArea()
     }
