@@ -170,6 +170,21 @@ class AppInfoProvider {
     /// to rotation (its own local geometry is always a horizontal strip and
     /// can't reveal orientation).
     @Published var isLandscapeBar: Bool = false
+
+    /// Persisted user preference for which multitask control to show when an app
+    /// is opened: the switcher bar (false) or the floating button (true). The
+    /// switcher overlay toggles this; it takes effect the next time an app opens.
+    static let preferFloatingButtonKey = "LCMultitaskPreferFloatingButton"
+    @Published var prefersFloatingButton: Bool =
+        LCUtils.appGroupUserDefault.bool(forKey: MultitaskDockManager.preferFloatingButtonKey)
+
+    /// Update and persist the control preference. Does not change what's on
+    /// screen right now — it is applied when an app is next opened.
+    func setPrefersFloatingButton(_ value: Bool) {
+        prefersFloatingButton = value
+        LCUtils.appGroupUserDefault.set(value, forKey: MultitaskDockManager.preferFloatingButtonKey)
+    }
+
     var appSnapshotViews: [String: UIView] = [:]
     var internalPageControllers: [String: UIHostingController<AnyView>] = [:]
 
@@ -491,6 +506,24 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.isVisible = true
+
+            // Honor the saved control preference: show the floating button
+            // instead of the bar when the user has chosen it.
+            if self.prefersFloatingButton {
+                self.isSwitcherBarVisible = false
+                // No bar on screen → don't reserve its strip on internal pages.
+                for (_, controller) in self.internalPageControllers {
+                    self.applyBarInset(to: controller, reserved: false)
+                }
+                hostingController.view.isHidden = true
+                hostingController.view.alpha = 0
+                if !self.isHomeState && self.hasForegroundAppWindow() {
+                    self.showNavAssist(in: keyWindow)
+                }
+                self.refreshOrientationLock()
+                return
+            }
+
             self.isSwitcherBarVisible = true
             self.refreshOrientationLock()
 
@@ -502,9 +535,10 @@ class AppInfoProvider {
             if hostingController.view.superview == nil {
                 keyWindow.addSubview(hostingController.view)
             }
-            
+
             self.updateDockFrame(animated: false)
 
+            hostingController.view.isHidden = false
             hostingController.view.alpha = 0
             hostingController.view.transform = self.barHiddenTransform()
 
@@ -779,7 +813,7 @@ class AppInfoProvider {
     
     // MARK: - Navigation Assist Button
     
-    private func showNavAssist(in window: UIWindow) {
+    private func showNavAssist(in window: UIWindow, animated: Bool = true) {
         // Remove any existing nav assist button to prevent duplicates
         navAssistButton?.removeFromSuperview()
         navAssistButton = nil
@@ -788,20 +822,28 @@ class AppInfoProvider {
         let screenBounds = window.bounds
         let x = screenBounds.width - safeAreaInsets.right - size - Constants.navAssistMargin
         let y = screenBounds.height * 0.5
-        
+
         isNavAssistStashed = false
         navAssistChevron = nil
-        
+
         let button = createNavAssistButton()
         button.center = CGPoint(x: x + size / 2, y: y)
-        button.alpha = 0
-        button.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
-        
+
         window.addSubview(button)
         self.navAssistButton = button
         // Floating button now on stage → allow rotation.
         self.refreshOrientationLock()
 
+        guard animated else {
+            // Instant placement (e.g. when revealing behind the switcher overlay
+            // as it fades) so the button is already in its final state.
+            button.alpha = 1
+            button.transform = .identity
+            return
+        }
+
+        button.alpha = 0
+        button.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
             delay: 0.15,
@@ -1195,6 +1237,9 @@ class AppInfoProvider {
                 self.showDock()
             } else {
                 self.updateDockFrame()
+                // Dock already up: reconcile the control with the saved
+                // preference so opening another app applies a changed choice.
+                self.applyPreferredControl()
             }
             self.ensureControlAccessible()
         }
@@ -1240,6 +1285,9 @@ class AppInfoProvider {
                 self.showDock()
             } else {
                 self.updateDockFrame()
+                // Dock already up: reconcile the control with the saved
+                // preference so opening another app applies a changed choice.
+                self.applyPreferredControl()
             }
             self.ensureControlAccessible()
         }
@@ -1331,6 +1379,11 @@ class AppInfoProvider {
         guard let keyWindow = self.keyWindow else { return }
         
         captureSnapshots()
+        // Sync the preference to whatever control is actually active right now,
+        // so the overlay's toggle reflects the current state — the user may have
+        // switched between the bar and the floating button in-app since it was
+        // last changed here.
+        setPrefersFloatingButton(!isSwitcherBarVisible)
         isAppSwitcherOpen = true
         // The switcher overlay is portrait-only — lock/rotate to portrait now.
         refreshOrientationLock()
@@ -1373,12 +1426,17 @@ class AppInfoProvider {
     
     func dismissAppSwitcher() {
         isAppSwitcherOpen = false
+
+        // Put the chosen control into its final state INSTANTLY (no transition)
+        // so it's already in place behind the overlay before it fades — the app
+        // is revealed already showing the correct control, with no bar flash.
+        applyPreferredControlInstant()
+
         // Restore normal rotation now that the portrait-only overlay is closing.
         refreshOrientationLock()
 
         guard let overlay = switcherOverlayController else { return }
-        
-        // Show the switcher bar again
+
         UIView.animate(
             withDuration: Constants.shortAnimationDuration1,
             delay: 0,
@@ -1386,16 +1444,60 @@ class AppInfoProvider {
         ) {
             overlay.view.alpha = 0
             overlay.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
-            if self.isSwitcherBarVisible && !self.isHomeState {
-                self.hostingController?.view.alpha = 1
-            }
         } completion: { _ in
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
             self.ensureControlAccessible()
         }
     }
-    
+
+    /// Puts the multitask control into its final state for the saved preference
+    /// with NO animation, so when the switcher overlay is removed the correct
+    /// control (bar or floating button) is already in place — no transition and
+    /// no chance for `ensureControlAccessible` to briefly restore the wrong one.
+    private func applyPreferredControlInstant() {
+        guard isDockEnabled(), !isHomeState, hasForegroundAppWindow(),
+              let keyWindow = self.keyWindow else { return }
+        if prefersFloatingButton {
+            // Floating button mode: keep the bar hidden, show the button now.
+            isSwitcherBarVisible = false
+            for (_, controller) in internalPageControllers {
+                applyBarInset(to: controller, reserved: false)
+            }
+            hostingController?.view.isHidden = true
+            hostingController?.view.alpha = 0
+            showNavAssist(in: keyWindow, animated: false)
+        } else {
+            // Switcher bar mode: remove the floating button, show the bar now.
+            navAssistButton?.removeFromSuperview()
+            navAssistButton = nil
+            isNavAssistStashed = false
+            navAssistChevron = nil
+            isSwitcherBarVisible = true
+            for (_, controller) in internalPageControllers {
+                applyBarInset(to: controller, reserved: true)
+            }
+            updateDockFrame(animated: false)
+            hostingController?.view.isHidden = false
+            hostingController?.view.alpha = 1
+            hostingController?.view.transform = barBaseTransform
+        }
+        NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+        refreshOrientationLock()
+    }
+
+    /// Reconciles the on-screen control with the saved preference. Called when
+    /// an app is opened so a preference changed in the switcher takes effect:
+    /// shows the floating button or the switcher bar as chosen.
+    func applyPreferredControl() {
+        guard isDockEnabled(), isVisible else { return }
+        if prefersFloatingButton {
+            if isSwitcherBarVisible { hideSwitcherBar() }
+        } else {
+            if !isSwitcherBarVisible { showSwitcherBar() }
+        }
+    }
+
     func closeApp(uuid: String) {
         guard let app = apps.first(where: { $0.appUUID == uuid }) else { return }
         
@@ -1835,15 +1937,17 @@ struct AppSwitcherOverlay: View {
                         .modifier(GlassCapsuleBackground())
                     }
                     
-                    // Hide Switcher Bar button
+                    // Control preference toggle: switcher bar vs floating button.
+                    // Stays on the switcher screen; the choice is applied the next
+                    // time an app is opened. Label/icon reflect the current choice.
                     Button(action: {
-                        dockManager.dismissAppSwitcher()
-                        dockManager.hideSwitcherBar()
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
                     }) {
                         HStack(spacing: 4) {
-                            Image(systemName: "chevron.down")
+                            Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
                                 .font(.system(size: 11, weight: .semibold))
-                            Text("Hide Switcher Bar")
+                            Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
                                 .font(.system(size: 13, weight: .regular))
                         }
                         .foregroundColor(.white.opacity(0.6))
