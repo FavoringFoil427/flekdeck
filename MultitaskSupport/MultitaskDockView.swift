@@ -735,20 +735,21 @@ class AppInfoProvider {
             
             // Remove the bar reservation from internal pages so they stretch full
             for (_, controller) in self.internalPageControllers {
-                UIView.animate(withDuration: Constants.standardAnimationDuration) {
+                UIView.animate(withDuration: Constants.longAnimationDuration) {
                     self.applyBarInset(to: controller, reserved: false)
                 }
             }
-            
+
+            // Smooth ease-in-out slide fully off the bottom edge (no spring kick),
+            // keeping the bar opaque for most of the travel so it reads as a clean
+            // slide-down rather than a quick fade.
             UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
+                withDuration: Constants.longAnimationDuration,
                 delay: 0,
-                usingSpringWithDamping: Constants.standardSpringDamping,
-                initialSpringVelocity: Constants.standardSpringVelocity,
-                options: .curveEaseOut,
+                options: [.curveEaseInOut, .beginFromCurrentState],
                 animations: {
+                    hostingController.view.transform = self.barHiddenTransform(offset: 160)
                     hostingController.view.alpha = 0
-                    hostingController.view.transform = self.barHiddenTransform(offset: 80)
                 }
             ) { _ in
                 hostingController.view.isHidden = true
@@ -1917,46 +1918,45 @@ struct AppSwitcherOverlay: View {
                 // fall to the bottom edge.
                 Spacer(minLength: 20)
 
-                // Bottom actions — Hide Switcher Bar stays pinned at the very
-                // bottom; the larger spacing lifts Close all a bit higher.
-                VStack(spacing: 28) {
-                    // Close all button
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        dockManager.closeAllApps()
-                    }) {
-                        HStack(spacing: 7) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Close all")
-                                .font(.system(size: 18, weight: .medium))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .modifier(GlassCapsuleBackground())
+                // Close all button (floating capsule, centered above the bar).
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    dockManager.closeAllApps()
+                }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Close all")
+                            .font(.system(size: 18, weight: .medium))
                     }
-                    
-                    // Control preference toggle: switcher bar vs floating button.
-                    // Stays on the switcher screen; the choice is applied the next
-                    // time an app is opened. Label/icon reflect the current choice.
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
-                                .font(.system(size: 13, weight: .regular))
-                        }
-                        .foregroundColor(.white.opacity(0.6))
-                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .modifier(GlassCapsuleBackground())
                 }
-                // The switcher bar is hidden while this overlay is open, so keep
-                // only a small margin — Hide Switcher Bar sits at the very bottom
-                // with no empty strip below it.
-                .padding(.bottom, 8)
+                .padding(.bottom, 20)
+
+                // Control preference toggle, styled as the switcher bar it hides:
+                // a full-width black bar pinned to the very bottom edge. Stays on
+                // the switcher screen; the choice is applied when an app opens.
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    // Sit flush on the very bottom edge of the screen, ignoring
+                    // the safe area, like the real switcher bar.
+                    .frame(height: MultitaskDockManager.Constants.barButtonSize)
+                    .background(Color.black)
+                }
+                .buttonStyle(.plain)
             }
         }
         .ignoresSafeArea()
