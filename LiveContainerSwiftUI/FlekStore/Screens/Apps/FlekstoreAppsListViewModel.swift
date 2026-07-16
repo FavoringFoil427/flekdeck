@@ -215,6 +215,82 @@ class FlekstoreAppsListViewModel: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Instant source switching
+
+    /// In-memory cache of the last-shown apps per source, so switching back to a
+    /// source shows its list instantly instead of reloading from scratch.
+    private var memoryCache: [String: [FSAppModel]] = [:]
+
+    private func repoCacheKey(_ source: RepositorySource) -> String {
+        switch source {
+        case .flekstore: return "__flekstore__"
+        case .custom(let url): return url
+        }
+    }
+
+    /// Switch to `source` and show its apps immediately from cache (in-memory or
+    /// the provided disk cache), refreshing in the background. Only falls back to
+    /// an empty loading state when there is nothing cached to show.
+    func switchRepository(to source: RepositorySource, diskPreloaded: [FSAppModel]? = nil) async {
+        // Save the outgoing list. For FlekStore, only cache the default
+        // (uncategorised) view so we never restore a category-filtered list.
+        if !apps.isEmpty && (repository != .flekstore || selectedCategoryID == nil) {
+            memoryCache[repoCacheKey(repository)] = apps
+        }
+
+        repository = source
+        searchQuery = ""
+        selectedCategoryID = nil
+        currentPage = 0
+        canLoadMore = true
+
+        if let preloaded = memoryCache[repoCacheKey(source)] ?? diskPreloaded, !preloaded.isEmpty {
+            apps = preloaded
+            isLoading = false
+            await silentRefresh(expecting: source)
+        } else {
+            apps = []
+            await fetchApps()
+        }
+    }
+
+    /// Re-fetches the first page and replaces the list without clearing it first,
+    /// so the visible cached apps don't flash to an empty loading state.
+    private func silentRefresh(expecting source: RepositorySource) async {
+        guard let baseURL = currentEndpoint() else { return }
+        do {
+            switch source {
+            case .flekstore:
+                var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+                components?.queryItems = [
+                    .init(name: "filter", value: selectedCategoryID ?? "updates"),
+                    .init(name: "page", value: "0"),
+                    .init(name: "search", value: "false")
+                ]
+                guard let url = components?.url else { return }
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard repository == source else { return }   // user switched again
+                let decoded = try JSONDecoder().decode([FSAppModel].self, from: data)
+                let filtered = isAdult ? decoded : decoded.filter { $0.app_isAdult != 1 }
+                apps = filtered
+                currentPage = filtered.isEmpty ? 0 : 1
+                canLoadMore = !filtered.isEmpty
+                if !filtered.isEmpty { memoryCache[repoCacheKey(source)] = filtered }
+
+            case .custom(let url):
+                let (data, _) = try await URLSession.shared.data(from: baseURL)
+                guard repository == source else { return }
+                let mapped = try decodeCustomRepo(data)
+                apps = mapped
+                canLoadMore = false
+                memoryCache[repoCacheKey(source)] = mapped
+                RepoCatalogCache.shared.store(apps: mapped, for: url)
+            }
+        } catch {
+            // Keep the cached list on failure.
+        }
+    }
+
     func refreshSubscriptionStatus() async {
         loadCachedSubscription()
         await checkSubscription()

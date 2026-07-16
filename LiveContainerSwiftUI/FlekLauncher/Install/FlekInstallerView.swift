@@ -613,11 +613,16 @@ struct FlekInstallerView: View {
     }
 
     private func switchTo(_ repo: AppRepository) async {
-        viewModel.searchQuery = ""
         searchActive = false
         searchFocused = false
-        viewModel.repository = Self.source(for: repo)
-        await viewModel.resetAndFetchApps()
+        let source = Self.source(for: repo)
+        // Custom repos are pre-fetched to disk; show that cache instantly and
+        // refresh in the background instead of flashing an empty loading state.
+        var disk: [FSAppModel]? = nil
+        if case .custom(let url) = source {
+            disk = RepoCatalogCache.shared.cachedApps(for: url)
+        }
+        await viewModel.switchRepository(to: source, diskPreloaded: disk)
     }
 
     private func updateSwitcherBarState() {
