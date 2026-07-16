@@ -7,6 +7,7 @@
 
 import Combine
 import SwiftUI
+import BlurSwiftUI
 import UniformTypeIdentifiers
 import UIKit
 
@@ -172,6 +173,22 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
                 homeContentView
                 .id(homeRefreshToggle)
+
+            // Progressive blur behind the bottom bar (list layout): clear at the
+            // top, ramping to full blur down toward the search / multitask bar.
+            if homeLayout == FlekHomeLayout.list.rawValue && !showSearch {
+                GeometryReader { geo in
+                    VariableBlur(direction: .up)
+                        .maximumBlurRadius(3)
+                        // Reach up to just above the search icon (65pt icon +
+                        // 5pt bottom padding, past the bottom safe area).
+                        .frame(height: geo.safeAreaInsets.bottom + 76)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
 
             if !showSearch {
             VStack {
