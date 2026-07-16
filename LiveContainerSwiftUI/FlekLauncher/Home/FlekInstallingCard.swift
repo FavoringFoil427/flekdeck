@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import Kingfisher
 
 private let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
 
@@ -22,9 +23,12 @@ struct FlekInstallIcon: View {
         ZStack {
             Group {
                 if let urlStr = state.iconURL, let url = URL(string: urlStr) {
-                    AsyncImage(url: url) { img in img.resizable().scaledToFill() } placeholder: {
-                        Color(white: 0.85)
-                    }
+                    KFImage(url)
+                        .placeholder { Color(white: 0.85) }
+                        .cacheOriginalImage()
+                        .fade(duration: 0.15)
+                        .resizable()
+                        .scaledToFill()
                 } else {
                     Color(white: 0.85)
                 }

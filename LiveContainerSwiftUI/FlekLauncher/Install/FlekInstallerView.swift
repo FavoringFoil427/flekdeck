@@ -17,6 +17,7 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import Kingfisher
 
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
@@ -40,6 +41,9 @@ struct FlekInstallerView: View {
     @State private var choosingIPA = false
     @State private var switcherBarVisible = true
     @State private var barIsLandscape = false
+    /// Bumped to (re)center the selected repo in the pill after the sources
+    /// sheet is dismissed, so the shift animation plays once it's visible.
+    @State private var pillRecenterNonce = 0
 
     /// The bottom bar/blur only need to make room when the switcher bar actually
     /// sits along the bottom edge — i.e. portrait. In landscape the bar is on the
@@ -122,7 +126,21 @@ struct FlekInstallerView: View {
             await viewModel.resetAndFetchApps()
             Task { await MultiRepoSearchModel.prefetchAllRepos() }
         }
-        .sheet(isPresented: $showSources, onDismiss: { repos = Self.loadRepos() }) {
+        .sheet(isPresented: $showSources, onDismiss: {
+            // AppRepository.id is a fresh UUID on every decode, so reloading
+            // from disk renumbers the repos. Re-anchor the selection on the
+            // stable sourceURL so the pill highlight survives the reload.
+            let selectedURL = repos.first(where: { $0.id == selectedRepoID })?.sourceURL
+            repos = Self.loadRepos()
+            if let selectedURL, let match = repos.first(where: { $0.sourceURL == selectedURL }) {
+                selectedRepoID = match.id
+            }
+            // Let the sheet finish dismissing and repos reload before scrolling
+            // so the centering animation is actually visible in the pill.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                pillRecenterNonce += 1
+            }
+        }) {
             FlekSourcesPopup(repos: $repos) { repo in
                 selectedRepoID = repo.id
                 Task { await switchTo(repo) }
@@ -154,67 +172,90 @@ struct FlekInstallerView: View {
     // MARK: Source carousel
 
     private var sourceCarousel: some View {
-        ZStack(alignment: .trailing) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(repos) { repo in
-                        let selected = repo.id == selectedRepoID
-                        Button {
-                            selectedRepoID = repo.id
-                            Task { await switchTo(repo) }
-                        } label: {
-                            HStack(spacing: 8) {
-                                FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 7)
-                                Text(repo.name)
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
+        ScrollViewReader { proxy in
+            ZStack(alignment: .trailing) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(repos) { repo in
+                            let selected = repo.id == selectedRepoID
+                            Button {
+                                withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
+                                    selectedRepoID = repo.id
+                                }
+                                Task { await switchTo(repo) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 7)
+                                    Text(repo.name)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                                .background(
+                                    Capsule().fill(selected ? Color(.systemGray5) : Color.clear)
+                                )
                             }
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(
-                                Capsule().fill(selected ? Color(.systemGray5) : Color.clear)
-                            )
+                            .buttonStyle(.plain)
+                            .id(repo.id)
                         }
-                        .buttonStyle(.plain)
+                        // Extra trailing space so content doesn't hide behind the icon
+                        Spacer().frame(width: 40)
                     }
-                    // Extra trailing space so content doesn't hide behind the icon
-                    Spacer().frame(width: 40)
+                    .padding(4)
                 }
-                .padding(4)
+
+                // Manage-sources icon pinned to the right, with a blur fade
+                // so scrolling repos don't visually overlap it.
+                HStack(spacing: 0) {
+                    // Gradient fade from clear → background
+                    LinearGradient(
+                        colors: [
+                            Color(.secondarySystemGroupedBackground).opacity(0),
+                            Color(.secondarySystemGroupedBackground)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 24)
+
+                    Button {
+                        showSources = true
+                    } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(.primary.opacity(0.7))
+                            .frame(width: 48, height: 52)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color(.secondarySystemGroupedBackground))
+                }
             }
-
-            // Manage-sources icon pinned to the right, with a blur fade
-            // so scrolling repos don't visually overlap it.
-            HStack(spacing: 0) {
-                // Gradient fade from clear → background
-                LinearGradient(
-                    colors: [
-                        Color(.secondarySystemGroupedBackground).opacity(0),
-                        Color(.secondarySystemGroupedBackground)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 24)
-
-                Button {
-                    showSources = true
-                } label: {
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .frame(width: 48, height: 52)
-                }
-                .buttonStyle(.plain)
-                .background(Color(.secondarySystemGroupedBackground))
+            .frame(height: 52)
+            .background(
+                Capsule().fill(Color(.secondarySystemGroupedBackground))
+                    .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+            )
+            .clipShape(Capsule())
+            // Center the tapped repo (skip while the sources sheet is open so the
+            // move plays *after* dismissal instead of behind the sheet).
+            .onChange(of: selectedRepoID) { id in
+                guard let id, !showSources else { return }
+                centerSelectedRepo(id, proxy: proxy)
+            }
+            // Fired after the sources sheet closes: replay the shift for a repo
+            // chosen from the manage-sources menu.
+            .onChange(of: pillRecenterNonce) { _ in
+                guard let id = selectedRepoID else { return }
+                centerSelectedRepo(id, proxy: proxy)
             }
         }
-        .frame(height: 52)
-        .background(
-            Capsule().fill(Color(.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
-        )
-        .clipShape(Capsule())
+    }
+
+    private func centerSelectedRepo(_ id: UUID, proxy: ScrollViewProxy) {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            proxy.scrollTo(id, anchor: .center)
+        }
     }
 
     // MARK: Category bar
@@ -669,22 +710,26 @@ private struct CheckmarkShape: Shape {
     }
 }
 
-/// Async remote icon with a placeholder.
+/// Async remote icon with a placeholder. Uses Kingfisher (already a project
+/// dependency) so icons are cached in memory + on disk and keyed by URL. A
+/// cached icon renders on the first frame — no placeholder flash — even when
+/// the hosting row is torn down and rebuilt (e.g. after the repo list is
+/// re-decoded and every repo gets a new identity).
 struct FlekRemoteIcon: View {
     let url: String
     var size: CGFloat
     var corner: CGFloat
 
     var body: some View {
-        AsyncImage(url: URL(string: url)) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            default:
+        KFImage(URL(string: url))
+            .placeholder {
                 RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Color(.systemGray5))
             }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .cacheOriginalImage()
+            .fade(duration: 0.15)   // only animates on a network load, not on a cache hit
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 }

@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import Kingfisher
 
 struct FlekSearchView: View {
     @Binding var isPresented: Bool
@@ -142,13 +143,14 @@ struct FlekSearchView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 if let iconUrl, let url = URL(string: iconUrl) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.clear
-                    }
-                    .frame(width: 18, height: 18)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    KFImage(url)
+                        .placeholder { Color.clear }
+                        .cacheOriginalImage()
+                        .fade(duration: 0.15)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 18, height: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))

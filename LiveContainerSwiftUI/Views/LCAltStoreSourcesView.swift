@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Kingfisher
 import UIKit
 import CryptoKit
 
@@ -1058,18 +1059,12 @@ private struct SourceIconView: View {
     
     var body: some View {
         if let url {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty:
-                    placeholder
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .failure:
-                    placeholder
-                @unknown default:
-                    placeholder
-                }
-            }
+            KFImage(url)
+                .placeholder { placeholder }
+                .cacheOriginalImage()
+                .fade(duration: 0.15)
+                .resizable()
+                .scaledToFill()
         } else {
             placeholder
         }
