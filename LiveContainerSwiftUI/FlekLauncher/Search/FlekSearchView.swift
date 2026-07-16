@@ -489,37 +489,3 @@ private extension View {
     func searchPillBackground()   -> some View { modifier(GlassBackground(shape: Capsule())) }
     func searchCircleBackground() -> some View { modifier(GlassBackground(shape: Circle())) }
 }
-// MARK: - Blur backdrop (UIVisualEffectView)
-
-struct BlurBackdropView: UIViewRepresentable {
-    var style: UIBlurEffect.Style
-    var intensity: CGFloat = 1.0  // 0.0 = no blur, 1.0 = full blur
-
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView()
-        let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) {
-            view.effect = UIBlurEffect(style: style)
-        }
-        animator.fractionComplete = intensity
-        animator.pausesOnCompletion = true
-        context.coordinator.animator = animator
-        return view
-    }
-
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
-        context.coordinator.animator?.fractionComplete = intensity
-    }
-
-    static func dismantleUIView(_ uiView: UIVisualEffectView, coordinator: Coordinator) {
-        coordinator.animator?.stopAnimation(true)
-        coordinator.animator = nil
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator {
-        var animator: UIViewPropertyAnimator?
-        deinit { animator?.stopAnimation(true) }
-    }
-}
-

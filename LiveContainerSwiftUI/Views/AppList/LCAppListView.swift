@@ -242,7 +242,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
 
             if showSearch {
-                BlurBackdropView(style: .systemUltraThinMaterialDark, intensity: 0.5)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)   // use dark material variant, no white tint
                     .ignoresSafeArea()
                     .onTapGesture { showSearch = false }
             }
