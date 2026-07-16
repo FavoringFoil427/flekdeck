@@ -167,8 +167,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 FlekBlurredWallpaperOverlay(radius: 30)
 
                 homeContentView
-                .padding(.top, 8)
-                .padding(.bottom, 89)
                 .id(homeRefreshToggle)
 
             if !showSearch {
@@ -612,6 +610,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     contextMenuProvider: { homeUIMenu(for: $0) },
                     scrollToPage: $homeScrollToPage
                 )
+                // Grid keeps the original fixed insets (list handles its own).
+                .padding(.top, 8)
+                .padding(.bottom, 89)
             }
         }
     }
@@ -1140,17 +1141,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @ViewBuilder
     func homeContextMenu(for item: FlekHomeItem) -> some View {
         switch item {
-        case .defaultApp:
+        case .defaultApp(let kind):
             // Built-in apps: only the "arrange" action is offered (they can be
-            // moved but not removed, have no launch mode / settings / uninstall).
-            Button {
-                // Delay so the context menu dismissal animation finishes
-                // before the view switches to edit mode.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    isEditing = true
+            // moved but not removed). Settings/Installer have no menu (matches grid).
+            if kind != .settings && kind != .installer {
+                Button {
+                    // Delay so the context menu dismissal animation finishes
+                    // before the view switches to edit mode.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        isEditing = true
+                    }
+                } label: {
+                    Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
                 }
-            } label: {
-                Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
             }
         case .installed(let app):
             installedContextMenu(app)
@@ -1170,13 +1173,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     FlekLaunchModeStore.shared.set(.single, for: app)
                     homeRefreshToggle.toggle()
                 } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
+                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
                 }
                 Button {
                     FlekLaunchModeStore.shared.set(.parallel, for: app)
                     homeRefreshToggle.toggle()
                 } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
+                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
                 }
             }
             .menuActionDismissBehavior(.disabled)
@@ -1186,13 +1189,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     FlekLaunchModeStore.shared.set(.single, for: app)
                     homeRefreshToggle.toggle()
                 } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
+                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
                 }
                 Button {
                     FlekLaunchModeStore.shared.set(.parallel, for: app)
                     homeRefreshToggle.toggle()
                 } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
+                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
                 }
             }
         } else {
@@ -1200,17 +1203,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 FlekLaunchModeStore.shared.set(.single, for: app)
                 homeRefreshToggle.toggle()
             } label: {
-                Label("lc.appBanner.runSingle".loc, systemImage: effectiveIsParallel ? "macwindow" : "checkmark")
+                Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
             }
             Button {
                 FlekLaunchModeStore.shared.set(.parallel, for: app)
                 homeRefreshToggle.toggle()
             } label: {
-                Label("lc.appBanner.runParallel".loc, systemImage: effectiveIsParallel ? "checkmark" : "macwindow.on.rectangle")
+                Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
             }
         }
-
-        Divider()
 
         Menu {
             Button {
@@ -1233,6 +1234,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
 
         Button {
+            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
+        } label: {
+            Label("lc.tabView.settings".loc, systemImage: "gear")
+        }
+
+        Button {
             // Delay so the context menu dismissal animation finishes
             // before the view switches to edit mode.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -1240,12 +1247,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         } label: {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
-        }
-
-        Button {
-            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
-        } label: {
-            Label("lc.tabView.settings".loc, systemImage: "gear")
         }
 
         if !app.uiIsShared {

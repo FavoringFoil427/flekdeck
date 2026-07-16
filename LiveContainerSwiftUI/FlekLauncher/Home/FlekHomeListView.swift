@@ -24,8 +24,9 @@ struct FlekHomeListView<Menu: View>: View {
     @State private var draggedItem: FlekHomeItem?
 
     var body: some View {
+        GeometryReader { geo in
         ScrollView {
-            LazyVStack(spacing: 10) {
+            LazyVStack(spacing: 5) {
                 if isEditing {
                     ForEach(items.filter { !$0.isPlaceholder }) { item in
                         editRowWithDrag(for: item)
@@ -53,7 +54,12 @@ struct FlekHomeListView<Menu: View>: View {
                 }
             }
             .padding(.horizontal, FlekTheme.screenHPadding)
-            .padding(.top, 8)
+            // Inset past the top safe area and the bottom bar so rows scroll
+            // *behind* them instead of stopping short at their edges.
+            .padding(.top, geo.safeAreaInsets.top + 16)
+            .padding(.bottom, geo.safeAreaInsets.bottom + 89)
+        }
+        .ignoresSafeArea(edges: [.top, .bottom])
         }
     }
 
@@ -112,7 +118,7 @@ struct FlekHomeListView<Menu: View>: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(Color.white.opacity(0.15), lineWidth: 1, antialiased: true)
             )
-            .frame(height: 68)
+            .frame(height: 84)
     }
 
     // MARK: - Normal Mode Row (tappable with context menu)
@@ -184,7 +190,7 @@ struct FlekAppRow<Icon: View>: View {
     @ViewBuilder var icon: () -> Icon
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             if isEditing && canDelete {
                 Button(action: onDelete) {
                     Image(systemName: "minus.circle.fill")
@@ -197,23 +203,23 @@ struct FlekAppRow<Icon: View>: View {
             }
 
             icon()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .frame(width: 68, height: 68)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                 .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     if isNew {
-                        Circle().fill(Color.blue).frame(width: 7, height: 7)
+                        Circle().fill(Color.blue).frame(width: 8, height: 8)
                     }
                     Text(title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(.system(size: 19))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: 14, weight: .regular))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -228,22 +234,23 @@ struct FlekAppRow<Icon: View>: View {
             } else {
                 Button(action: onRun) {
                     Text("lc.appBanner.run".loc)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: 16))
                         .foregroundStyle(.primary.opacity(0.85))
-                        .padding(.horizontal, 16)
-                        .frame(height: 30)
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
                         .background(
                             Capsule()
                                 .fill(.ultraThinMaterial)
-                                .overlay(Capsule().fill(Color.white.opacity(0.35)))
+                                .overlay(Capsule().fill(Color.white.opacity(0.65)))
                                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.4), lineWidth: 0.5))
                         )
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 68)
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
+        .frame(height: 84)
         .background {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -311,16 +318,16 @@ struct FlekInstallRow: View {
     let state: FlekInstallState
 
     var body: some View {
-        HStack(spacing: 14) {
-            FlekInstallIcon(state: state, size: 48, corner: 11)
+        HStack(spacing: 16) {
+            FlekInstallIcon(state: state, size: 68, corner: 15)
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.name ?? "lc.flek.installing".loc)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(.system(size: 19))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if state.indeterminate {
                     Text("lc.flek.installing".loc)
-                        .font(.system(size: 12))
+                        .font(.system(size: 14))
                         .foregroundStyle(.secondary)
                 } else {
                     ProgressView(value: state.fraction).tint(Color(red: 0, green: 117/255, blue: 1))
@@ -329,8 +336,9 @@ struct FlekInstallRow: View {
             Spacer(minLength: 8)
             Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 68)
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
+        .frame(height: 84)
         .background {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.ultraThinMaterial)
