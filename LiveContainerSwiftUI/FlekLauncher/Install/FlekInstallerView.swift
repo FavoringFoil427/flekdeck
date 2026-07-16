@@ -231,11 +231,7 @@ struct FlekInstallerView: View {
                                         .lineLimit(1)
                                 }
                                 .padding(.horizontal, 14).padding(.vertical, 7)
-                                .background(
-                                    // Figma "Selection" fill (#EDEDED) for the selected repo;
-                                    // unselected repos are transparent (pill shows through).
-                                    Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
-                                )
+                                .repoChipSelection(selected)
                             }
                             .buttonStyle(.plain)
                             .id(repo.id)
@@ -271,14 +267,7 @@ struct FlekInstallerView: View {
                 }
             }
             .frame(height: 52)
-            .background(
-                // Figma: frosted white glass — ~rgba(255,255,255,0.65) over the blur.
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Capsule().fill(Color.white.opacity(0.5)))
-            )
-            .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.12), radius: 20, y: 8)   // Figma: 0 8 40 / 12%
+            .repoPillGlass()
             // Center the tapped repo (skip while the sources sheet is open so the
             // move plays *after* dismissal instead of behind the sheet).
             .onChange(of: selectedRepoID) { id in
@@ -657,6 +646,46 @@ struct FlekInstallerView: View {
             return []
         }
         return decoded
+    }
+}
+
+private extension View {
+    /// The source pill surface: native Liquid Glass on iOS 26+, and a frosted
+    /// white material capsule (matching the FlekSign design) on older versions.
+    @ViewBuilder
+    func repoPillGlass() -> some View {
+        if #available(iOS 26, *) {
+            self
+                .clipShape(Capsule())
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            self
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(Capsule().fill(Color.white.opacity(0.5)))
+                )
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+        }
+    }
+
+    /// The selected repo chip: a native Liquid Glass thumb on iOS 26+, and the
+    /// FlekSign #EDEDED capsule on older versions. Unselected repos are clear.
+    @ViewBuilder
+    func repoChipSelection(_ selected: Bool) -> some View {
+        if #available(iOS 26, *) {
+            if selected {
+                // Subtle grey tint so the selected thumb reads against the glass pill.
+                self.glassEffect(.regular.tint(Color.gray.opacity(0.3)), in: Capsule())
+            } else {
+                self
+            }
+        } else {
+            self.background(
+                Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
+            )
+        }
     }
 }
 
