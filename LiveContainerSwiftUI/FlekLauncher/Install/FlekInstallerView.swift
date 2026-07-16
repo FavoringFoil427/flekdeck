@@ -389,12 +389,12 @@ struct FlekInstallerView: View {
             Spacer()
         } else if repoSearch.sections.isEmpty && !repoSearch.isLoading {
             VStack(spacing: 12) {
-                Image(systemName: "square.dashed")
-                    .font(.system(size: 56))
+                Image(systemName: "app.grid")
+                    .font(.system(size: 56, weight: .thin))
                     .foregroundStyle(Color(.systemGray3))
                 Text("Nothing found")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color(.systemGray))
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.black)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
