@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0759AEE12F29384E00301332 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 0759AEE02F29384E00301332 /* Kingfisher */; };
+		07814620300900E30038D8E1 /* BlurSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0781461F300900E30038D8E1 /* BlurSwiftUI */; };
 		07BB58BF2F293760003E7410 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 07BB58BE2F293760003E7410 /* Kingfisher */; };
 		173545AF2E2C7913001B3B4C /* SideStore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 173545A82E2C7913001B3B4C /* SideStore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		17413FBC2D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -360,6 +361,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0759AEE12F29384E00301332 /* Kingfisher in Frameworks */,
+				07814620300900E30038D8E1 /* BlurSwiftUI in Frameworks */,
 				E16D95752E1CD2B90068EB63 /* LiveContainerShared.framework in Frameworks */,
 				174140D62D9C176F00F3F928 /* libarchive.tbd in Frameworks */,
 			);
@@ -592,6 +594,7 @@
 			name = LiveContainerSwiftUI;
 			packageProductDependencies = (
 				0759AEE02F29384E00301332 /* Kingfisher */,
+				0781461F300900E30038D8E1 /* BlurSwiftUI */,
 			);
 			productName = LiveContainerSwiftUI;
 			productReference = 17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */;
@@ -2130,6 +2133,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 07BB58BD2F293760003E7410 /* XCRemoteSwiftPackageReference "Kingfisher" */;
 			productName = Kingfisher;
+		};
+		0781461F300900E30038D8E1 /* BlurSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0781461E300900E30038D8E1 /* XCRemoteSwiftPackageReference "BlurUIKit" */;
+			productName = BlurSwiftUI;
 		};
 		07BB58BE2F293760003E7410 /* Kingfisher */ = {
 			isa = XCSwiftPackageProductDependency;

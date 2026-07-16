@@ -18,6 +18,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import Kingfisher
+import BlurSwiftUI
 
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
@@ -79,24 +80,20 @@ struct FlekInstallerView: View {
             }
             .overlay(alignment: .bottom) {
                 if !searchActive {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .mask(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .black.opacity(0.4), location: 0.35),
-                                    .init(color: .black, location: 0.7)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(height: 120)
-                        .offset(y: barOccupiesBottom ? 0 : 52)
-                        .allowsHitTesting(false)
-                        .ignoresSafeArea()
-                        .transition(.opacity)
+                    // Real progressive blur behind the bottom bar (BlurUIKit):
+                    // clear at the top, ramping to full blur at the bottom. Sized
+                    // so its top edge lands just above the Import IPA button
+                    // (48pt button + 12pt bottom padding, past the safe area).
+                    GeometryReader { geo in
+                        VariableBlur(direction: .up)
+                            .maximumBlurRadius(12)
+                            .frame(height: geo.safeAreaInsets.bottom + 66)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .ignoresSafeArea(edges: .bottom)
+                            .offset(y: barOccupiesBottom ? 0 : 52)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottom) {
