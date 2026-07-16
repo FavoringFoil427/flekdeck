@@ -251,7 +251,8 @@ struct FlekAppRow<Icon: View>: View {
                 Button(action: onRun) {
                     Text("lc.appBanner.run".loc)
                         .font(.system(size: 16))
-                        .foregroundStyle(.primary.opacity(0.85))
+                        // Always black — the Run pill is light in both light and dark mode.
+                        .foregroundStyle(Color.black.opacity(0.85))
                         .padding(.horizontal, 12)
                         .frame(height: 28)
                         .background(
