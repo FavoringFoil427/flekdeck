@@ -22,6 +22,7 @@ struct FlekSearchView: View {
     @State private var debouncedQuery = ""
     @State private var debounceTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
+    @State private var bottomBarHeight: CGFloat = 66   // measured at runtime; sensible fallback
     @StateObject private var repoSearch = MultiRepoSearchModel()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -42,7 +43,14 @@ struct FlekSearchView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
                     .contentShape(Rectangle())
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: BottomBarHeightKey.self,
+                                                   value: proxy.size.height)
+                        }
+                    )
             }
+            .onPreferenceChange(BottomBarHeightKey.self) { bottomBarHeight = $0 }
         }
         .onAppear {
             fieldFocused = true
@@ -122,7 +130,9 @@ struct FlekSearchView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 80)
-                .padding(.bottom, 8)
+                // Clear the bottom search bar (measured at runtime) plus a
+                // small gap, so the last result can scroll fully above it.
+                .padding(.bottom, bottomBarHeight + 16)
             }
         }
     }
@@ -214,6 +224,15 @@ struct FlekSearchView: View {
         debouncedQuery = ""
         fieldFocused = false
         isPresented = false
+    }
+}
+
+// MARK: - Layout preference
+
+private struct BottomBarHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 66
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
