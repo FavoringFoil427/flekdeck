@@ -104,6 +104,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @StateObject private var homeUninstallAlert = YesNoHelper()
     @StateObject private var homeUninstallFolderAlert = YesNoHelper()
     @State private var homeRefreshToggle = false
+    // Bumped when a launch mode is picked from the list menu. Unlike
+    // homeRefreshToggle (which drives .id and rebuilds the view, closing the
+    // menu), this just refreshes badges in place so the menu stays open.
+    @State private var launchModeVersion = 0
     @State private var gameWarningTarget: FlekGameWarningTarget?
     @State private var orderedHomeItems: [FlekHomeItem] = []
 
@@ -595,6 +599,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     },
                     onDropCompleted: { persistHomeOrder() },
                     onCancelInstall: { installQueue.cancel($0) },
+                    showsSingleBadge: { _ = launchModeVersion; return FlekLaunchModeStore.shared.showsSingleBadge(for: $0) },
                     contextMenu: { item in homeContextMenu(for: item) }
                 )
             } else {
@@ -1059,7 +1064,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         let runSingle = UIAction(
             title: "lc.appBanner.runSingle".loc,
-            image: UIImage(systemName: "macwindow"),
+            image: UIImage(systemName: "app.dashed"),
             attributes: keepOpen,
             state: effectiveIsParallel ? .off : .on
         ) { _ in
@@ -1167,17 +1172,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         let currentMode = FlekLaunchModeStore.shared.mode(for: app)
         let effectiveIsParallel = currentMode != nil ? (currentMode == .parallel) : app.shouldLaunchInMultitaskMode
 
+        // Fixed grid symbols; the menu stays open on tap (launchModeVersion +
+        // menuActionDismissBehavior) so multiple picks behave like the grid.
         if #available(iOS 16.4, *) {
             ControlGroup {
                 Button {
                     FlekLaunchModeStore.shared.set(.single, for: app)
-                    homeRefreshToggle.toggle()
+                    launchModeVersion += 1
                 } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                    Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
                 }
                 Button {
                     FlekLaunchModeStore.shared.set(.parallel, for: app)
-                    homeRefreshToggle.toggle()
+                    launchModeVersion += 1
                 } label: {
                     Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
                 }
@@ -1187,13 +1194,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             ControlGroup {
                 Button {
                     FlekLaunchModeStore.shared.set(.single, for: app)
-                    homeRefreshToggle.toggle()
+                    launchModeVersion += 1
                 } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                    Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
                 }
                 Button {
                     FlekLaunchModeStore.shared.set(.parallel, for: app)
-                    homeRefreshToggle.toggle()
+                    launchModeVersion += 1
                 } label: {
                     Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
                 }
@@ -1201,13 +1208,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         } else {
             Button {
                 FlekLaunchModeStore.shared.set(.single, for: app)
-                homeRefreshToggle.toggle()
+                launchModeVersion += 1
             } label: {
-                Label("lc.appBanner.runSingle".loc, systemImage: "macwindow")
+                Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
             }
             Button {
                 FlekLaunchModeStore.shared.set(.parallel, for: app)
-                homeRefreshToggle.toggle()
+                launchModeVersion += 1
             } label: {
                 Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
             }

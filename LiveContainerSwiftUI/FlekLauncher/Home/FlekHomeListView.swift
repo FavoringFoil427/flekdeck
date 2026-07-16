@@ -19,6 +19,9 @@ struct FlekHomeListView<Menu: View>: View {
     var onDelete: (FlekHomeItem) -> Void
     var onDropCompleted: () -> Void = {}
     var onCancelInstall: (InstallItem) -> Void = { _ in }
+    /// Whether to show the single-mode launch badge (app.dashed) for an app,
+    /// matching the grid's per-cell indicator.
+    var showsSingleBadge: (LCAppModel) -> Bool = { _ in false }
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var draggedItem: FlekHomeItem?
@@ -129,6 +132,7 @@ struct FlekHomeListView<Menu: View>: View {
             title: title(for: item),
             subtitle: subtitle(for: item),
             isNew: newDot(for: item),
+            showsSingleBadge: singleBadge(for: item),
             isEditing: false,
             canDelete: canDelete(item),
             onRun: { onTap(item) },
@@ -139,6 +143,11 @@ struct FlekHomeListView<Menu: View>: View {
     }
 
     // MARK: - Helpers
+
+    private func singleBadge(for item: FlekHomeItem) -> Bool {
+        if case .installed(let app) = item { return showsSingleBadge(app) }
+        return false
+    }
 
     @ViewBuilder
     private func iconView(for item: FlekHomeItem) -> some View {
@@ -183,6 +192,7 @@ struct FlekAppRow<Icon: View>: View {
     let title: String
     var subtitle: String?
     var isNew: Bool = false
+    var showsSingleBadge: Bool = false
     var isEditing: Bool = false
     var canDelete: Bool = true
     var onRun: () -> Void
@@ -216,6 +226,12 @@ struct FlekAppRow<Icon: View>: View {
                         .font(.system(size: 19))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                    if showsSingleBadge {
+                        // Same indicator as the grid cell: app launches in single mode.
+                        Image(systemName: "app.dashed")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 if let subtitle {
                     Text(subtitle)
