@@ -1399,7 +1399,11 @@ class AppInfoProvider {
                 .environment(\.colorScheme, .dark)
         )
         let hc = UIHostingController(rootView: overlayView)
-        hc.view.backgroundColor = .clear
+        // Opaque black on the hosting view (which fills the whole window) so the
+        // very bottom / home-indicator region is always covered — even when the
+        // SwiftUI content is inset by a guest app's bottom safe area, which
+        // otherwise left the springboard showing through as a gap under the bar.
+        hc.view.backgroundColor = .black
         hc.view.frame = keyWindow.bounds
         hc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hc.overrideUserInterfaceStyle = .dark
@@ -1968,8 +1972,9 @@ struct AppSwitcherOverlay: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // Background outside the label so a press can't dim it and reveal
-            // content through the bar.
+            // Background outside the label so a press can't dim it. The opaque
+            // ZStack base already covers what's behind, so the bar can stay short
+            // without a gap.
             .background(Color.black)
         }
         .ignoresSafeArea()
