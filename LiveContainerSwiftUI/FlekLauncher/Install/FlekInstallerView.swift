@@ -57,6 +57,15 @@ struct FlekInstallerView: View {
         ZStack {
             Self.screenBG.ignoresSafeArea()
 
+            // App list fills the whole area and scrolls *behind* the bars,
+            // which float on top with transparent backgrounds.
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Top-edge blur: sits above the list but below the bars so the
+            // content fades out as it scrolls up under the pill/category bar.
+            topEdgeBlur
+
             VStack(spacing: 0) {
                 sourceCarousel
                     .padding(.horizontal, 16)
@@ -66,7 +75,7 @@ struct FlekInstallerView: View {
                     categoryBar.padding(.top, 8)
                 }
 
-                content
+                Spacer(minLength: 0)
             }
             .overlay(alignment: .bottom) {
                 if !searchActive {
@@ -169,6 +178,38 @@ struct FlekInstallerView: View {
         )
     }
 
+    /// Distance from the top safe-area edge down to the bottom of the floating
+    /// bars (source pill + category bar when shown).
+    private var barsBottomInset: CGFloat {
+        var inset: CGFloat = 8 + 52          // pill top padding + pill height
+        if viewModel.repository == .flekstore && !searchActive {
+            inset += 8 + 44                  // category bar top padding + height
+        }
+        return inset
+    }
+
+    /// Height reserved at the top so the first list row starts just below the
+    /// floating bars, which overlay the scrolling list instead of pushing it down.
+    private var barsTopInset: CGFloat { barsBottomInset + 10 }
+
+    /// Progressive blur from the very top edge of the screen (through the safe
+    /// area) down to the bottom of the category bar — strongest at the top,
+    /// easing to clear for an organic falloff. Material + gradient-alpha mask
+    /// (the pre-iOS-26 native approach, matching the bottom blur in this view).
+    /// iOS 26 could instead use `scrollEdgeEffectStyle(.soft, for: .top)`.
+    private var topEdgeBlur: some View {
+        GeometryReader { geo in
+            let total = max(geo.safeAreaInsets.top + barsBottomInset, 1)
+            // Real progressive blur: radius ramps from strong at the top edge to
+            // none at the bottom of the category bar.
+            VariableBlurView(maxBlurRadius: 20, direction: .top)
+                .frame(height: total)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(edges: .top)
+        }
+        .allowsHitTesting(false)
+    }
+
     // MARK: Source carousel
 
     private var sourceCarousel: some View {
@@ -184,16 +225,19 @@ struct FlekInstallerView: View {
                                 }
                                 Task { await switchTo(repo) }
                             } label: {
-                                HStack(spacing: 8) {
-                                    FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 7)
+                                HStack(spacing: 10) {
+                                    FlekRemoteIcon(url: repo.iconUrl, size: 30, corner: 10)
                                     Text(repo.name)
                                         .font(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(.primary)
+                                        .tracking(-0.23)
+                                        .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.9))
                                         .lineLimit(1)
                                 }
                                 .padding(.horizontal, 14).padding(.vertical, 7)
                                 .background(
-                                    Capsule().fill(selected ? Color(.systemGray5) : Color.clear)
+                                    // Figma "Selection" fill (#EDEDED) for the selected repo;
+                                    // unselected repos are transparent (pill shows through).
+                                    Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -205,19 +249,17 @@ struct FlekInstallerView: View {
                     .padding(4)
                 }
 
-                // Manage-sources icon pinned to the right, with a blur fade
-                // so scrolling repos don't visually overlap it.
+                // Manage-sources icon pinned to the right. A short blur fade keeps
+                // scrolling repos from visually colliding with the icon while
+                // staying consistent with the translucent pill.
                 HStack(spacing: 0) {
-                    // Gradient fade from clear → background
-                    LinearGradient(
-                        colors: [
-                            Color(.secondarySystemGroupedBackground).opacity(0),
-                            Color(.secondarySystemGroupedBackground)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: 24)
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .mask(
+                            LinearGradient(colors: [.clear, .black],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                        .frame(width: 24)
 
                     Button {
                         showSources = true
@@ -226,17 +268,20 @@ struct FlekInstallerView: View {
                             .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(.primary.opacity(0.7))
                             .frame(width: 48, height: 52)
+                            .background(.ultraThinMaterial)
                     }
                     .buttonStyle(.plain)
-                    .background(Color(.secondarySystemGroupedBackground))
                 }
             }
             .frame(height: 52)
             .background(
-                Capsule().fill(Color(.secondarySystemGroupedBackground))
-                    .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
+                // Figma: frosted white glass — ~rgba(255,255,255,0.65) over the blur.
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Capsule().fill(Color.white.opacity(0.5)))
             )
             .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.12), radius: 20, y: 8)   // Figma: 0 8 40 / 12%
             // Center the tapped repo (skip while the sources sheet is open so the
             // move plays *after* dismissal instead of behind the sheet).
             .onChange(of: selectedRepoID) { id in
@@ -280,7 +325,10 @@ struct FlekInstallerView: View {
                 .font(.system(size: 15, weight: selected ? .medium : .regular))
                 .foregroundStyle(selected ? .white : .primary)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground)))
+                .background(
+                    Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground))
+                        .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -328,7 +376,7 @@ struct FlekInstallerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, barsTopInset)
                 .padding(.bottom, 80)
             }
             .refreshable { await viewModel.resetAndFetchApps() }
@@ -381,7 +429,7 @@ struct FlekInstallerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, barsTopInset)
                 .padding(.bottom, 80)
             }
         }
