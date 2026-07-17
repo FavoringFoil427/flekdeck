@@ -51,6 +51,11 @@ struct FlekInstallerView: View {
     /// right edge, so bottom content stays pinned to the bottom edge.
     private var barOccupiesBottom: Bool { switcherBarVisible && !barIsLandscape }
 
+    /// Repo selected during this app session. A static resets on process
+    /// relaunch, so the installer defaults back to FlekSt0re after an app
+    /// restart while still remembering the choice within a session.
+    private static var sessionSelectedRepoURL: String?
+
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
     private static let screenBG = Color(.systemGroupedBackground)
 
@@ -122,9 +127,15 @@ struct FlekInstallerView: View {
             } else if preselectFlekstore, let flek = repos.first(where: { Self.isFlekstore($0) }) {
                 selectedRepoID = flek.id
                 viewModel.repository = .flekstore
-            } else if let selected = repos.first(where: { $0.isSelected }) {
-                selectedRepoID = selected.id
-                viewModel.repository = Self.source(for: selected)
+            } else if let sessionURL = Self.sessionSelectedRepoURL,
+                      let match = repos.first(where: { $0.sourceURL == sessionURL }) {
+                // Remember the pick within this app session only.
+                selectedRepoID = match.id
+                viewModel.repository = Self.source(for: match)
+            } else if let flek = repos.first(where: { Self.isFlekstore($0) }) {
+                // Fresh launch (or nothing to restore): default to FlekSt0re.
+                selectedRepoID = flek.id
+                viewModel.repository = .flekstore
             } else {
                 viewModel.repository = .flekstore
             }
@@ -313,7 +324,6 @@ struct FlekInstallerView: View {
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .background(
                     Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground))
-                        .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                 )
         }
         .buttonStyle(.plain)
@@ -602,6 +612,7 @@ struct FlekInstallerView: View {
         searchActive = false
         searchFocused = false
         let source = Self.source(for: repo)
+        Self.sessionSelectedRepoURL = repo.sourceURL
         // Custom repos are pre-fetched to disk; show that cache instantly and
         // refresh in the background instead of flashing an empty loading state.
         var disk: [FSAppModel]? = nil
@@ -666,7 +677,6 @@ private extension View {
                         .overlay(Capsule().fill(Color.white.opacity(0.5)))
                 )
                 .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         }
     }
 
