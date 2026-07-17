@@ -166,6 +166,10 @@ class AppInfoProvider {
     @Published var isHomeState: Bool = false
     @Published var isAppSwitcherOpen: Bool = false
     @Published var isClosingAll: Bool = false
+    /// Snapshot of the springboard (wallpaper + icons) captured when the switcher
+    /// opens, shown blurred behind the cards — the app-switcher equivalent of
+    /// Spotlight's blurred home background.
+    @Published var springboardSnapshot: UIImage?
     /// Published mirror of `isBarLandscape` so the SwiftUI bar content can react
     /// to rotation (its own local geometry is always a horizontal strip and
     /// can't reveal orientation).
@@ -1314,6 +1318,26 @@ class AppInfoProvider {
     
     // MARK: - App Switcher Overlay
     
+    /// Capture the springboard (wallpaper + icons) as a still image, excluding
+    /// the live guest-app windows, so the switcher can show it blurred behind the
+    /// cards (matching Spotlight's blurred home). Renders the layer tree with the
+    /// app-window host hidden; `isHidden` is honoured by layer rendering without a
+    /// screen update, so hiding + restoring in place causes no flicker.
+    func captureSpringboardSnapshot() {
+        guard let rootView = keyWindow?.rootViewController?.view,
+              rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
+        let wasHidden = windowHostingView.isHidden
+        windowHostingView.isHidden = true
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(bounds: rootView.bounds, format: format)
+        let image = renderer.image { ctx in
+            rootView.layer.render(in: ctx.cgContext)
+        }
+        windowHostingView.isHidden = wasHidden
+        springboardSnapshot = image
+    }
+
     func captureSnapshots() {
         // Only attempt fresh snapshots for currently visible apps.
         // Keep existing cached snapshots for hidden/minimized apps,
@@ -1380,6 +1404,7 @@ class AppInfoProvider {
         guard let keyWindow = self.keyWindow else { return }
         
         captureSnapshots()
+        captureSpringboardSnapshot()
         // Sync the preference to whatever control is actually active right now,
         // so the overlay's toggle reflects the current state — the user may have
         // switched between the bar and the floating button in-app since it was
@@ -1429,6 +1454,33 @@ class AppInfoProvider {
         }
     }
     
+    /// Return to the springboard from the app switcher: minimize every window so
+    /// the real home is behind the overlay, then remove the overlay after its exit
+    /// animation. Kept separate from `dismissAppSwitcher` so the host is removed
+    /// without the fade/scale (the SwiftUI content animates itself out).
+    func goToSpringboardFromSwitcher() {
+        guard isAppSwitcherOpen else { return }
+        isAppSwitcherOpen = false
+        minimizeAllWindows()
+        updateFrontmostApp()
+        isHomeState = true
+        hideDock()
+        refreshOrientationLock()
+        guard let overlay = switcherOverlayController else { return }
+        // Clear the overlay's opaque backdrop so the LIVE springboard behind it (its
+        // glass already rendering) shows through as the switcher content animates out —
+        // cards slide left, buttons drop, and the blurred-home background fades away.
+        // Revealing the live springboard (not the glass-less snapshot) is what keeps the
+        // icon glass consistent, matching Close all / the Home button.
+        overlay.view.backgroundColor = .clear
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+            overlay.view.removeFromSuperview()
+            overlay.view.transform = .identity
+            self.springboardSnapshot = nil
+            self.ensureControlAccessible()
+        }
+    }
+
     func dismissAppSwitcher() {
         isAppSwitcherOpen = false
 
@@ -1452,6 +1504,7 @@ class AppInfoProvider {
         } completion: { _ in
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
+            self.springboardSnapshot = nil
             self.ensureControlAccessible()
         }
     }
@@ -1876,6 +1929,7 @@ extension View {
 struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var isPresented = false
+    @State private var exiting = false
     
     private let cardSpacing: CGFloat = 16
 
@@ -1889,16 +1943,41 @@ struct AppSwitcherOverlay: View {
     private var cardHeight: CGFloat {
         cardWidth * (UIScreen.main.bounds.height / UIScreen.main.bounds.width)
     }
+
+    // How far the cards slide left and the buttons slide down when the user taps
+    // the background to return to the springboard.
+    private var exitCardOffset: CGFloat { UIScreen.main.bounds.width + cardWidth }
+    private var exitButtonOffset: CGFloat { UIScreen.main.bounds.height * 0.4 }
     
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Blurred dark background
-            Color.black.opacity(0.55)
-                .background(.thinMaterial)
-                .environment(\.colorScheme, .dark)
-                .onTapGesture {
-                    dockManager.dismissAppSwitcher()
+            // Blurred springboard background: the captured home (wallpaper +
+            // icons) behind a dark material, the same treatment Spotlight uses.
+            // Falls back to a flat dark blur if no snapshot was captured.
+            ZStack {
+                if let snapshot = dockManager.springboardSnapshot {
+                    Image(uiImage: snapshot)
+                        .resizable()
+                        .scaledToFill()
+                        .ignoresSafeArea()
                 }
+                // Blur + scrim fade out on exit so the sharp home is revealed
+                // (the snapshot, then the real springboard once the overlay goes).
+                ZStack {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                        .ignoresSafeArea()
+                    // Slight scrim so the cards keep contrast over the blurred home.
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                }
+            }
+            // Fade the entire blurred-home background out on exit. The snapshot is
+            // captured with layer rendering, which can't capture the icons' glass, so
+            // resting on it made the glass look like it "appears". Fading it away reveals
+            // the LIVE springboard behind the (cleared) overlay, glass already intact.
+            .opacity(exiting ? 0 : 1)
             
             VStack(spacing: 0) {
                 // Pin the content near the top with a small margin below the
@@ -1919,6 +1998,7 @@ struct AppSwitcherOverlay: View {
                         }
                     }
                 }
+                .offset(x: exiting ? -exitCardOffset : 0)
                 
                 // Flexible gap so the cards sit up top and the bottom actions
                 // fall to the bottom edge.
@@ -1941,6 +2021,7 @@ struct AppSwitcherOverlay: View {
                     .modifier(GlassCapsuleBackground())
                 }
                 .padding(.bottom, 20)
+                .offset(y: exiting ? exitButtonOffset : 0)
 
                 // Reserve the bar's footprint so Close all sits above the bottom
                 // bar (which is a separate bottom-anchored layer below).
@@ -1976,10 +2057,29 @@ struct AppSwitcherOverlay: View {
             // ZStack base already covers what's behind, so the bar can stay short
             // without a gap.
             .background(Color.black)
+            .offset(y: exiting ? exitButtonOffset : 0)
         }
         .ignoresSafeArea()
+        // Tap anywhere that isn't a card or a button returns to the springboard.
+        // Cards and buttons consume their own taps, so only the empty area here
+        // (top, bottom, sides, gaps between cards) triggers this.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            exitToSpringboard()
+        }
     }
     
+    /// Tapping the background returns to the springboard: cards slide off to the
+    /// left, buttons drop past the bottom edge, and the blur fades to reveal the
+    /// home. The manager minimizes the app windows behind the overlay and removes
+    /// it once the animation completes.
+    private func exitToSpringboard() {
+        guard !exiting else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.easeIn(duration: 0.3)) { exiting = true }
+        dockManager.goToSpringboardFromSwitcher()
+    }
+
     // MARK: - Card Scroll View (with iOS 17+ snapping)
     @ViewBuilder
     private var cardScrollView: some View {
