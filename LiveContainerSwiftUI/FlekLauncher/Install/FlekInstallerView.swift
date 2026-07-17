@@ -206,9 +206,9 @@ struct FlekInstallerView: View {
     /// iOS 26 could instead use `scrollEdgeEffectStyle(.soft, for: .top)`.
     private var topEdgeBlur: some View {
         GeometryReader { geo in
-            let total = max(geo.safeAreaInsets.top + barsBottomInset, 1)
+            let total = max(geo.safeAreaInsets.top + barsBottomInset + 50, 1)
             // Real progressive blur: radius ramps from strong at the top edge to
-            // none at the bottom of the category bar.
+            // none ~50pt below the bottom of the category bar.
             VariableBlurView(maxBlurRadius: 20, direction: .top)
                 .frame(height: total)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -271,6 +271,8 @@ struct FlekInstallerView: View {
             }
             .frame(height: 52)
             .repoPillGlass()
+            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
             // Center the tapped repo (skip while the sources sheet is open so the
             // move plays *after* dismissal instead of behind the sheet).
             .onChange(of: selectedRepoID) { id in
@@ -306,6 +308,7 @@ struct FlekInstallerView: View {
             .padding(.horizontal, 16)
         }
         .frame(height: 44)
+        .scrollClipDisabledIfAvailable()  // let each pill's shadow draw past the 44pt scroll bounds (no bottom cutout)
     }
 
     private func categoryPill(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -316,6 +319,7 @@ struct FlekInstallerView: View {
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .background(
                     Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground))
+                        .shadow(color: .black.opacity(0.10), radius: 3, y: 1)  // subtle per-pill contact shadow (kept tight so neighbours don't bleed)
                 )
         }
         .buttonStyle(.plain)
@@ -465,6 +469,7 @@ struct FlekInstallerView: View {
                         .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
                         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                         .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                 )
             }
 
@@ -484,6 +489,7 @@ struct FlekInstallerView: View {
                             .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
                             .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                             .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                     )
             }
             .buttonStyle(.plain)
@@ -538,6 +544,7 @@ struct FlekInstallerView: View {
                     .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                     .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
             )
 
             // Close button — separate circle to the right
@@ -559,6 +566,7 @@ struct FlekInstallerView: View {
                             .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
                             .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                             .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                     )
             }
             .buttonStyle(.plain)
@@ -653,6 +661,13 @@ struct FlekInstallerView: View {
 }
 
 private extension View {
+    /// iOS 17+: let content (e.g. pill shadows) draw outside the scroll view's
+    /// bounds instead of being clipped. No-op below iOS 17 (shadow stays clipped).
+    @ViewBuilder
+    func scrollClipDisabledIfAvailable() -> some View {
+        if #available(iOS 17.0, *) { self.scrollClipDisabled() } else { self }
+    }
+
     /// The source pill surface: native Liquid Glass on iOS 26+, and a frosted
     /// white material capsule (matching the FlekSign design) on older versions.
     @ViewBuilder
