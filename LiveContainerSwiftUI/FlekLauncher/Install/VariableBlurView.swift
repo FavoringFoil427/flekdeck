@@ -17,6 +17,7 @@ struct VariableBlurView: UIViewRepresentable {
     /// Maximum blur radius at the strong end of the gradient.
     var maxBlurRadius: CGFloat = 18
     /// .top => blurred at top, clear at bottom (default). .bottom => reverse.
+    /// .trailing => blurred at right, clear at left. .leading => reverse.
     var direction: VariableBlurUIView.Direction = .top
 
     func makeUIView(context: Context) -> VariableBlurUIView {
@@ -29,8 +30,10 @@ struct VariableBlurView: UIViewRepresentable {
 final class VariableBlurUIView: UIVisualEffectView {
 
     enum Direction {
-        case top     // strong at top, clear at bottom
-        case bottom  // strong at bottom, clear at top
+        case top       // strong at top, clear at bottom
+        case bottom    // strong at bottom, clear at top
+        case leading   // strong at left, clear at right
+        case trailing  // strong at right, clear at left
     }
 
     init(maxBlurRadius: CGFloat, direction: Direction) {
@@ -88,6 +91,12 @@ final class VariableBlurUIView: UIVisualEffectView {
         case .bottom:
             filter.point0 = CGPoint(x: 0, y: 0)               // bottom => blurred
             filter.point1 = CGPoint(x: 0, y: height * 0.88)   // ~top => clear
+        case .leading:
+            filter.point0 = CGPoint(x: 0, y: 0)               // left => blurred
+            filter.point1 = CGPoint(x: width * 0.88, y: 0)    // ~right => clear
+        case .trailing:
+            filter.point0 = CGPoint(x: width, y: 0)           // right => blurred
+            filter.point1 = CGPoint(x: width * 0.12, y: 0)    // ~left => clear
         }
         guard let output = filter.outputImage else { return nil }
         return CIContext().createCGImage(output, from: CGRect(x: 0, y: 0, width: width, height: height))

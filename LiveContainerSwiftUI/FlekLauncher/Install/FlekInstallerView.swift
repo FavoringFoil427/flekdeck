@@ -44,6 +44,9 @@ struct FlekInstallerView: View {
     /// Bumped to (re)center the selected repo in the pill after the sources
     /// sheet is dismissed, so the shift animation plays once it's visible.
     @State private var pillRecenterNonce = 0
+    /// Measured width of the manage-sources button, used to end the carousel
+    /// exactly at the button's leading edge (so repos can't scroll under it).
+    @State private var manageButtonWidth: CGFloat = 0
 
     /// The bottom bar/blur only need to make room when the switcher bar actually
     /// sits along the bottom edge — i.e. portrait. In landscape the bar is on the
@@ -259,15 +262,23 @@ struct FlekInstallerView: View {
                             .buttonStyle(.plain)
                             .id(repo.id)
                         }
-                        // Extra trailing space so content doesn't hide behind the icon
-                        Spacer().frame(width: 40)
                     }
                     .padding(4)
                 }
+                // End the scrollable area at the button's leading edge, so repos
+                // stop right before the button instead of scrolling under it.
+                .padding(.trailing, manageButtonWidth)
 
-                // Manage-sources icon pinned to the right. The blur starts at the
-                // right edge and fades out to the left, sitting behind the icon.
-                // Manage-sources icon pinned to the right with a solid background.
+                // Progressive blur behind the manage-sources button: the same
+                // variable blur used on the installer's top/bottom edges, here
+                // horizontal — strongest at the right edge, fading to clear on the
+                // left. Sits above the scrolling carousel but below the icon.
+                VariableBlurView(maxBlurRadius: 16, direction: .trailing)
+                    .frame(width: 64, height: 52)
+                    .allowsHitTesting(false)
+
+                // Manage-sources icon pinned to the right, sitting on the blur
+                // (no opaque background) so the carousel frosts out beneath it.
                 Button {
                     showSources = true
                 } label: {
@@ -278,11 +289,19 @@ struct FlekInstallerView: View {
                         .padding(.leading, 6)
                         .padding(.trailing, 14)
                         .frame(height: 52)
-                        .background(Color(.secondarySystemGroupedBackground))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Measure the button's width (invisibly) so the carousel can inset
+                // its trailing edge by exactly this much.
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ManageButtonWidthKey.self, value: geo.size.width)
+                    }
+                )
             }
             .frame(height: 52)
+            .onPreferenceChange(ManageButtonWidthKey.self) { manageButtonWidth = $0 }
             .repoPillGlass()
             .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
             .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
@@ -670,6 +689,14 @@ struct FlekInstallerView: View {
             return []
         }
         return decoded
+    }
+}
+
+/// Reports the manage-sources button's measured width up to the carousel.
+private struct ManageButtonWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
