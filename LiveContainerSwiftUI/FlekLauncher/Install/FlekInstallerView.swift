@@ -72,13 +72,23 @@ struct FlekInstallerView: View {
             topEdgeBlur
 
             VStack(spacing: 0) {
-                sourceCarousel
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                // Hide the top bars while searching by fading them out rather than
+                // removing them from the hierarchy. Structurally tearing down the
+                // source carousel's ScrollViewReader at the same moment the search
+                // field takes focus was dropping the keyboard's first responder, so
+                // typed text never registered. Kept mounted + non-interactive, the
+                // focus stays put.
+                Group {
+                    sourceCarousel
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
 
-                if viewModel.repository == .flekstore && !searchActive {
-                    categoryBar.padding(.top, 8)
+                    if viewModel.repository == .flekstore {
+                        categoryBar.padding(.top, 8)
+                    }
                 }
+                .opacity(searchActive ? 0 : 1)
+                .allowsHitTesting(!searchActive)
 
                 Spacer(minLength: 0)
             }
@@ -188,8 +198,11 @@ struct FlekInstallerView: View {
     /// Distance from the top safe-area edge down to the bottom of the floating
     /// bars (source pill + category bar when shown).
     private var barsBottomInset: CGFloat {
+        // During search both floating top bars (source pill + category bar) are
+        // hidden, so reserve only a small top margin for the results list.
+        guard !searchActive else { return 8 }
         var inset: CGFloat = 8 + 52          // pill top padding + pill height
-        if viewModel.repository == .flekstore && !searchActive {
+        if viewModel.repository == .flekstore {
             inset += 8 + 44                  // category bar top padding + height
         }
         return inset
