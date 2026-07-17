@@ -253,29 +253,22 @@ struct FlekInstallerView: View {
                     .padding(4)
                 }
 
-                // Manage-sources icon pinned to the right. A short blur fade keeps
-                // scrolling repos from visually colliding with the icon while
-                // staying consistent with the translucent pill.
-                HStack(spacing: 0) {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .mask(
-                            LinearGradient(colors: [.clear, .black],
-                                           startPoint: .leading, endPoint: .trailing)
-                        )
-                        .frame(width: 24)
-
-                    Button {
-                        showSources = true
-                    } label: {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundStyle(.primary.opacity(0.7))
-                            .frame(width: 48, height: 52)
-                            .background(.ultraThinMaterial)
-                    }
-                    .buttonStyle(.plain)
+                // Manage-sources icon pinned to the right. The blur starts at the
+                // right edge and fades out to the left, sitting behind the icon.
+                // Manage-sources icon pinned to the right with a solid background.
+                Button {
+                    showSources = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.7))
+                        // Smaller left margin, original right margin / full height.
+                        .padding(.leading, 6)
+                        .padding(.trailing, 14)
+                        .frame(height: 52)
+                        .background(Color(.secondarySystemGroupedBackground))
                 }
+                .buttonStyle(.plain)
             }
             .frame(height: 52)
             .repoPillGlass()
