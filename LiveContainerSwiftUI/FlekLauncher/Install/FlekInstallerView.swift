@@ -58,6 +58,17 @@ struct FlekInstallerView: View {
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
     private static let screenBG = Color(.systemGroupedBackground)
 
+    /// Shadow tint that adapts to the color scheme: a dark shadow in light mode,
+    /// and a soft light glow in dark mode (a black shadow is invisible against the
+    /// dark background, so it would add no contrast there).
+    private static func adaptiveShadow(_ lightAlpha: Double, dark darkAlpha: Double) -> Color {
+        Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor.white.withAlphaComponent(darkAlpha)
+                : UIColor.black.withAlphaComponent(lightAlpha)
+        })
+    }
+
     var body: some View {
         ZStack {
             Self.screenBG.ignoresSafeArea()
@@ -271,8 +282,8 @@ struct FlekInstallerView: View {
             }
             .frame(height: 52)
             .repoPillGlass()
-            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+            .shadow(color: Self.adaptiveShadow(0.08, dark: 0.06), radius: 16, y: 4)
+            .shadow(color: Self.adaptiveShadow(0.15, dark: 0.10), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
             // Center the tapped repo (skip while the sources sheet is open so the
             // move plays *after* dismissal instead of behind the sheet).
             .onChange(of: selectedRepoID) { id in
@@ -319,7 +330,7 @@ struct FlekInstallerView: View {
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .background(
                     Capsule().fill(selected ? Self.flekBlue : Color(.secondarySystemGroupedBackground))
-                        .shadow(color: .black.opacity(0.10), radius: 3, y: 1)  // subtle per-pill contact shadow (kept tight so neighbours don't bleed)
+                        .shadow(color: Self.adaptiveShadow(0.10, dark: 0.08), radius: 3, y: 1)  // subtle per-pill contact shadow (kept tight so neighbours don't bleed)
                 )
         }
         .buttonStyle(.plain)
@@ -468,8 +479,8 @@ struct FlekInstallerView: View {
                         .fill(.ultraThinMaterial)
                         .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
                         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+                        .shadow(color: Self.adaptiveShadow(0.08, dark: 0.06), radius: 16, y: 4)
+                        .shadow(color: Self.adaptiveShadow(0.15, dark: 0.10), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                 )
             }
 
@@ -488,8 +499,8 @@ struct FlekInstallerView: View {
                             .fill(.ultraThinMaterial)
                             .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
                             .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+                            .shadow(color: Self.adaptiveShadow(0.08, dark: 0.06), radius: 16, y: 4)
+                            .shadow(color: Self.adaptiveShadow(0.15, dark: 0.10), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                     )
             }
             .buttonStyle(.plain)
@@ -543,8 +554,8 @@ struct FlekInstallerView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
                     .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+                    .shadow(color: Self.adaptiveShadow(0.08, dark: 0.06), radius: 16, y: 4)
+                    .shadow(color: Self.adaptiveShadow(0.15, dark: 0.10), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
             )
 
             // Close button — separate circle to the right
@@ -565,8 +576,8 @@ struct FlekInstallerView: View {
                             .fill(.ultraThinMaterial)
                             .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
                             .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+                            .shadow(color: Self.adaptiveShadow(0.08, dark: 0.06), radius: 16, y: 4)
+                            .shadow(color: Self.adaptiveShadow(0.15, dark: 0.10), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
                     )
             }
             .buttonStyle(.plain)
