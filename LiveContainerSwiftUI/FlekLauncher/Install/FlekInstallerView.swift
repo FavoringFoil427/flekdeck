@@ -18,7 +18,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import Kingfisher
-import BlurSwiftUI
 
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
@@ -85,14 +84,14 @@ struct FlekInstallerView: View {
             }
             .overlay(alignment: .bottom) {
                 if !searchActive {
-                    // Real progressive blur behind the bottom bar (BlurUIKit):
+                    // Real progressive blur behind the bottom bar (same CAFilter variable blur as the top edge):
                     // clear at the top, ramping to full blur at the bottom. Sized
-                    // so its top edge lands just above the Import IPA button
-                    // (48pt button + 12pt bottom padding, past the safe area).
+                    // so its top edge sits ~30pt above the Import IPA / search
+                    // buttons (48pt button + 12pt bottom padding + 30pt, past the
+                    // safe area).
                     GeometryReader { geo in
-                        VariableBlur(direction: .up)
-                            .maximumBlurRadius(12)
-                            .frame(height: geo.safeAreaInsets.bottom + 66)
+                        VariableBlurView(maxBlurRadius: 12, direction: .bottom)
+                            .frame(height: geo.safeAreaInsets.bottom + 96)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                             .ignoresSafeArea(edges: .bottom)
                             .offset(y: barOccupiesBottom ? 0 : 52)
