@@ -273,7 +273,7 @@ struct FlekInstallerView: View {
                 // variable blur used on the installer's top/bottom edges, here
                 // horizontal — strongest at the right edge, fading to clear on the
                 // left. Sits above the scrolling carousel but below the icon.
-                VariableBlurView(maxBlurRadius: 16, direction: .trailing)
+                VariableBlurView(maxBlurRadius: 9, direction: .trailing)
                     .frame(width: 64, height: 52)
                     .allowsHitTesting(false)
 
@@ -418,7 +418,7 @@ struct FlekInstallerView: View {
                     .foregroundStyle(Color(.systemGray3))
                 Text("Nothing found")
                     .font(.system(size: 20))
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(Color(.label))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
