@@ -698,9 +698,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if case .defaultApp = item { return item }
                 return nil
             }
-            let remainingInstalled = available.values.compactMap { item -> FlekHomeItem? in
+            var remainingInstalled = available.values.compactMap { item -> FlekHomeItem? in
                 if case .installed = item { return item }
                 return nil
+            }
+            // List layout only: installed apps missing from the stored order
+            // are newly installed. `available` is a dictionary, so its values
+            // have no stable order — sort them by installation date (oldest
+            // first, newest last) so new apps land at the end in install order
+            // instead of an arbitrary order that shifts between rebuilds.
+            // The grid (springboard) layout is left untouched.
+            if homeLayout == FlekHomeLayout.list.rawValue {
+                remainingInstalled.sort { lhs, rhs in
+                    guard case .installed(let la) = lhs, case .installed(let ra) = rhs else { return false }
+                    switch (la.appInfo.installationDate, ra.appInfo.installationDate) {
+                    case let (l?, r?): return l < r
+                    case (nil, _?):    return true
+                    case (_?, nil):    return false
+                    case (nil, nil):   return la.appInfo.displayName() < ra.appInfo.displayName()
+                    }
+                }
             }
             // Only consume freed installing slots (where the install already
             // completed), not slots reserved for still-active queue items.

@@ -351,7 +351,6 @@ struct FlekInstallRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Image(systemName: "xmark.circle.fill").font(.system(size: 22)).foregroundStyle(.tertiary)
         }
         .padding(.leading, 8)
         .padding(.trailing, 10)
