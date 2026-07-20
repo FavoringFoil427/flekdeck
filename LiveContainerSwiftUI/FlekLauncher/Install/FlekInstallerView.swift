@@ -103,7 +103,7 @@ struct FlekInstallerView: View {
                     // buttons (48pt button + 12pt bottom padding + 30pt, past the
                     // safe area).
                     GeometryReader { geo in
-                        VariableBlurView(maxBlurRadius: 12, direction: .bottom)
+                        VariableBlurView(maxBlurRadius: 7, direction: .bottom)
                             .frame(height: geo.safeAreaInsets.bottom + 96)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                             .ignoresSafeArea(edges: .bottom)
