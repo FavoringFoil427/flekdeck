@@ -122,7 +122,11 @@ struct FlekInstallerView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .multitaskBarVisibilityChanged)) { _ in
-            updateSwitcherBarState()
+            // Animate the bottom bar / blur shift in sync with the switcher bar's
+            // slide (same easing + duration) instead of snapping.
+            withAnimation(.easeInOut(duration: 0.2)) {
+                updateSwitcherBarState()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateSwitcherBarState()
