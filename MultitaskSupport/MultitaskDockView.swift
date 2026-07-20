@@ -252,6 +252,7 @@ class AppInfoProvider {
         // MARK: - Animation
         static let standardAnimationDuration: TimeInterval = 0.3
         static let longAnimationDuration: TimeInterval = 0.4
+        static let barSlideDuration: TimeInterval = 0.2  // bar slide up/down (snappy)
         static let shortAnimationDuration1: TimeInterval = 0.15
         static let shortAnimationDuration2: TimeInterval = 0.1
         
@@ -544,18 +545,19 @@ class AppInfoProvider {
 
             hostingController.view.isHidden = false
             hostingController.view.alpha = 0
-            hostingController.view.transform = self.barHiddenTransform()
+            let slideOffset = max(hostingController.view.bounds.height, 120)
+            hostingController.view.transform = self.barHiddenTransform(offset: slideOffset)
 
+            // Smooth ease-in-out slide up from just below the edge (no spring kick).
             UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
+                withDuration: Constants.barSlideDuration,
                 delay: 0,
-                usingSpringWithDamping: Constants.showHideSpringDamping,
-                initialSpringVelocity: Constants.showHideSpringVelocity,
-                options: .curveEaseOut
-            ) {
-                hostingController.view.alpha = 1
-                hostingController.view.transform = self.barBaseTransform
-            }
+                options: [.curveEaseInOut, .beginFromCurrentState],
+                animations: {
+                    hostingController.view.alpha = 1
+                    hostingController.view.transform = self.barBaseTransform
+                }
+            )
         }
     }
 
@@ -577,16 +579,17 @@ class AppInfoProvider {
             // No control on screen anymore → back to portrait (springboard).
             self.refreshOrientationLock()
             
+            let slideOffset = max(hostingController.view.bounds.height, 120)
+            // Smooth ease-in-out slide down just off the edge (no spring kick).
             UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
+                withDuration: Constants.barSlideDuration,
                 delay: 0,
-                usingSpringWithDamping: Constants.showHideSpringDamping,
-                initialSpringVelocity: Constants.showHideSpringVelocity,
-                options: .curveEaseOut
-            ) {
-                hostingController.view.alpha = 0
-                hostingController.view.transform = self.barHiddenTransform()
-            } completion: { _ in
+                options: [.curveEaseInOut, .beginFromCurrentState],
+                animations: {
+                    hostingController.view.alpha = 0
+                    hostingController.view.transform = self.barHiddenTransform(offset: slideOffset)
+                }
+            ) { _ in
                 hostingController.view.transform = self.barBaseTransform
             }
         }
@@ -737,6 +740,14 @@ class AppInfoProvider {
             self.isSwitcherBarVisible = false
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
+            // Bring the floating button in immediately, concurrent with the bar
+            // sliding out, instead of waiting for the slide to finish. The button
+            // sits mid-right and the bar at the bottom, so they never overlap.
+            let showsFloatingButton = !self.isHomeState && self.hasForegroundAppWindow()
+            if showsFloatingButton {
+                self.showNavAssist(in: keyWindow)
+            }
+
             // Remove the bar reservation from internal pages so they stretch full
             for (_, controller) in self.internalPageControllers {
                 UIView.animate(withDuration: Constants.longAnimationDuration) {
@@ -748,7 +759,7 @@ class AppInfoProvider {
             // keeping the bar opaque for most of the travel so it reads as a clean
             // slide-down rather than a quick fade.
             UIView.animate(
-                withDuration: Constants.longAnimationDuration,
+                withDuration: Constants.barSlideDuration,
                 delay: 0,
                 options: [.curveEaseInOut, .beginFromCurrentState],
                 animations: {
@@ -758,15 +769,11 @@ class AppInfoProvider {
             ) { _ in
                 hostingController.view.isHidden = true
                 hostingController.view.transform = self.barBaseTransform
-                // Show the floating button whenever an app/page is still on screen, so the
-                // user is never left without a control. (Do not gate this on isHomeState,
-                // which can be stale and strand the user with no way out.)
-                if !self.isHomeState && self.hasForegroundAppWindow() {
-                    self.showNavAssist(in: keyWindow)
+                // showNavAssist already refreshes the orientation lock when it
+                // runs, so only do it here for the no-button (home) case.
+                if !showsFloatingButton {
+                    self.refreshOrientationLock()
                 }
-                // Bar hidden; rotation now follows whether the floating button
-                // was shown (app on stage) or not (home).
-                self.refreshOrientationLock()
             }
         }
     }
@@ -801,18 +808,19 @@ class AppInfoProvider {
             
             hostingController.view.isHidden = false
             hostingController.view.alpha = 0
-            hostingController.view.transform = self.barHiddenTransform()
+            let slideOffset = max(hostingController.view.bounds.height, 120)
+            hostingController.view.transform = self.barHiddenTransform(offset: slideOffset)
 
+            // Smooth ease-in-out slide up (no spring kick), after nav assist hides.
             UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
+                withDuration: Constants.barSlideDuration,
                 delay: 0.15,
-                usingSpringWithDamping: Constants.showHideSpringDamping,
-                initialSpringVelocity: Constants.showHideSpringVelocity,
-                options: .curveEaseOut
-            ) {
-                hostingController.view.alpha = 1
-                hostingController.view.transform = self.barBaseTransform
-            }
+                options: [.curveEaseInOut, .beginFromCurrentState],
+                animations: {
+                    hostingController.view.alpha = 1
+                    hostingController.view.transform = self.barBaseTransform
+                }
+            )
         }
     }
     
@@ -851,7 +859,7 @@ class AppInfoProvider {
         button.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
-            delay: 0.15,
+            delay: 0.03,
             usingSpringWithDamping: Constants.showHideSpringDamping,
             initialSpringVelocity: 0,
             options: .curveEaseOut
