@@ -1670,13 +1670,7 @@ struct SwitcherBarContentView: View {
                     .frame(width: MultitaskDockManager.Constants.barButtonSize,
                            height: MultitaskDockManager.Constants.barButtonSize)
             }
-            .modifier { content in
-                if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
-                    content.glassEffect(.regular, in: .circle)
-                } else {
-                    content.background(Circle().fill(Color.white.opacity(0.15)))
-                }
-            }
+            .stableBarGlass(capsule: false)
             
             // Middle: App switcher button
             Button(action: {
@@ -1688,13 +1682,7 @@ struct SwitcherBarContentView: View {
                 }
             }) {
                 FrontmostAppIconLabel()
-                    .modifier { content in
-                        if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
-                            content.glassEffect(.regular, in: .capsule)
-                        } else {
-                            content.background(Capsule().fill(Color.white.opacity(0.15)))
-                        }
-                    }
+                    .stableBarGlass(capsule: true)
             }
             
             // Right: Home button
@@ -1708,13 +1696,7 @@ struct SwitcherBarContentView: View {
                     .frame(width: MultitaskDockManager.Constants.barButtonSize,
                            height: MultitaskDockManager.Constants.barButtonSize)
             }
-            .modifier { content in
-                if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
-                    content.glassEffect(.regular, in: .circle)
-                } else {
-                    content.background(Circle().fill(Color.white.opacity(0.15)))
-                }
-            }
+            .stableBarGlass(capsule: false)
         }
     }
     
@@ -2501,6 +2483,25 @@ struct MultitaskHomeDockPill: View {
 
 /// Applies either a capsule or circle glass/material background depending on iOS version.
 @available(iOS 16.0, *)
+private extension View {
+    /// Stable Liquid Glass for the multitask bar controls — pins the glass tone
+    /// (fixed dark, matching the white icons) so it never re-tints to the app
+    /// content behind it, the same approach as the Spotlight search. Falls back
+    /// to a flat translucent fill on older iOS or when Liquid Glass is disabled.
+    @ViewBuilder
+    func stableBarGlass(capsule: Bool) -> some View {
+        if #available(iOS 26.0, *), SharedModel.isLiquidGlassEnabled {
+            background {
+                StableLiquidGlass(isDark: true, tint: UIColor(white: 1.0, alpha: 0.03))
+            }
+        } else if capsule {
+            background(Capsule().fill(Color.white.opacity(0.15)))
+        } else {
+            background(Circle().fill(Color.white.opacity(0.15)))
+        }
+    }
+}
+
 private struct DockPillBackground: ViewModifier {
     let isCircle: Bool
 
