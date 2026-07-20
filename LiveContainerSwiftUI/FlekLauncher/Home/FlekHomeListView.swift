@@ -112,15 +112,12 @@ struct FlekHomeListView<Menu: View>: View {
         )
     }
 
-    /// Placeholder shown while a row is being dragged.
+    /// Shown in the origin slot while a row is being dragged. Kept as an
+    /// invisible spacer so surrounding rows still make room, but with no
+    /// visible translucent placeholder box.
     @ViewBuilder
     private func rowDropPlaceholder() -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(Color.white.opacity(0.08))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 1, antialiased: true)
-            )
+        Color.clear
             .frame(height: 84)
     }
 
