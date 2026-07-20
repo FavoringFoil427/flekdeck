@@ -7,9 +7,18 @@
 
 import Combine
 import SwiftUI
-import BlurSwiftUI
 import UniformTypeIdentifiers
 import UIKit
+
+private extension View {
+    /// The two-layer shadow used on the installer's bottom-bar controls: a soft
+    /// ambient shadow plus a tighter contact shadow for contrast over the blur.
+    func installerBarShadow() -> some View {
+        self
+            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+    }
+}
 
 class SearchContext: ObservableObject {
     @Published var query: String = ""
@@ -147,6 +156,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     if showMultitaskDock {
                         MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
                             .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
+                            .installerBarShadow()
                     }
                     Button {
                         showSearch = true
@@ -158,6 +168,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     }
                     .buttonStyle(.plain)
                     .glassEffect(in: .circle)
+                    .installerBarShadow()
                 }
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
@@ -166,11 +177,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 if #available(iOS 16.0, *), showMultitaskDock {
                     MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
                         .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
+                        .installerBarShadow()
                 }
                 FlekGlassCircleButton(systemImage: "magnifyingglass",
                                       size: FlekTheme.searchPillSize * 1.3, iconScale: 0.42) {
                     showSearch = true
                 }
+                .installerBarShadow()
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
         }
@@ -226,15 +239,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 homeContentView
                 .id(homeRefreshToggle)
 
-            // Progressive blur behind the bottom bar (list layout): clear at the
-            // top, ramping to full blur down toward the search / multitask bar.
+            // Real progressive blur behind the bottom bar (list layout) — the
+            // same CAFilter variable blur the installer uses at its bottom edge:
+            // clear at the top, ramping to full blur at the bottom, reaching up
+            // to just above the search / multitask bar.
             if homeLayout == FlekHomeLayout.list.rawValue && !showSearch {
                 GeometryReader { geo in
-                    VariableBlur(direction: .up)
-                        .maximumBlurRadius(3)
-                        // Reach up to just above the search icon (65pt icon +
-                        // 5pt bottom padding, past the bottom safe area).
-                        .frame(height: geo.safeAreaInsets.bottom + 76)
+                    VariableBlurView(maxBlurRadius: 4, direction: .bottom)
+                        .frame(height: geo.safeAreaInsets.bottom + 100)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .ignoresSafeArea(edges: .bottom)
                 }
@@ -256,7 +268,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 } else {
                     homeBottomBar
                         .id(colorScheme)
-                        .padding(.bottom, 5)
+                        // List sits a bit lower toward the bottom edge than the grid.
+                        .padding(.bottom, homeLayout == FlekHomeLayout.list.rawValue ? -9 : 5)
                 }
             }
             }
