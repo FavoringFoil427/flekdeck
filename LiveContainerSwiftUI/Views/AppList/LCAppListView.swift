@@ -123,6 +123,58 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     @State private var isViewAppeared = false
     @State private var isMultitaskHomeState = false
+    /// Whether any guest apps are currently running in multitask. Home state
+    /// stays true after the user closes them all, so this is what tells the
+    /// dock pill apart from an empty one.
+    @State private var hasMultitaskApps = false
+
+    /// Show the multitask dock pill only when we're in home state AND at least
+    /// one multitask app is running. Once everything is closed, show just the
+    /// search button.
+    private var showMultitaskDock: Bool {
+        isMultitaskHomeState && hasMultitaskApps
+    }
+
+    /// Bottom home bar: the multitask dock pill (only while apps are running)
+    /// beside a persistent search button. The search button keeps its identity
+    /// across states, so it glides as the pill springs in/out — a morph rather
+    /// than a cross-fade.
+    @ViewBuilder
+    private var homeBottomBar: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 10) {
+                HStack(spacing: 10) {
+                    if showMultitaskDock {
+                        MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
+                            .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
+                    }
+                    Button {
+                        showSearch = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+                            .foregroundStyle(Color.primary.opacity(0.6))
+                            .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(in: .circle)
+                }
+            }
+            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
+        } else {
+            HStack(spacing: 10) {
+                if #available(iOS 16.0, *), showMultitaskDock {
+                    MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
+                        .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
+                }
+                FlekGlassCircleButton(systemImage: "magnifyingglass",
+                                      size: FlekTheme.searchPillSize * 1.3, iconScale: 0.42) {
+                    showSearch = true
+                }
+            }
+            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
+        }
+    }
     @Environment(\.colorScheme) private var colorScheme
     
     @ObservedObject var searchContext: SearchContext
@@ -202,59 +254,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     .buttonStyle(.plain)
                     .padding(.bottom, 5)
                 } else {
-                    HStack(spacing: 10) {
-                        // Show running multitask app icons when in home state
-                        if #available(iOS 16.0, *), isMultitaskHomeState {
-                            if #available(iOS 26.0, *) {
-                                GlassEffectContainer(spacing: 10) {
-                                    HStack(spacing: 10) {
-                                        MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
-
-                                        // Search button with native glass
-                                        Button {
-                                            showSearch = true
-                                        } label: {
-                                            Image(systemName: "magnifyingglass")
-                                                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
-                                                .foregroundStyle(Color.primary.opacity(0.6))
-                                                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .glassEffect(in: .circle)
-                                    }
-                                }
-                                .transition(.scale.combined(with: .opacity))
-                            } else {
-                                MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-                        }
-
-                        // Search button — native glass on iOS 26+, custom on older
-                        if #available(iOS 26.0, *) {
-                            if !isMultitaskHomeState {
-                                // Standalone search with native glass (multitask case is in GlassEffectContainer above)
-                                Button {
-                                    showSearch = true
-                                } label: {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
-                                        .foregroundStyle(Color.primary.opacity(0.6))
-                                        .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
-                                }
-                                .buttonStyle(.plain)
-                                .glassEffect(in: .circle)
-                            }
-                        } else {
-                            FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                                  size: FlekTheme.searchPillSize * 1.3, iconScale: 0.42) {
-                                showSearch = true
-                            }
-                        }
-                    }
-                    .animation(.easeInOut(duration: 0.25), value: isMultitaskHomeState)
-                    .id(colorScheme)
-                    .padding(.bottom, 5)
+                    homeBottomBar
+                        .id(colorScheme)
+                        .padding(.bottom, 5)
                 }
             }
             }
@@ -329,6 +331,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }()) { newValue in
             isMultitaskHomeState = newValue
+        }
+        .onReceive({
+            if #available(iOS 16.0, *) {
+                return MultitaskDockManager.shared.$apps.map { !$0.isEmpty }.eraseToAnyPublisher()
+            } else {
+                return Just(false).eraseToAnyPublisher()
+            }
+        }()) { newValue in
+            hasMultitaskApps = newValue
         }
         .fullScreenCover(isPresented: $showSettingsCover) {
             FlekInternalPage(isPresented: $showSettingsCover) {
