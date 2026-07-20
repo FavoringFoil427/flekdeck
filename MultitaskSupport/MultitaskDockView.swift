@@ -1328,12 +1328,35 @@ class AppInfoProvider {
               rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
         let wasHidden = windowHostingView.isHidden
         windowHostingView.isHidden = true
+
+        // UIVisualEffectView blurs (the list rows' .ultraThinMaterial glass, the
+        // bottom variable blur, glass controls) are extremely slow to rasterize
+        // via `layer.render(in:)` and dominated the capture time (list ~240ms).
+        // The snapshot is only ever shown heavily blurred behind the switcher
+        // cards, so hide them for the render and restore immediately (same run
+        // loop, no screen update = no flicker).
+        var hiddenEffectViews: [UIView] = []
+        func hideEffectViews(in view: UIView) {
+            for sub in view.subviews {
+                if sub is UIVisualEffectView, !sub.isHidden {
+                    sub.isHidden = true
+                    hiddenEffectViews.append(sub)
+                }
+                hideEffectViews(in: sub)
+            }
+        }
+        hideEffectViews(in: rootView)
+
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = true
+        // Blurred behind the cards anyway — render at 1x, not full retina.
+        format.scale = 1
         let renderer = UIGraphicsImageRenderer(bounds: rootView.bounds, format: format)
         let image = renderer.image { ctx in
             rootView.layer.render(in: ctx.cgContext)
         }
+
+        for v in hiddenEffectViews { v.isHidden = false }
         windowHostingView.isHidden = wasHidden
         springboardSnapshot = image
     }
