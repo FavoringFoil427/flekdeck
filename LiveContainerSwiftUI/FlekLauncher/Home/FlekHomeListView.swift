@@ -25,35 +25,47 @@ struct FlekHomeListView<Menu: View>: View {
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
     @State private var draggedItem: FlekHomeItem?
+    /// Whether the drag layer is mounted. Set true a beat after entering edit
+    /// mode (so the enter animation plays uncovered) and cleared a beat after
+    /// exiting — the layer is hidden immediately via opacity, but stays mounted
+    /// briefly so its teardown doesn't hitch the exit animation.
+    @State private var dragMounted = false
+
+    /// Installed + default app rows (installing rows and grid placeholders are
+    /// handled separately). The same set is used in both modes so each row
+    /// keeps its identity across the edit toggle and can animate organically.
+    private var displayItems: [FlekHomeItem] {
+        items.filter { item in
+            if case .installing = item { return false }
+            return !item.isPlaceholder
+        }
+    }
+
+    private var installingItems: [InstallItem] {
+        items.compactMap { item in
+            if case .installing(let inst) = item { return inst }
+            return nil
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
         ScrollView {
             LazyVStack(spacing: 5) {
-                if isEditing {
-                    ForEach(items.filter { !$0.isPlaceholder }) { item in
-                        editRowWithDrag(for: item)
-                    }
-                } else {
-                    // Installed/default app rows via ForEach (skip placeholders + installing)
-                    ForEach(items.filter { item in
-                        if case .installing = item { return false }
-                        return item.isPlaceholder == false
-                    }) { item in
-                        rowButton(for: item)
-                    }
-                    // Installing rows rendered outside ForEach — uses UIKit
-                    // UIContextMenuInteraction instead of SwiftUI .contextMenu
-                    // to avoid cross-contamination with installed app menus.
-                    ForEach(items.compactMap { item -> InstallItem? in
-                        if case .installing(let inst) = item { return inst }
-                        return nil
-                    }) { inst in
-                        FlekInstallRow(state: inst.installState)
-                            .overlay {
-                                CancelInstallContextMenu { onCancelInstall(inst) }
-                            }
-                    }
+                // Installed/default app rows — one ForEach for BOTH modes so
+                // each row keeps its identity when edit mode toggles and its
+                // layout can shift organically.
+                ForEach(displayItems) { item in
+                    listRow(for: item)
+                }
+                // Installing rows rendered separately — uses UIKit
+                // UIContextMenuInteraction instead of SwiftUI .contextMenu
+                // to avoid cross-contamination with installed app menus.
+                ForEach(installingItems) { inst in
+                    FlekInstallRow(state: inst.installState)
+                        .overlay {
+                            CancelInstallContextMenu { onCancelInstall(inst) }
+                        }
                 }
             }
             .padding(.horizontal, FlekTheme.screenHPadding)
@@ -64,37 +76,80 @@ struct FlekHomeListView<Menu: View>: View {
         }
         .ignoresSafeArea(edges: [.top, .bottom])
         }
+        .onChange(of: isEditing) { editing in
+            if editing {
+                // Mount the drag layer only after the enter animation plays.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                    if isEditing { dragMounted = true }
+                }
+            } else {
+                // Already hidden via opacity below; keep it mounted a beat so
+                // its teardown doesn't hitch the exit animation.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    if !isEditing { dragMounted = false }
+                }
+            }
+        }
     }
 
-    // MARK: - Edit Mode Row (DraggableView-backed)
+    // MARK: - Row
 
+    /// A single list row. The visible row is always the native `FlekAppRow`,
+    /// so toggling edit mode animates its own layout organically — the delete
+    /// button slides in from the left and pushes the icon/title to the right,
+    /// reversing on exit. In edit mode a Dragula drag layer is overlaid on top
+    /// (only after the enter animation) for reordering; in normal mode the row
+    /// stays tappable with a context menu.
     @ViewBuilder
-    private func editRowWithDrag(for item: FlekHomeItem) -> some View {
-        if case .installing(let inst) = item {
-            FlekInstallRow(state: inst.installState)
-        } else if item.isDraggable {
-            editRow(for: item)
-                .hidden()
-                .overlay {
-                    DraggableView(
-                        preview: { editRow(for: item) },
-                        dropView: { rowDropPlaceholder() },
-                        itemProvider: { item.getItemProvider() },
-                        onDragWillBegin: { draggedItem = item },
-                        onDragWillEnd: {
-                            draggedItem = nil
-                            onDropCompleted()
-                        }
-                    )
-                }
+    private func listRow(for item: FlekHomeItem) -> some View {
+        FlekAppRow(
+            title: title(for: item),
+            subtitle: subtitle(for: item),
+            isNew: newDot(for: item),
+            showsSingleBadge: singleBadge(for: item),
+            isEditing: isEditing,
+            canDelete: canDelete(item),
+            onRun: { onTap(item) },
+            onDelete: { onDelete(item) },
+            icon: { iconView(for: item) }
+        )
+        // Animate this row's own layout on the edit toggle (delete button in,
+        // content shifting, Run/handle swap). Scoped to the row so the drag
+        // overlay's show/hide below is not swept into the same animation.
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isEditing)
+        // Hide the native row when the drag overlay is covering it (or while
+        // it is the one being dragged), so the two glass backgrounds never
+        // stack and tint the cell — exactly one layer paints the background.
+        .opacity(draggedItem?.id == item.id || (dragMounted && isEditing) ? 0 : 1)
+        .overlay {
+            if dragMounted && item.isDraggable {
+                DraggableView(
+                    preview: { editRow(for: item) },
+                    dropView: { rowDropPlaceholder() },
+                    itemProvider: { item.getItemProvider() },
+                    onDragWillBegin: { draggedItem = item },
+                    onDragWillEnd: {
+                        draggedItem = nil
+                        onDropCompleted()
+                    }
+                )
                 .onDrop(of: [UTType.text], delegate: ListReorderDelegate(
                     item: item,
                     items: $items,
                     draggedItem: $draggedItem
                 ))
                 .environment(\.dragPreviewCornerRadius, 20)
-        } else {
-            editRow(for: item)
+                // Visible/interactive only while editing; hidden instantly on
+                // exit (no fade) so the row's morph plays uncovered.
+                .opacity(isEditing ? 1 : 0)
+                .allowsHitTesting(isEditing)
+                .animation(nil, value: isEditing)
+            }
+        }
+        .contextMenu {
+            if !isEditing {
+                contextMenu(item)
+            }
         }
     }
 
@@ -104,6 +159,7 @@ struct FlekHomeListView<Menu: View>: View {
             title: title(for: item),
             subtitle: subtitle(for: item),
             isNew: newDot(for: item),
+            showsSingleBadge: singleBadge(for: item),
             isEditing: true,
             canDelete: canDelete(item),
             onRun: {},
@@ -119,24 +175,6 @@ struct FlekHomeListView<Menu: View>: View {
     private func rowDropPlaceholder() -> some View {
         Color.clear
             .frame(height: 84)
-    }
-
-    // MARK: - Normal Mode Row (tappable with context menu)
-
-    @ViewBuilder
-    private func rowButton(for item: FlekHomeItem) -> some View {
-        FlekAppRow(
-            title: title(for: item),
-            subtitle: subtitle(for: item),
-            isNew: newDot(for: item),
-            showsSingleBadge: singleBadge(for: item),
-            isEditing: false,
-            canDelete: canDelete(item),
-            onRun: { onTap(item) },
-            onDelete: { onDelete(item) },
-            icon: { iconView(for: item) }
-        )
-        .contextMenu { contextMenu(item) }
     }
 
     // MARK: - Helpers
@@ -206,7 +244,7 @@ struct FlekAppRow<Icon: View>: View {
                         .foregroundStyle(.white, .red)
                 }
                 .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
             icon()
@@ -244,6 +282,7 @@ struct FlekAppRow<Icon: View>: View {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.tertiary)
+                    .transition(.opacity)
             } else {
                 Button(action: onRun) {
                     Text("lc.appBanner.run".loc)
@@ -260,6 +299,7 @@ struct FlekAppRow<Icon: View>: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity)
             }
         }
         .padding(.leading, 8)
