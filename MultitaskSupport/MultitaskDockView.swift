@@ -2115,7 +2115,13 @@ struct AppSwitcherOverlay: View {
                 cardHStack
                     .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.viewAligned)
+            // `.never` lets a flick carry across multiple cards with momentum and
+            // then settle aligned (like the iOS App Switcher). The default
+            // (`.automatic`, which acts like `.always` on a compact iPhone width)
+            // limits each swipe to a single card, so a gentle or quick horizontal
+            // swipe that didn't fully cross to the next card snapped back to the
+            // current one — which read as the swipe "not registering".
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .scrollClipDisabled()
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
