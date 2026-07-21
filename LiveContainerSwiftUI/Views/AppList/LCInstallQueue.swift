@@ -134,6 +134,7 @@ final class LCInstallQueue: ObservableObject {
         let item = InstallItem(url: url, name: name, iconURL: iconURL)
         items.append(item)
         startNextDownloads()
+        updateIdleTimer()
     }
 
     func cancel(_ item: InstallItem) {
@@ -147,6 +148,7 @@ final class LCInstallQueue: ObservableObject {
         objectWillChange.send()
         startNextDownloads()
         processInstallQueue()
+        updateIdleTimer()
     }
 
     func cancel(url: String) {
@@ -174,6 +176,7 @@ final class LCInstallQueue: ObservableObject {
         objectWillChange.send()
         processInstallQueue()
         startNextDownloads()
+        updateIdleTimer()
     }
 
     /// Called by the install handler when install fails.
@@ -184,6 +187,7 @@ final class LCInstallQueue: ObservableObject {
         objectWillChange.send()
         processInstallQueue()
         startNextDownloads()
+        updateIdleTimer()
     }
 
     // MARK: Internal
@@ -192,6 +196,20 @@ final class LCInstallQueue: ObservableObject {
         switch item.phase {
         case .completed, .failed, .cancelled: return false
         default: return true
+        }
+    }
+
+    /// Keeps the display awake while any download or install is in flight.
+    /// Called on every queue state change: the idle (auto-lock) timer stays
+    /// disabled as long as at least one item is still active (queued /
+    /// downloading / waiting / installing), and is re-enabled once the queue
+    /// drains. Note this only suppresses the *automatic* idle lock — it can't
+    /// stop a manual lock (power button) or keep work running once the app is
+    /// actually suspended in the background.
+    private func updateIdleTimer() {
+        let shouldStayAwake = items.contains { isActive($0) }
+        if UIApplication.shared.isIdleTimerDisabled != shouldStayAwake {
+            UIApplication.shared.isIdleTimerDisabled = shouldStayAwake
         }
     }
 
@@ -226,6 +244,7 @@ final class LCInstallQueue: ObservableObject {
         guard let url = URL(string: item.url) else {
             item.phase = .failed("lc.appList.urlInvalidError".loc)
             objectWillChange.send()
+            updateIdleTimer()
             return
         }
 
@@ -274,6 +293,7 @@ final class LCInstallQueue: ObservableObject {
                     self.items.removeAll { $0.id == item.id }
                     self.objectWillChange.send()
                     self.startNextDownloads()
+                    self.updateIdleTimer()
                     return
                 }
                 item.downloadedFileURL = dest
@@ -288,6 +308,7 @@ final class LCInstallQueue: ObservableObject {
             }
 
             self.startNextDownloads()
+            self.updateIdleTimer()
         }
     }
 
@@ -302,9 +323,6 @@ final class LCInstallQueue: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-
-            UIApplication.shared.isIdleTimerDisabled = true
-            defer { UIApplication.shared.isIdleTimerDisabled = false }
 
             do {
                 try await self.installHandler?(nextItem)
