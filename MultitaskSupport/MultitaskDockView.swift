@@ -2003,8 +2003,22 @@ struct AppSwitcherOverlay: View {
                 ScrollViewReader { proxy in
                     cardScrollView
                     .onAppear {
-                        if let uuid = dockManager.frontmostAppUUID {
-                            proxy.scrollTo(uuid, anchor: .center)
+                        // Always land on the most-recently-used app (the rightmost
+                        // card), matching iOS. `frontmostAppUUID` is transient — it's
+                        // cleared to nil whenever we visit the springboard — so when
+                        // it's unavailable, fall back to the last app in recency order
+                        // (the `apps` array keeps the most-recent app at the end).
+                        // Without this fallback the scroll was skipped and the view
+                        // rested at its leading edge, showing the leftmost (oldest) card.
+                        let target = dockManager.frontmostAppUUID ?? dockManager.apps.last?.appUUID
+                        if let target {
+                            // Defer to the next runloop so the scroll target layout is
+                            // resolved before we scroll: calling scrollTo before layout
+                            // settles under `.viewAligned` can snap back to the first
+                            // card, which is the intermittent "jumps to left card" bug.
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(target, anchor: .center)
+                            }
                         }
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
                             isPresented = true
