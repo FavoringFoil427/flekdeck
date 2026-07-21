@@ -379,13 +379,9 @@ struct FlekInstallRow: View {
                     .font(.system(size: 19))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                if state.indeterminate {
-                    Text("lc.flek.installing".loc)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                } else {
-                    ProgressView(value: state.fraction).tint(Color(red: 0, green: 117/255, blue: 1))
-                }
+                // Progress is shown on the app icon itself (percentage while
+                // downloading, ring while installing), so the text column shows
+                // just the app name — no progress bar or status label.
             }
             Spacer(minLength: 8)
         }
