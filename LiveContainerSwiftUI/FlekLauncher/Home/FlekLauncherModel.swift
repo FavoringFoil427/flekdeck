@@ -118,21 +118,30 @@ final class FlekLaunchModeStore {
     private let store = LCUtils.appGroupUserDefault
     private let key = "FlekAppLaunchModes"
 
-    private var map: [String: String] {
-        get { store.dictionary(forKey: key) as? [String: String] ?? [:] }
-        set { store.set(newValue, forKey: key) }
+    /// In-memory cache of the launch-mode map. mode()/showsSingleBadge() are
+    /// called for every home cell on every render pass, so reading UserDefaults
+    /// each time was needless work during scroll. Seed lazily from disk and
+    /// refresh only on write.
+    private lazy var cache: [String: String] = (store.dictionary(forKey: key) as? [String: String]) ?? [:]
+
+    private func persist() {
+        store.set(cache, forKey: key)
+    }
+
+    /// Reload from disk (e.g. if another LiveContainer instance changed it).
+    func refresh() {
+        cache = (store.dictionary(forKey: key) as? [String: String]) ?? [:]
     }
 
     func mode(for app: LCAppModel) -> FlekLaunchMode? {
-        guard let id = app.appInfo.relativeBundlePath, let raw = map[id] else { return nil }
+        guard let id = app.appInfo.relativeBundlePath, let raw = cache[id] else { return nil }
         return FlekLaunchMode(rawValue: raw)
     }
 
     func set(_ mode: FlekLaunchMode, for app: LCAppModel) {
         guard let id = app.appInfo.relativeBundlePath else { return }
-        var m = map
-        m[id] = mode.rawValue
-        map = m
+        cache[id] = mode.rawValue
+        persist()
     }
 
     /// Whether the single-mode badge should be shown (user explicitly chose single).
@@ -147,21 +156,28 @@ final class FlekLaunchTracker {
     static let shared = FlekLaunchTracker()
     private let store = LCUtils.appGroupUserDefault
 
-    private var launched: Set<String> {
-        get { Set(store.stringArray(forKey: FlekLauncherKeys.launchedApps) ?? []) }
-        set { store.set(Array(newValue), forKey: FlekLauncherKeys.launchedApps) }
+    /// In-memory cache so isNew() doesn't read UserDefaults and rebuild a Set for
+    /// every row on every render. Seeded lazily from disk; updated on write.
+    private lazy var cache: Set<String> = Set(store.stringArray(forKey: FlekLauncherKeys.launchedApps) ?? [])
+
+    private func persist() {
+        store.set(Array(cache), forKey: FlekLauncherKeys.launchedApps)
+    }
+
+    /// Reload from disk (e.g. if another LiveContainer instance changed it).
+    func refresh() {
+        cache = Set(store.stringArray(forKey: FlekLauncherKeys.launchedApps) ?? [])
     }
 
     func isNew(_ app: LCAppModel) -> Bool {
         guard let key = app.appInfo.relativeBundlePath else { return false }
-        return !launched.contains(key)
+        return !cache.contains(key)
     }
 
     func markLaunched(_ app: LCAppModel) {
         guard let key = app.appInfo.relativeBundlePath else { return }
-        var set = launched
-        if set.insert(key).inserted {
-            launched = set
+        if cache.insert(key).inserted {
+            persist()
         }
     }
 }

@@ -223,6 +223,25 @@ struct FlekHomeListView<Menu: View>: View {
     }
 }
 
+/// Static (non-blurring) frosted surface for list rows. Replaces `.ultraThinMaterial`,
+/// which forces a live backdrop blur per row every frame while scrolling. The
+/// wallpaper behind is already statically blurred, so a solid translucent fill
+/// looks nearly identical at a fraction of the cost. The opacity values below are
+/// the visual tuning knobs.
+private struct FlekStaticRowSurface: View {
+    var cornerRadius: CGFloat = 20
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(colorScheme == .dark ? Color(white: 0.16).opacity(0.7) : Color.white.opacity(0.6))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+            )
+    }
+}
+
 struct FlekAppRow<Icon: View>: View {
     let title: String
     var subtitle: String?
@@ -250,7 +269,6 @@ struct FlekAppRow<Icon: View>: View {
             icon()
                 .frame(width: 68, height: 68)
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -293,8 +311,7 @@ struct FlekAppRow<Icon: View>: View {
                         .frame(height: 28)
                         .background(
                             Capsule()
-                                .fill(.ultraThinMaterial)
-                                .overlay(Capsule().fill(Color.white.opacity(0.65)))
+                                .fill(Color.white.opacity(0.72))
                                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.4), lineWidth: 0.5))
                         )
                 }
@@ -306,17 +323,7 @@ struct FlekAppRow<Icon: View>: View {
         .padding(.trailing, 10)
         .frame(height: 84)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.18))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+            FlekStaticRowSurface(cornerRadius: 20)
         }
     }
 }
@@ -389,17 +396,7 @@ struct FlekInstallRow: View {
         .padding(.trailing, 10)
         .frame(height: 84)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.18))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+            FlekStaticRowSurface(cornerRadius: 20)
         }
     }
 }
