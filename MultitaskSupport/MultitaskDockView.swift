@@ -1943,6 +1943,7 @@ struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var isPresented = false
     @State private var exiting = false
+    @State private var openMenuUUID: String? = nil
     
     private let cardSpacing: CGFloat = 16
 
@@ -1997,7 +1998,7 @@ struct AppSwitcherOverlay: View {
                 // safe area (the overlay ignores the safe area, so add it back
                 // here) instead of pushing everything toward the bottom.
                 Spacer()
-                    .frame(height: dockManager.safeAreaInsets.top + 12)
+                    .frame(minHeight: dockManager.safeAreaInsets.top + 12)
 
                 // Horizontal scrolling app cards
                 ScrollViewReader { proxy in
@@ -2094,6 +2095,41 @@ struct AppSwitcherOverlay: View {
         .onTapGesture {
             exitToSpringboard()
         }
+        // Custom Customize dropdown, rendered above every card and anchored to the
+        // tapped card's Customize button via CustomizeAnchorKey.
+        .overlayPreferenceValue(CustomizeAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                ZStack(alignment: .topLeading) {
+                    if let uuid = openMenuUUID,
+                       let anchor = anchors[uuid],
+                       let menuApp = dockManager.apps.first(where: { $0.appUUID == uuid }) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismissCustomizeMenu() }
+                        positionedCustomizeDropdown(menuApp, rect: proxy[anchor], size: proxy.size)
+                    }
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+        }
+    }
+
+    private func dismissCustomizeMenu() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            openMenuUUID = nil
+        }
+    }
+
+    // Positions the dropdown just below the button, clamped on-screen (a normal
+    // function so the `let` math isn't constrained by the ViewBuilder).
+    private func positionedCustomizeDropdown(_ menuApp: DockAppModel, rect: CGRect, size: CGSize) -> some View {
+        let menuWidth: CGFloat = 260
+        let estHeight: CGFloat = 210
+        let x = min(max(rect.midX - menuWidth / 2, 8), max(8, size.width - menuWidth - 8))
+        let y = min(rect.maxY + 6, max(8, size.height - estHeight - 8))
+        return CustomizeDropdown(app: menuApp, onDismiss: dismissCustomizeMenu)
+            .offset(x: x, y: y)
+            .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity))
     }
     
     /// Tapping the background returns to the springboard: cards slide off to the
@@ -2138,7 +2174,8 @@ struct AppSwitcherOverlay: View {
                     cardWidth: cardWidth,
                     cardHeight: cardHeight,
                     cornerRadius: cardCornerRadius,
-                    cardIndex: pair.offset
+                    cardIndex: pair.offset,
+                    openMenuUUID: $openMenuUUID
                 )
                 .id(pair.element.appUUID)
                 // Graceful exit if the card is removed while still partly on-screen.
@@ -2156,6 +2193,115 @@ struct AppSwitcherOverlay: View {
     }
 }
 
+// MARK: - Customize Dropdown (menu-style, but with a slider)
+
+// Collects each card's Customize-button frame so the overlay can anchor the
+// dropdown to the right button.
+@available(iOS 16.0, *)
+struct CustomizeAnchorKey: PreferenceKey {
+    static var defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+// Menu-row press highlight.
+@available(iOS 16.0, *)
+struct MenuRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color.white.opacity(0.14) : Color.clear)
+    }
+}
+
+// A dropdown that looks and behaves like a system menu — opens downward from the
+// Customize button, overlays the cards, taps-away to dismiss — but, unlike a real
+// UIMenu, can contain a continuous slider.
+@available(iOS 16.0, *)
+struct CustomizeDropdown: View {
+    let app: DockAppModel
+    var onDismiss: () -> Void
+    @State private var currentScale: CGFloat = 1.0
+
+    private var decoratedVC: DecoratedAppSceneViewController? {
+        app.view?._viewDelegate() as? DecoratedAppSceneViewController
+    }
+    private var pidString: String {
+        decoratedVC.map { "\($0.appSceneVC.pid)" } ?? "—"
+    }
+    private var isPiPActive: Bool {
+        guard let vc = decoratedVC else { return false }
+        return PiPManager.shared?.isPiP(withVC: vc.appSceneVC) == true
+    }
+    private func copyPID() {
+        guard let vc = decoratedVC else { return }
+        UIPasteboard.general.string = "\(vc.appSceneVC.pid)"
+    }
+    private func togglePiP() {
+        guard let vc = decoratedVC, let pip = PiPManager.shared else { return }
+        if pip.isPiP(withVC: vc.appSceneVC) { pip.stopPiP() } else { pip.startPiP(withVC: vc.appSceneVC) }
+    }
+    private func applyScale(_ newValue: CGFloat) {
+        guard let vc = decoratedVC else { return }
+        vc.scaleRatio = newValue
+        vc.appSceneVC.scaleRatio = newValue
+        vc.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+    }
+
+    private func row(_ title: String, _ system: String, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+            onDismiss()
+        } label: {
+            HStack(spacing: 10) {
+                Text(title).font(.system(size: 15))
+                Spacer(minLength: 8)
+                Image(systemName: system).font(.system(size: 15))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowButtonStyle())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
+            Divider().overlay(Color.white.opacity(0.12))
+            row(isPiPActive ? "Disable PiP" : "Enable PiP",
+                isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
+            Divider().overlay(Color.white.opacity(0.12))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("UI Scale", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 15))
+                    Spacer()
+                    Text("\(Int(currentScale * 100))%")
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .foregroundStyle(.white)
+                Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
+                    .tint(.white)
+                    .onChange(of: currentScale) { newValue in applyScale(newValue) }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 260)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
+        .environment(\.colorScheme, .dark)
+        .onAppear { if let vc = decoratedVC { currentScale = vc.scaleRatio } }
+    }
+}
+
 // MARK: - App Switcher Card (with swipe-up-to-close)
 @available(iOS 16.0, *)
 struct AppSwitcherCard: View {
@@ -2165,6 +2311,7 @@ struct AppSwitcherCard: View {
     let cornerRadius: CGFloat
     
     let cardIndex: Int
+    @Binding var openMenuUUID: String?
     
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var dragOffset: CGFloat = 0
@@ -2172,8 +2319,6 @@ struct AppSwitcherCard: View {
     @State private var isVerticalDrag = false
     @State private var hasPassedThreshold = false
     @State private var closeAllOffset: CGFloat = 0
-    @State private var isCustomizeExpanded = false
-    @State private var currentScale: CGFloat = 1.0
     
     private let dismissThreshold: CGFloat = -120
     
@@ -2230,122 +2375,36 @@ struct AppSwitcherCard: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
             
-            // Customize expandable panel (guest apps only)
+            // Customize button (guest apps only) — opens a custom dropdown
+            // (CustomizeDropdown) that acts like a menu but can hold a slider, and
+            // publishes its frame via CustomizeAnchorKey so the overlay anchors to it.
             if !app.isInternalPage {
-                VStack(spacing: 0) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isCustomizeExpanded.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "gear")
-                                .font(.system(size: 11, weight: .medium))
-                            Text("Customize")
-                                .font(.system(size: 13, weight: .medium))
-                            Image(systemName: isCustomizeExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10, weight: .semibold))
-                        }
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .modifier(GlassCapsuleBackground())
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                        openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
                     }
-                    .buttonStyle(.plain)
-                    
-                    if isCustomizeExpanded {
-                        VStack(spacing: 10) {
-                            // PID row
-                            HStack {
-                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                    Text("PID: \(decoratedVC.appSceneVC.pid)")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.6))
-                                }
-                                Spacer()
-                                Button {
-                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                        UIPasteboard.general.string = "\(decoratedVC.appSceneVC.pid)"
-                                    }
-                                } label: {
-                                    Label("Copy", systemImage: "doc.on.doc")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.7))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            
-                            Divider().background(Color.white.opacity(0.2))
-                            
-                            // PiP toggle
-                            Button {
-                                if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                    let pipManager = PiPManager.shared!
-                                    if pipManager.isPiP(withVC: decoratedVC.appSceneVC) {
-                                        pipManager.stopPiP()
-                                    } else {
-                                        pipManager.startPiP(withVC: decoratedVC.appSceneVC)
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
-                                       PiPManager.shared?.isPiP(withVC: decoratedVC.appSceneVC) == true {
-                                        Label("Disable PiP", systemImage: "pip.exit")
-                                    } else {
-                                        Label("Enable PiP", systemImage: "pip.enter")
-                                    }
-                                    Spacer()
-                                }
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                            }
-                            .buttonStyle(.plain)
-                            
-                            Divider().background(Color.white.opacity(0.2))
-                            
-                            // UI Scale slider
-                            VStack(spacing: 6) {
-                                HStack {
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                        .font(.system(size: 11))
-                                    Text("UI Scale")
-                                        .font(.system(size: 13, weight: .medium))
-                                    Spacer()
-                                    Text("\(Int(currentScale * 100))%")
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                }
-                                .foregroundColor(.white.opacity(0.7))
-                                
-                                Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
-                                    .tint(.white.opacity(0.5))
-                                    .onChange(of: currentScale) { newValue in
-                                        if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                                            decoratedVC.scaleRatio = newValue
-                                            decoratedVC.appSceneVC.scaleRatio = newValue
-                                            decoratedVC.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
-                                        }
-                                    }
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                        )
-                        .frame(width: cardWidth)
-                        .padding(.top, 6)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Customize")
+                            .font(.system(size: 15, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .opacity(0.7)
                     }
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .modifier(GlassCapsuleBackground())
                 }
-                .onAppear {
-                    if let decoratedVC = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
-                        currentScale = decoratedVC.scaleRatio
-                    }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+                .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
+                    [app.appUUID: $0]
                 }
-            }
-        }
+            }        }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
