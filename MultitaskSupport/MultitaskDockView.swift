@@ -2273,15 +2273,14 @@ struct CustomizeDropdown: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // PID + PiP apply only to guest apps; internal pages (Settings /
-            // Installer) show just the UI Scale control below.
-            if decoratedVC != nil {
-                row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
-                Divider().overlay(Color.white.opacity(0.12))
-                row(isPiPActive ? "Disable PiP" : "Enable PiP",
-                    isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
-                Divider().overlay(Color.white.opacity(0.12))
-            }
+            // Full menu on every card. Internal pages (Settings / Installer) have
+            // no guest process, so PID shows "—" and PiP is a no-op there, but the
+            // rows are shown for consistency.
+            row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
+            Divider().overlay(Color.white.opacity(0.12))
+            row(isPiPActive ? "Disable PiP" : "Enable PiP",
+                isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
+            Divider().overlay(Color.white.opacity(0.12))
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("UI Scale", systemImage: "arrow.up.left.and.arrow.down.right")
