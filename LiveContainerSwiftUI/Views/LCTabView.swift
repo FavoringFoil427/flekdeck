@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import ObjectiveC
 
 struct LCTabView: View {
     @Binding var appDataFolderNames: [String]
@@ -494,8 +495,112 @@ private struct HomeIndicatorHiddenModifier: ViewModifier {
             content
                 .persistentSystemOverlays(.hidden)
                 .defersSystemGestures(on: .bottom)
+                // SwiftUI's `.defersSystemGestures(on:)` frequently fails to
+                // propagate `preferredScreenEdgesDeferringSystemGestures` to the
+                // window's view controllers, so the bottom-edge deferral silently
+                // does nothing. Install it directly on the hosting controller at
+                // runtime as well, so the swipe-up-to-home gesture is actually
+                // deferred (first swipe reveals the indicator, second leaves).
+                .background(BottomEdgeGestureDeferralInstaller())
         } else {
             content
+        }
+    }
+}
+
+/// Zero-size helper that, once attached to a window, forces iOS to defer the
+/// bottom screen-edge system gesture (swipe-up-to-home) by installing
+/// `preferredScreenEdgesDeferringSystemGestures` directly on SwiftUI's
+/// UIHostingController base class. This is the reliable path when the SwiftUI
+/// `.defersSystemGestures` modifier is ignored.
+///
+/// Caveat: this preference is advisory. iOS still overrides it whenever it
+/// decides the user clearly intends to go home, so a firm, deliberate swipe may
+/// still leave in a single gesture on some devices / iOS versions — Apple
+/// intentionally protects the home gesture and this cannot be fully defeated.
+private struct BottomEdgeGestureDeferralInstaller: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = InstallerView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    private final class InstallerView: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let root = window?.rootViewController else { return }
+            ScreenEdgeGestureDeferrer.install(fromRoot: root)
+        }
+    }
+}
+
+/// Runtime swizzler that makes every SwiftUI `UIHostingController` report the
+/// bottom edge as deferring system gestures.
+private enum ScreenEdgeGestureDeferrer {
+    /// Hosting classes already swizzled, so repeated installs are no-ops.
+    private static var swizzledClasses = Set<ObjectIdentifier>()
+
+    static func install(fromRoot root: UIViewController) {
+        let base = hostingControllerBaseClass(of: root) ?? object_getClass(root)
+        swizzle(hostingBase: base)
+        refresh(from: root)
+    }
+
+    /// Walks up the class hierarchy of `vc` and returns the highest-level class
+    /// whose name identifies it as a SwiftUI `UIHostingController` — the base
+    /// that every specialised `UIHostingController<Content>` inherits from, so
+    /// swizzling it covers the root screen and every full-screen cover alike.
+    private static func hostingControllerBaseClass(of vc: UIViewController) -> AnyClass? {
+        var result: AnyClass? = nil
+        var cls: AnyClass? = object_getClass(vc)
+        while let c = cls {
+            if String(cString: class_getName(c)).contains("UIHostingController") {
+                result = c
+            }
+            cls = class_getSuperclass(c)
+        }
+        return result
+    }
+
+    private static func swizzle(hostingBase cls: AnyClass?) {
+        guard let cls else { return }
+        let id = ObjectIdentifier(cls)
+        guard !swizzledClasses.contains(id) else { return }
+        swizzledClasses.insert(id)
+
+        // preferredScreenEdgesDeferringSystemGestures → previous value ∪ .bottom
+        let preferredSel = #selector(getter: UIViewController.preferredScreenEdgesDeferringSystemGestures)
+        if let method = class_getInstanceMethod(cls, preferredSel) {
+            let previousIMP = method_getImplementation(method)
+            let typeEnc = method_getTypeEncoding(method)
+            let block: @convention(block) (UIViewController) -> UIRectEdge = { obj in
+                typealias Getter = @convention(c) (UIViewController, Selector) -> UIRectEdge
+                let previous = unsafeBitCast(previousIMP, to: Getter.self)(obj, preferredSel)
+                return previous.union(.bottom)
+            }
+            class_replaceMethod(cls, preferredSel, imp_implementationWithBlock(block), typeEnc)
+        }
+
+        // childForScreenEdgesDeferringSystemGestures → nil, so the system reads
+        // each hosting controller's own (now-deferred) preference instead of
+        // forwarding to a child SwiftUI never wired up. This is a distinct path
+        // from the home-indicator-hidden forwarding, which is left untouched.
+        let childSel = #selector(getter: UIViewController.childForScreenEdgesDeferringSystemGestures)
+        if let method = class_getInstanceMethod(cls, childSel) {
+            let typeEnc = method_getTypeEncoding(method)
+            let block: @convention(block) (UIViewController) -> UIViewController? = { _ in nil }
+            class_replaceMethod(cls, childSel, imp_implementationWithBlock(block), typeEnc)
+        }
+    }
+
+    /// Asks the current controller stack to re-query the now-swizzled prefs.
+    private static func refresh(from root: UIViewController) {
+        var vc: UIViewController? = root
+        while let current = vc {
+            current.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+            vc = current.presentedViewController
         }
     }
 }
