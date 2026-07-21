@@ -1944,6 +1944,7 @@ struct AppSwitcherOverlay: View {
     @State private var isPresented = false
     @State private var exiting = false
     @State private var openMenuUUID: String? = nil
+    @State private var showCloseAllConfirm = false
     
     private let cardSpacing: CGFloat = 16
 
@@ -2035,7 +2036,7 @@ struct AppSwitcherOverlay: View {
                 // Close all button (floating capsule, centered above the bar).
                 Button(action: {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    dockManager.closeAllApps()
+                    showCloseAllConfirm = true
                 }) {
                     HStack(spacing: 7) {
                         Image(systemName: "xmark")
@@ -2050,6 +2051,14 @@ struct AppSwitcherOverlay: View {
                 }
                 .padding(.bottom, 20)
                 .offset(y: exiting ? exitButtonOffset : 0)
+                .alert("Close All Apps?", isPresented: $showCloseAllConfirm) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Close All", role: .destructive) {
+                        dockManager.closeAllApps()
+                    }
+                } message: {
+                    Text("This closes every open app.")
+                }
 
                 // Reserve the bar's footprint so Close all sits above the bottom
                 // bar (which is a separate bottom-anchored layer below).
