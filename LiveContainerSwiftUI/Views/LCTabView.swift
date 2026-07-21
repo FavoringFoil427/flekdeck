@@ -63,7 +63,7 @@ struct LCTabView: View {
                 LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
             }
         }
-        .modifier(HomeIndicatorHiddenModifier())
+        .modifier(DeferBottomHomeGestureModifier())
         .alert("lc.common.error".loc, isPresented: $errorShow) {
             Button("lc.common.ok".loc) {}
             Button("lc.common.copy".loc) { copyError() }
@@ -487,20 +487,25 @@ private struct AccessVerificationFailedView: View {
     }
 }
 
-/// Hides the home indicator and requires a double-swipe to trigger the
-/// system edge gesture (home bar), preventing accidental exits.
-private struct HomeIndicatorHiddenModifier: ViewModifier {
+/// Requires a double-swipe to trigger the bottom system edge gesture
+/// (swipe-up-to-home), preventing accidental exits.
+///
+/// The home indicator is intentionally left VISIBLE. iOS treats hiding the
+/// indicator and deferring the home gesture as mutually exclusive: the deferral
+/// works by revealing the indicator on the first swipe and only performing the
+/// gesture on the second, so if the indicator is already hidden a single swipe
+/// exits and the deferral has no effect. Showing the indicator is therefore a
+/// hard requirement for the two-swipe behaviour — do not re-add
+/// `.persistentSystemOverlays(.hidden)` here.
+private struct DeferBottomHomeGestureModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 16.0, *) {
             content
-                .persistentSystemOverlays(.hidden)
                 .defersSystemGestures(on: .bottom)
                 // SwiftUI's `.defersSystemGestures(on:)` frequently fails to
                 // propagate `preferredScreenEdgesDeferringSystemGestures` to the
-                // window's view controllers, so the bottom-edge deferral silently
-                // does nothing. Install it directly on the hosting controller at
-                // runtime as well, so the swipe-up-to-home gesture is actually
-                // deferred (first swipe reveals the indicator, second leaves).
+                // window's view controllers, so also install it directly on the
+                // hosting controller at runtime as a reliable backstop.
                 .background(BottomEdgeGestureDeferralInstaller())
         } else {
             content
