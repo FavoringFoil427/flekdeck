@@ -2242,10 +2242,15 @@ struct CustomizeDropdown: View {
         if pip.isPiP(withVC: vc.appSceneVC) { pip.stopPiP() } else { pip.startPiP(withVC: vc.appSceneVC) }
     }
     private func applyScale(_ newValue: CGFloat) {
-        guard let vc = decoratedVC else { return }
-        vc.scaleRatio = newValue
-        vc.appSceneVC.scaleRatio = newValue
-        vc.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+        if let vc = decoratedVC {
+            vc.scaleRatio = newValue
+            vc.appSceneVC.scaleRatio = newValue
+            vc.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+        } else if let pageView = app.view {
+            // Internal pages (Settings / Installer) have no guest process — scale the
+            // hosting view's content layer directly instead.
+            pageView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
+        }
     }
 
     private func row(_ title: String, _ system: String, action: @escaping () -> Void) -> some View {
@@ -2268,11 +2273,15 @@ struct CustomizeDropdown: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
-            Divider().overlay(Color.white.opacity(0.12))
-            row(isPiPActive ? "Disable PiP" : "Enable PiP",
-                isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
-            Divider().overlay(Color.white.opacity(0.12))
+            // PID + PiP apply only to guest apps; internal pages (Settings /
+            // Installer) show just the UI Scale control below.
+            if decoratedVC != nil {
+                row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
+                Divider().overlay(Color.white.opacity(0.12))
+                row(isPiPActive ? "Disable PiP" : "Enable PiP",
+                    isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
+                Divider().overlay(Color.white.opacity(0.12))
+            }
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Label("UI Scale", systemImage: "arrow.up.left.and.arrow.down.right")
@@ -2375,36 +2384,36 @@ struct AppSwitcherCard: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
             
-            // Customize button (guest apps only) — opens a custom dropdown
-            // (CustomizeDropdown) that acts like a menu but can hold a slider, and
-            // publishes its frame via CustomizeAnchorKey so the overlay anchors to it.
-            if !app.isInternalPage {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Customize")
-                            .font(.system(size: 15, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
-                            .opacity(0.7)
-                    }
-                    .foregroundColor(.white.opacity(0.9))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 11)
-                    .modifier(GlassCapsuleBackground())
+            // Customize button — shown on every card (apps + Settings / Installer).
+            // Opens a custom dropdown (CustomizeDropdown) that acts like a menu but
+            // can hold a slider, and publishes its frame via CustomizeAnchorKey so
+            // the overlay anchors the dropdown to it.
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-                .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
-                    [app.appUUID: $0]
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Customize")
+                        .font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(0.7)
                 }
-            }        }
+                .foregroundColor(.white.opacity(0.9))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 11)
+                .modifier(GlassCapsuleBackground())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+            .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
+                [app.appUUID: $0]
+            }
+        }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
