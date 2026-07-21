@@ -96,24 +96,6 @@ struct FlekInstallerView: View {
                 Spacer(minLength: 0)
             }
             .overlay(alignment: .bottom) {
-                if !searchActive {
-                    // Real progressive blur behind the bottom bar (same CAFilter variable blur as the top edge):
-                    // clear at the top, ramping to full blur at the bottom. Sized
-                    // so its top edge sits ~30pt above the Import IPA / search
-                    // buttons (48pt button + 12pt bottom padding + 30pt, past the
-                    // safe area).
-                    GeometryReader { geo in
-                        VariableBlurView(maxBlurRadius: 7, direction: .bottom)
-                            .frame(height: geo.safeAreaInsets.bottom + 96)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            .ignoresSafeArea(edges: .bottom)
-                            .offset(y: barOccupiesBottom ? 0 : 52)
-                    }
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-                }
-            }
-            .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 10)
                     // -18 (not -20) leaves a 2pt margin above the bottom edge for
