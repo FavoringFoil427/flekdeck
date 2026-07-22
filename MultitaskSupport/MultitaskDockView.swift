@@ -914,9 +914,11 @@ class AppInfoProvider {
         impactFeedback.impactOccurred()
         
         if isNavAssistStashed {
+            // Docked at an edge: first tap brings the button back out.
             unstashNavAssist()
         } else {
-            showSwitcherBar()
+            // Open the multitask switcher directly instead of showing the bar.
+            showAppSwitcher()
         }
     }
     
