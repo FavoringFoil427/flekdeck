@@ -239,11 +239,21 @@ class AppInfoProvider {
         barLedgeActive ? Constants.barHeightWithLedge : Constants.barHeight
     }
 
+    /// The device's physical screen corner radius (private UIScreen value) so the
+    /// bar's concave corners match the phone's rounded screen corners. Falls back
+    /// to a sensible default on devices that report none.
+    var deviceScreenCornerRadius: CGFloat {
+        let r = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 0
+        return r > 0 ? r : 39
+    }
+
     /// The exact on-screen thickness of the switcher bar strip on its short edge
     /// (matches `updateDockFrame`). App windows reserve this so their content
     /// sits flush against the bar with no background gap showing through.
     @objc public var barReservedThickness: CGFloat {
-        return effectiveBarHeight + safeAreaInsets.bottom
+        // Reserve only the base bar height, not the taller rounded design — the
+        // concave corner extension overlays the app rather than shifting it up.
+        return Constants.barHeight + safeAreaInsets.bottom
     }
 
     /// Reserves (or clears) space for the switcher bar on an internal page,
@@ -252,7 +262,7 @@ class AppInfoProvider {
     /// bar is on the right) left a stale inset that pushed bottom content up and
     /// broke the hide-to-bottom-edge behaviour.
     func applyBarInset(to controller: UIHostingController<AnyView>, reserved: Bool) {
-        let amount: CGFloat = reserved ? effectiveBarHeight : 0
+        let amount: CGFloat = reserved ? Constants.barHeight : 0
         if isBarLandscape {
             controller.additionalSafeAreaInsets.right = amount
             controller.additionalSafeAreaInsets.bottom = 0
@@ -1502,12 +1512,21 @@ class AppInfoProvider {
         switcherOverlayController = hc
         
         hc.view.alpha = 0
-        hc.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
         keyWindow.addSubview(hc.view)
-        
+        // Force a full layout + render pass while the overlay is still invisible,
+        // so its blurred background, cards and bottom bar are all drawn before the
+        // fade starts. Without this the first visible frames show the bare black
+        // backdrop and everything "pops in" a frame later — the blink/reload.
+        hc.view.setNeedsLayout()
+        hc.view.layoutIfNeeded()
+
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        // Hide the switcher bar while the overlay is shown
+        // Keep the existing bottom bar at full opacity underneath during the
+        // entrance. Its black rounded region is identical to the overlay's own
+        // bottom bar, so leaving it solid means the bar never cross-fades — only
+        // the "buttons" on it appear to change, instead of the whole bar blinking
+        // as the overlay dissolves in over transparent content.
         UIView.animate(
             withDuration: Constants.standardAnimationDuration,
             delay: 0,
@@ -1516,7 +1535,10 @@ class AppInfoProvider {
             options: .curveEaseOut
         ) {
             hc.view.alpha = 1
-            hc.view.transform = .identity
+        } completion: { _ in
+            // Overlay is fully opaque on top now, so hiding the bar underneath
+            // has no visible effect — it just keeps the bar's state consistent
+            // for the exit path.
             self.hostingController?.view.alpha = 0
         }
     }
@@ -1712,13 +1734,6 @@ struct BarInverseTopCorners: Shape {
 struct SwitcherBarContentView: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
 
-    /// The device's physical screen corner radius (private UIScreen value) so the
-    /// bar's concave corners match the phone's rounded screen corners. Falls back
-    /// to a sensible default on devices that report none (e.g. square displays).
-    private var deviceScreenCornerRadius: CGFloat {
-        let r = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 0
-        return r > 0 ? r : 39
-    }
     
     var body: some View {
         activeBarContent
@@ -1737,7 +1752,7 @@ struct SwitcherBarContentView: View {
         .background {
             Group {
                 if dockManager.barLedgeActive && !dockManager.isLandscapeBar {
-                    BarInverseTopCorners(radius: deviceScreenCornerRadius).fill(Color.black)
+                    BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius).fill(Color.black)
                 } else {
                     Rectangle().fill(Color.black)
                 }
@@ -2169,13 +2184,20 @@ struct AppSwitcherOverlay: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
+                // Grow to the real bar's height (tall rounded design + bottom
+                // safe area), keeping the label in the bottom button zone.
+                .frame(maxWidth: .infinity,
+                       minHeight: dockManager.effectiveBarHeight + dockManager.safeAreaInsets.bottom,
+                       alignment: .bottom)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // Background outside the label so a press can't dim it. The opaque
-            // ZStack base already covers what's behind, so the bar can stay short
-            // without a gap.
-            .background(Color.black)
+            // Same concave rounded top corners and height as the switcher bar it hides.
+            .background {
+                BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius)
+                    .fill(Color.black)
+                    .ignoresSafeArea()
+            }
             .offset(y: exiting ? exitButtonOffset : 0)
         }
         .ignoresSafeArea()
