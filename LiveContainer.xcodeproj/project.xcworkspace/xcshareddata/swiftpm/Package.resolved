@@ -1,15 +1,6 @@
 {
-  "originHash" : "a88b01890c92afa4ff053a463c91a43ce54edb2429ff44b05756d697bcffb1fc",
+  "originHash" : "917a2b512148612347b307b5f8d624e74df48af36fa322c80901a86fc0e1317f",
   "pins" : [
-    {
-      "identity" : "bluruikit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/TimOliver/BlurUIKit",
-      "state" : {
-        "revision" : "235de46a35bae4f5f7bf905831969277b4e7d2aa",
-        "version" : "1.5.0"
-      }
-    },
     {
       "identity" : "kingfisher",
       "kind" : "remoteSourceControl",
