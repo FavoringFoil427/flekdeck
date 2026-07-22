@@ -211,11 +211,39 @@ class AppInfoProvider {
     /// ObjC-accessible flag for whether the switcher bar is currently shown
     @objc public var barVisible: Bool { return isSwitcherBarVisible }
 
+    /// Live read of the LCMultitaskBarLedge setting (rounded tall bar vs the
+    /// original short one). Defaults on.
+    private var barLedgeSetting: Bool {
+        // The rounded bar is currently the only design and the settings toggle is
+        // hidden. To bring the choice back, return the commented read instead.
+        return true
+        // (LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true)
+    }
+
+    /// The design actually in effect on the visible bar. Captured from the setting
+    /// only when the bar (re)appears via `captureBarDesign()` — never mid-session —
+    /// so toggling the setting while the settings page (whose own toggle sits over
+    /// this same bar) is open never changes anything under the user's finger. The
+    /// new design applies the next time the bar is laid out (app switch, rotation,
+    /// or re-show).
+    @Published private(set) var barLedgeActive: Bool = true
+
+    /// Re-reads the setting into `barLedgeActive`; called as the bar is laid out.
+    func captureBarDesign() {
+        let v = barLedgeSetting
+        if barLedgeActive != v { barLedgeActive = v }
+    }
+
+    /// Bar strip height for the active design.
+    var effectiveBarHeight: CGFloat {
+        barLedgeActive ? Constants.barHeightWithLedge : Constants.barHeight
+    }
+
     /// The exact on-screen thickness of the switcher bar strip on its short edge
     /// (matches `updateDockFrame`). App windows reserve this so their content
     /// sits flush against the bar with no background gap showing through.
     @objc public var barReservedThickness: CGFloat {
-        return Constants.barHeight + safeAreaInsets.bottom
+        return effectiveBarHeight + safeAreaInsets.bottom
     }
 
     /// Reserves (or clears) space for the switcher bar on an internal page,
@@ -224,7 +252,7 @@ class AppInfoProvider {
     /// bar is on the right) left a stale inset that pushed bottom content up and
     /// broke the hide-to-bottom-edge behaviour.
     func applyBarInset(to controller: UIHostingController<AnyView>, reserved: Bool) {
-        let amount: CGFloat = reserved ? Constants.barHeight : 0
+        let amount: CGFloat = reserved ? effectiveBarHeight : 0
         if isBarLandscape {
             controller.additionalSafeAreaInsets.right = amount
             controller.additionalSafeAreaInsets.bottom = 0
@@ -237,6 +265,8 @@ class AppInfoProvider {
     public struct Constants {
         // MARK: - Switcher Bar Layout
         static let barHeight: CGFloat = 25.0
+        /// Taller bar strip used when the rounded ledge (concave corners) is on.
+        static let barHeightWithLedge: CGFloat = 80.0
         static let barIconSize: CGFloat = 40.0
         static let barButtonSize: CGFloat = 40.0
         static let barSpacing: CGFloat = 10.0
@@ -350,6 +380,7 @@ class AppInfoProvider {
     @objc private func appDidBecomeActive() {
         ensureControlAccessible()
     }
+
     
     deinit {
         NotificationCenter.default.removeObserver(self)
@@ -384,7 +415,7 @@ class AppInfoProvider {
                 .environment(\.colorScheme, .dark))
             
             self.hostingController = UIHostingController(rootView: barView)
-            self.hostingController?.view.backgroundColor = .black
+            self.hostingController?.view.backgroundColor = .clear
             self.hostingController?.view.clipsToBounds = false
             self.hostingController?.view.insetsLayoutMarginsFromSafeArea = false
             self.hostingController?.overrideUserInterfaceStyle = .dark
@@ -407,6 +438,9 @@ class AppInfoProvider {
     private func updateDockFrame(animated: Bool = true) {
         guard let hostingController = hostingController, isSwitcherBarVisible else { return }
 
+        // Pick up the current design as the bar (re)lays out — never mid-toggle.
+        captureBarDesign()
+
         // Keep the published orientation flag in sync so the bar content picks
         // the right edge margin (-2 portrait, -10 landscape).
         if isLandscapeBar != isBarLandscape {
@@ -420,7 +454,7 @@ class AppInfoProvider {
         // orientations so the landscape bar matches the portrait one instead of
         // ballooning to include the large horizontal safe-area inset (e.g. the
         // notch), which previously made it a wide full-height sidebar.
-        let thickness = Constants.barHeight + insets.bottom
+        let thickness = effectiveBarHeight + insets.bottom
 
         let boundsSize: CGSize
         let center: CGPoint
@@ -1652,8 +1686,39 @@ class AppInfoProvider {
 
 // MARK: - Switcher Bar Content View
 @available(iOS 16.0, *)
+/// A rectangle whose top-left and top-right corners are carved *inward* (concave
+/// fillets), so the app content above the switcher bar looks like it has rounded
+/// bottom corners nesting into the bar. The flat top sits `radius` below the two
+/// corners, which rise to the screen edges.
+struct BarInverseTopCorners: Shape {
+    var radius: CGFloat
+    func path(in rect: CGRect) -> Path {
+        let r = min(radius, rect.width / 2, rect.height)
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY + r),
+                       control: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY + r))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
+                       control: CGPoint(x: rect.maxX, y: rect.minY + r))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+@available(iOS 16.0, *)
 struct SwitcherBarContentView: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
+
+    /// The device's physical screen corner radius (private UIScreen value) so the
+    /// bar's concave corners match the phone's rounded screen corners. Falls back
+    /// to a sensible default on devices that report none (e.g. square displays).
+    private var deviceScreenCornerRadius: CGFloat {
+        let r = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 0
+        return r > 0 ? r : 39
+    }
     
     var body: some View {
         activeBarContent
@@ -1661,9 +1726,24 @@ struct SwitcherBarContentView: View {
         // Offset of the buttons from the outer screen edge (the bottom in
         // portrait, the right edge in landscape once the bar is rotated).
         // Negative pushes them tighter to the edge; landscape sits a touch closer.
-        .padding(.bottom, dockManager.isLandscapeBar ? -10 : -2)
+        .padding(.bottom, dockManager.isLandscapeBar ? -10 : 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
+        // Bar background. With the ledge setting on (portrait), the dark bar gets
+        // concave top corners so the app content above looks like it has rounded
+        // bottom corners nesting into the bar. Off / landscape = a plain black bar
+        // as before. The host view's own backgroundColor is cleared in
+        // setupDockView so these concave corners reveal the app behind them.
+        .background {
+            Group {
+                if dockManager.barLedgeActive && !dockManager.isLandscapeBar {
+                    BarInverseTopCorners(radius: deviceScreenCornerRadius).fill(Color.black)
+                } else {
+                    Rectangle().fill(Color.black)
+                }
+            }
+            .ignoresSafeArea()
+        }
     }
     
     // MARK: - Active State (app running in foreground)
