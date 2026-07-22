@@ -2177,6 +2177,7 @@ struct AppSwitcherOverlay: View {
                 HStack(spacing: 6) {
                     Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
                         .font(.system(size: 14, weight: .semibold))
+                        .contentTransition(.opacity)
                     Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
                         .font(.system(size: 15, weight: .medium))
                         .contentTransition(.opacity)
@@ -2192,10 +2193,21 @@ struct AppSwitcherOverlay: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // Same concave rounded top corners and height as the switcher bar it hides.
+            // Same concave rounded top corners and height as the switcher bar it
+            // hides. Solid black while the bar is the active control; once the user
+            // taps Hide (floating-button mode), the black fades out to reveal a
+            // translucent ultra-thin-material bar underneath. Layering the black
+            // over the material and animating its opacity lets the two states
+            // cross-fade smoothly when the toggle flips.
             .background {
                 BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius)
-                    .fill(Color.black)
+                    .fill(.thinMaterial)
+                    .environment(\.colorScheme, .dark)
+                    .overlay {
+                        BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius)
+                            .fill(Color.black)
+                            .opacity(dockManager.prefersFloatingButton ? 0 : 1)
+                    }
                     .ignoresSafeArea()
             }
             .offset(y: exiting ? exitButtonOffset : 0)
