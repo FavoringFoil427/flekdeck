@@ -2190,7 +2190,13 @@ struct AppSwitcherOverlay: View {
                 .frame(maxWidth: .infinity,
                        minHeight: dockManager.effectiveBarHeight + dockManager.safeAreaInsets.bottom,
                        alignment: .bottom)
-                .contentShape(Rectangle())
+                // Limit the tap area to the bar's actual visible shape. The frame is
+                // as tall as the real bar (incl. the concave overhang), but that
+                // overhang is transparent and overlaps the "Close all" button above
+                // it — a rectangular hit area there stole Close all's taps and
+                // flipped this toggle instead. Matching the hit shape to the fill
+                // frees the overhang so Close all receives its taps.
+                .contentShape(BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius))
             }
             .buttonStyle(.plain)
             // Same concave rounded top corners and height as the switcher bar it
