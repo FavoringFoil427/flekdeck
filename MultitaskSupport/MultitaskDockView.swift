@@ -2392,34 +2392,34 @@ struct AppSwitcherCard: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
             
-            // Customize button — shown on every card (apps + Settings / Installer).
-            // Opens a custom dropdown (CustomizeDropdown) that acts like a menu but
-            // can hold a slider, and publishes its frame via CustomizeAnchorKey so
-            // the overlay anchors the dropdown to it.
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                    openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
+            // Customize button — guest apps only. Settings / Installer are
+            // internal pages with no customizable options, so they get no button.
+            if !app.isInternalPage {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                        openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Customize")
+                            .font(.system(size: 15, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .opacity(0.7)
+                    }
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .modifier(GlassCapsuleBackground())
                 }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Customize")
-                        .font(.system(size: 15, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .opacity(0.7)
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+                .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
+                    [app.appUUID: $0]
                 }
-                .foregroundColor(.white.opacity(0.9))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 11)
-                .modifier(GlassCapsuleBackground())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-            .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
-                [app.appUUID: $0]
             }
         }
         .offset(y: dragOffset + closeAllOffset)
