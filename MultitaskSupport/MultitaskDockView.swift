@@ -196,6 +196,8 @@ class AppInfoProvider {
     var internalPageControllers: [String: UIHostingController<AnyView>] = [:]
 
     @objc public var windowHostingView = VirtualWindowsHostView()
+    /// Watches the window's safe area so the bar re-lays out when it changes.
+    private let safeAreaSentinel = SafeAreaSentinelView()
     internal var hostingController: UIHostingController<AnyView>?
     private var switcherOverlayController: UIHostingController<AnyView>?
     /// Full-window host for the switcher bar that limits touches to the bar's
@@ -270,8 +272,15 @@ class AppInfoProvider {
     /// value when set, otherwise the device screen radius (the default "match the
     /// phone's corners"). Read via `captureBarDesign()` into `barCornerRadiusActive`.
     private var barCornerRadiusSetting: CGFloat {
-        let v = LCUtils.appGroupUserDefault.double(forKey: "LCMultitaskBarCornerRadius")
-        return v > 0 ? CGFloat(v) : deviceScreenCornerRadius
+        // The corner-radius slider is hidden for now, so always match the device
+        // screen radius and IGNORE any previously-stored value. A value written
+        // while the slider was enabled persists across reinstalls (but is absent on
+        // a clean install), so reading it here made the bar's corners the wrong size
+        // only after an update/relaunch — the "too tall after reinstall" bug.
+        // Re-enable the stored read below when the slider is brought back.
+        return deviceScreenCornerRadius
+        // let v = LCUtils.appGroupUserDefault.double(forKey: "LCMultitaskBarCornerRadius")
+        // return v > 0 ? CGFloat(v) : deviceScreenCornerRadius
     }
 
     /// The exact on-screen thickness of the switcher bar strip on its short edge
@@ -440,6 +449,7 @@ class AppInfoProvider {
     override init() {
         super.init()
         keyWindow!.rootViewController!.view.addSubview(self.windowHostingView)
+        if let win = keyWindow { attachSafeAreaSentinel(to: win) }
         setupDockView()
         NotificationCenter.default.addObserver(
             self,
@@ -481,6 +491,46 @@ class AppInfoProvider {
 
     @objc private func appDidBecomeActive() {
         ensureControlAccessible()
+        DispatchQueue.main.async {
+            // Keep the safe-area sentinel on the current key window (it can change
+            // across scene transitions), and re-lay out the bar if it's already
+            // visible: on a cold relaunch the bar can first appear before the safe
+            // area is ready, and `ensureControlAccessible` won't re-lay out a bar
+            // that's already shown — so it would otherwise stay mis-sized.
+            if let win = self.keyWindow { self.attachSafeAreaSentinel(to: win) }
+            if self.isVisible && self.isSwitcherBarVisible {
+                self.updateDockFrame(animated: false)
+            }
+        }
+    }
+
+    /// Attach the safe-area sentinel to `window` (moving it if the key window
+    /// changed) so a later safe-area update re-lays out the bar and internal-page
+    /// reservations with the correct inset.
+    private func attachSafeAreaSentinel(to window: UIWindow) {
+        if safeAreaSentinel.onChange == nil {
+            safeAreaSentinel.backgroundColor = .clear
+            safeAreaSentinel.isUserInteractionEnabled = false
+            safeAreaSentinel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            safeAreaSentinel.onChange = { [weak self] in
+                guard let self else { return }
+                DispatchQueue.main.async {
+                    if self.isVisible && self.isSwitcherBarVisible {
+                        self.updateDockFrame(animated: false)
+                    }
+                    let reserved = self.isVisible && self.isSwitcherBarVisible
+                    for (_, controller) in self.internalPageControllers {
+                        self.applyBarInset(to: controller, reserved: reserved)
+                    }
+                }
+            }
+        }
+        if safeAreaSentinel.superview !== window {
+            safeAreaSentinel.removeFromSuperview()
+            safeAreaSentinel.frame = window.bounds
+            window.addSubview(safeAreaSentinel)
+            window.sendSubviewToBack(safeAreaSentinel)
+        }
     }
 
     
@@ -592,6 +642,7 @@ class AppInfoProvider {
         // ballooning to include the large horizontal safe-area inset (e.g. the
         // notch), which previously made it a wide full-height sidebar.
         let thickness = effectiveBarHeight + insets.bottom
+
 
         let boundsSize: CGSize
         let center: CGPoint
@@ -881,6 +932,20 @@ class AppInfoProvider {
     /// nav-assist button — must be reachable so the user can always minimize or exit.
     /// If a state desync ever leaves both hidden, this restores the switcher bar.
     @objc public func ensureControlAccessible() {
+        ensureControlAccessible(retriesLeft: 8)
+    }
+
+    /// Guarantees a multitask control (switcher bar or floating button) is on screen
+    /// whenever an app is foregrounded. This self-heals two launch/relaunch races
+    /// that could otherwise leave neither control visible:
+    ///  1. The app's view is in the hierarchy a beat before it becomes visible, so
+    ///     `hasForegroundAppWindow()` can momentarily be false; if we still expect an
+    ///     app (the list is non-empty) we retry shortly instead of giving up.
+    ///  2. When neither control is up we show the one the user *prefers* (the old
+    ///     code always brought back the bar, ignoring floating-button mode, and
+    ///     `applyPreferredControl` only switches between controls — it does nothing
+    ///     when neither is present).
+    private func ensureControlAccessible(retriesLeft: Int) {
         DispatchQueue.main.async {
             guard self.isDockEnabled() else { return }
             // Reconcile rotation with current control visibility every time we
@@ -890,8 +955,19 @@ class AppInfoProvider {
             guard !self.isHomeState else { return }
             // The app-switcher overlay already provides controls while it is open.
             guard !self.isAppSwitcherOpen else { return }
-            // Only enforce this when something is actually on screen to control.
-            guard self.hasForegroundAppWindow() else { return }
+
+            // A control is only needed when an app window is actually on screen.
+            // During launch/relaunch the app view can lag its own appearance, so if
+            // we expect an app but its window isn't ready yet, retry shortly rather
+            // than leaving the user with no bar and no button.
+            guard self.hasForegroundAppWindow() else {
+                if !self.apps.isEmpty && retriesLeft > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.ensureControlAccessible(retriesLeft: retriesLeft - 1)
+                    }
+                }
+                return
+            }
 
             let barShown = self.isVisible
                 && self.isSwitcherBarVisible
@@ -901,8 +977,15 @@ class AppInfoProvider {
 
             guard !barShown && !navShown else { return }
 
-            // Neither control is reachable — bring the switcher bar back.
-            if self.isVisible {
+            // Neither control is reachable — show the one the user prefers.
+            if self.prefersFloatingButton {
+                guard let keyWindow = self.keyWindow else { return }
+                self.isVisible = true
+                self.isSwitcherBarVisible = false
+                self.hostingController?.view.isHidden = true
+                self.hostingController?.view.alpha = 0
+                self.showNavAssist(in: keyWindow)
+            } else if self.isVisible {
                 self.showSwitcherBar()
             } else {
                 self.showDock()
@@ -1934,6 +2017,21 @@ struct BarTopBar: Shape {
 /// swallow taps meant for controls beneath them (e.g. the installer's Import IPA
 /// and search buttons). Points outside the provided shape return nil so the touch
 /// falls through to whatever is behind the container.
+/// Invisible, non-interactive full-window view whose `safeAreaInsetsDidChange`
+/// lets the dock re-lay out the bar when the window's safe area updates. On a cold
+/// relaunch (and some scene transitions) the safe area is populated a beat *after*
+/// the bar first appears, and nothing else re-lays the bar out for a pure safe-area
+/// change — so without this the bar keeps the stale (often zero-bottom) size it was
+/// first laid out with, which is the "wrong size after relaunch" symptom.
+final class SafeAreaSentinelView: UIView {
+    var onChange: (() -> Void)?
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        onChange?()
+    }
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+}
+
 final class BarPassthroughContainer: UIView {
     weak var barView: UIView?
     /// Returns the bar's opaque hit path in `barView`'s local coordinates, or nil
