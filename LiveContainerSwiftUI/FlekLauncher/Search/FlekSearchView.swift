@@ -135,7 +135,9 @@ struct FlekSearchView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 80)
+                // No top bar/blur here (unlike the installer), so the list only
+                // needs a small gap below the safe area rather than a large inset.
+                .padding(.top, 8)
                 // Clear the bottom search bar (measured at runtime) plus a
                 // small gap, so the last result can scroll fully above it.
                 .padding(.bottom, bottomBarHeight + 16)
