@@ -195,6 +195,9 @@ class AppInfoProvider {
     @objc public var windowHostingView = VirtualWindowsHostView()
     internal var hostingController: UIHostingController<AnyView>?
     private var switcherOverlayController: UIHostingController<AnyView>?
+    /// Full-window host for the switcher bar that limits touches to the bar's
+    /// visible shape so its transparent corners/overhang pass taps to the content.
+    private var barContainer: BarPassthroughContainer?
     private var navAssistButton: UIView?
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
@@ -251,8 +254,17 @@ class AppInfoProvider {
     /// (matches `updateDockFrame`). App windows reserve this so their content
     /// sits flush against the bar with no background gap showing through.
     @objc public var barReservedThickness: CGFloat {
-        // Reserve only the base bar height, not the taller rounded design — the
-        // concave corner extension overlays the app rather than shifting it up.
+        // Reserve down to the bar's visible flat top so the app sits flush against
+        // it. The tall rounded design's concave corners rise `deviceScreenCornerRadius`
+        // above that flat top and overlay the app's bottom corners (the nesting
+        // look), so they must not be reserved. Deriving the flat top from the real
+        // corner radius keeps the app flush on every device — the old fixed base
+        // height only lined up on phones whose corner radius matched the assumed
+        // value and left a thin gap on the rest.
+        if barLedgeActive && !isBarLandscape {
+            let flatTop = max(effectiveBarHeight - deviceScreenCornerRadius, 0)
+            return flatTop + safeAreaInsets.bottom
+        }
         return Constants.barHeight + safeAreaInsets.bottom
     }
 
@@ -430,6 +442,29 @@ class AppInfoProvider {
             self.hostingController?.view.insetsLayoutMarginsFromSafeArea = false
             self.hostingController?.overrideUserInterfaceStyle = .dark
             self.hostingController?.view.overrideUserInterfaceStyle = .dark
+
+            // Wrap the bar in a full-window pass-through container so taps that land
+            // in the bar's transparent concave corners / overhang reach the content
+            // underneath (guest apps and internal-page controls like Import IPA /
+            // search) instead of being swallowed by the rectangular hosting view.
+            // The container hit-tests against the bar's actual shape.
+            let container = BarPassthroughContainer()
+            container.backgroundColor = .clear
+            container.clipsToBounds = false
+            container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            if let barView = self.hostingController?.view {
+                container.barView = barView
+                container.addSubview(barView)
+            }
+            container.hitPathProvider = { [weak self] bounds in
+                // Only the tall rounded portrait design has transparent corners;
+                // the plain/landscape bar fills its whole bounds (nil == full rect).
+                guard let self = self, self.barLedgeActive, !self.isLandscapeBar else { return nil }
+                let cg = BarInverseTopCorners(radius: self.deviceScreenCornerRadius)
+                    .path(in: bounds).cgPath
+                return UIBezierPath(cgPath: cg)
+            }
+            self.barContainer = container
         }
     }
 
@@ -581,7 +616,15 @@ class AppInfoProvider {
                 self.applyBarInset(to: controller, reserved: true)
             }
 
-            if hostingController.view.superview == nil {
+            // Add the pass-through container (which holds the bar) to the window.
+            if let container = self.barContainer {
+                container.frame = keyWindow.bounds
+                if container.superview !== keyWindow {
+                    keyWindow.addSubview(container)
+                } else {
+                    keyWindow.bringSubviewToFront(container)
+                }
+            } else if hostingController.view.superview == nil {
                 keyWindow.addSubview(hostingController.view)
             }
 
@@ -1727,6 +1770,36 @@ struct BarInverseTopCorners: Shape {
         p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         p.closeSubpath()
         return p
+    }
+}
+
+/// Full-window container that hosts the switcher bar and restricts touches to the
+/// bar's actual visible shape. The bar's hosting view is a full rectangular strip,
+/// but its concave top corners and the transparent overhang above the bar sit over
+/// live content (guest apps and internal pages) — without this, those regions
+/// swallow taps meant for controls beneath them (e.g. the installer's Import IPA
+/// and search buttons). Points outside the provided shape return nil so the touch
+/// falls through to whatever is behind the container.
+final class BarPassthroughContainer: UIView {
+    weak var barView: UIView?
+    /// Returns the bar's opaque hit path in `barView`'s local coordinates, or nil
+    /// to treat the whole bar bounds as opaque (the plain rectangular bar).
+    var hitPathProvider: ((CGRect) -> UIBezierPath?)?
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let bar = barView, bar.superview === self,
+              !bar.isHidden, bar.alpha > 0.01 else {
+            // No bar actively shown → never intercept; let content behind respond.
+            return nil
+        }
+        let pInBar = bar.convert(point, from: self)
+        guard bar.bounds.contains(pInBar) else { return nil }
+        if let provider = hitPathProvider, let path = provider(bar.bounds),
+           !path.contains(pInBar) {
+            // Transparent notch / overhang → pass through to the content beneath.
+            return nil
+        }
+        return super.hitTest(point, with: event)
     }
 }
 
