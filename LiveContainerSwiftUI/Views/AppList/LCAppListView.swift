@@ -67,6 +67,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State var choosingIPA = false
     @State var errorShow = false
     @State var errorInfo = ""
+    /// The failed install the user tapped, driving the failed-install alert.
+    @State private var failedInstallItem: InstallItem?
     
     // ipa installing stuff
     @ObservedObject var installQueue = LCInstallQueue.shared
@@ -459,6 +461,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             })
         } message: {
             Text(errorInfo)
+        }
+        .alert("lc.flek.installFailedTitle".loc, isPresented: Binding(
+            get: { failedInstallItem != nil },
+            set: { if !$0 { failedInstallItem = nil } }
+        ), presenting: failedInstallItem) { item in
+            Button("lc.common.delete".loc, role: .destructive) {
+                installQueue.dismissFailed(item)
+                failedInstallItem = nil
+                rebuildOrderedHomeItems()
+            }
+        } message: { item in
+            Text(item.installState.errorMessage ?? "lc.flek.installFailedGeneric".loc)
         }
         .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa], multiple: false, callback: { fileUrls in
             Task { await startInstallApp(fileUrls[0]) }
@@ -1012,7 +1026,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 let parallel = mode != nil ? (mode == .parallel) : app.shouldLaunchInMultitaskMode
                 Task { await launchHomeApp(app, parallel: parallel) }
             }
-        case .installing, .placeholder:
+        case .installing(let inst):
+            // A failed install is tappable — open the alert offering to delete it.
+            if inst.installState.failed { failedInstallItem = inst }
+        case .placeholder:
             break
         }
     }

@@ -102,6 +102,8 @@ struct FlekInstallState: Equatable {
     var indeterminate: Bool     // true during prepare / decompress / signing
     var isInstalling: Bool      // true during install (post-download) phases
     var installFraction: Double // 0...1, install-only progress for circular ring
+    var failed: Bool = false    // install/download failed — show failed icon
+    var errorMessage: String? = nil // reason to show in the failed-install alert
 }
 
 /// Per-app launch mode chosen from the home screen context menu. "Single"

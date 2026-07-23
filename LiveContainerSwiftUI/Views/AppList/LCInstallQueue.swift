@@ -54,6 +54,8 @@ final class InstallItem: Identifiable, Equatable {
         let fraction: Double
         let indeterminate: Bool
         let isInstalling: Bool
+        var failed = false
+        var errorMessage: String? = nil
 
         switch phase {
         case .queued:
@@ -82,7 +84,13 @@ final class InstallItem: Identifiable, Equatable {
             fraction = 1.0
             indeterminate = false
             isInstalling = false
-        case .failed, .cancelled:
+        case .failed(let message):
+            fraction = 0
+            indeterminate = false
+            isInstalling = false
+            failed = true
+            errorMessage = message
+        case .cancelled:
             fraction = 0
             indeterminate = true
             isInstalling = false
@@ -94,7 +102,9 @@ final class InstallItem: Identifiable, Equatable {
             fraction: fraction,
             indeterminate: indeterminate,
             isInstalling: isInstalling,
-            installFraction: installProgress
+            installFraction: installProgress,
+            failed: failed,
+            errorMessage: errorMessage
         )
     }
 
@@ -122,9 +132,16 @@ final class LCInstallQueue: ObservableObject {
     /// `item.downloadedFileURL` (remote) or `URL(string: item.url)` (local).
     var installHandler: ((InstallItem) async throws -> Void)?
 
-    /// Items that should appear on the home screen (not yet completed/failed).
+    /// Items that should occupy a slot on the home screen: everything still in
+    /// flight PLUS failed installs, which stay (shown as a failed icon) until the
+    /// user taps them and chooses Delete. Completed/cancelled items are gone.
     var activeItems: [InstallItem] {
-        items.filter { isActive($0) }
+        items.filter { item in
+            switch item.phase {
+            case .completed, .cancelled: return false
+            default: return true
+            }
+        }
     }
 
     // MARK: Public API
@@ -179,14 +196,35 @@ final class LCInstallQueue: ObservableObject {
         updateIdleTimer()
     }
 
-    /// Called by the install handler when install fails.
+    /// Called by the install handler when install fails. The item is kept on the
+    /// home screen as a failed icon (not auto-removed) until the user taps it and
+    /// chooses Delete via `dismissFailed`, so only its resources are released here.
     func markFailed(_ item: InstallItem, error: String) {
         item.phase = .failed(error)
-        cleanupItem(item)
+        item.progressCancellable = nil
+        item.downloadingCancellable = nil
+        if let fileURL = item.downloadedFileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+            item.downloadedFileURL = nil
+        }
         isInstalling = false
         objectWillChange.send()
         processInstallQueue()
         startNextDownloads()
+        updateIdleTimer()
+    }
+
+    /// Remove a failed item from the queue (and thus the home screen) when the
+    /// user dismisses it from the failed-install alert.
+    func dismissFailed(_ item: InstallItem) {
+        item.progressCancellable = nil
+        item.downloadingCancellable = nil
+        if let fileURL = item.downloadedFileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+            item.downloadedFileURL = nil
+        }
+        items.removeAll { $0.id == item.id }
+        objectWillChange.send()
         updateIdleTimer()
     }
 

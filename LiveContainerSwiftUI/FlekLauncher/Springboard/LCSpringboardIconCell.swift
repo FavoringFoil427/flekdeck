@@ -64,6 +64,18 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return v
     }()
 
+    /// Red warning mark shown (centered on the dimmed icon) when an install failed.
+    private let failedSymbol: UIImageView = {
+        let iv = UIImageView()
+        let config = UIImage.SymbolConfiguration(pointSize: 30, weight: .bold)
+        let img = UIImage(systemName: "exclamationmark.circle.fill", withConfiguration: config)?
+            .applyingSymbolConfiguration(UIImage.SymbolConfiguration(paletteColors: [.white, .systemRed]))
+        iv.image = img
+        iv.contentMode = .center
+        iv.isHidden = true
+        return iv
+    }()
+
     /// Spinning ring for indeterminate install state.
     private let spinnerRingView: UIView = {
         let v = UIView()
@@ -200,6 +212,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         spinnerRingView.layer.addSublayer(spinnerTrackLayer)
         spinnerRingView.layer.addSublayer(spinnerFillLayer)
         installOverlay.addSubview(spinnerRingView)
+        installOverlay.addSubview(failedSymbol)
 
         let hostingVC = UIHostingController(rootView: PercentageText(percent: 0))
         hostingVC.view.backgroundColor = .clear
@@ -265,6 +278,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         installOverlay.frame = iconImageView.bounds
         installOverlay.layer.cornerRadius = Self.iconCornerRadius
         installOverlay.clipsToBounds = true
+        failedSymbol.frame = installOverlay.bounds
         // Spinning ring (indeterminate state)
         let spinnerSize = iconS * 0.55
         let spinnerFrame = CGRect(
@@ -473,6 +487,20 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         // Show overlay
         installOverlay.isHidden = false
+
+        if state.failed {
+            // Failed install — hide all progress indicators, show the warning mark.
+            failedSymbol.isHidden = false
+            spinnerRingView.isHidden = true
+            stopSpinnerAnimation()
+            percentHostView.isHidden = true
+            progressTrack.isHidden = true
+            ringTrackLayer.isHidden = true
+            ringFillLayer.isHidden = true
+            currentFraction = 0
+            return
+        }
+        failedSymbol.isHidden = true
 
         if state.indeterminate {
             // Indeterminate: show spinning ring, hide everything else

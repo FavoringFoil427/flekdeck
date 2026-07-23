@@ -35,7 +35,13 @@ struct FlekInstallIcon: View {
             }
             .overlay(Color.black.opacity(0.5))
 
-            if state.indeterminate {
+            if state.failed {
+                // Failed install — red warning mark over the dimmed icon.
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: size * 0.42, weight: .bold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .red)
+            } else if state.indeterminate {
                 // Spinning partial ring matching the install ring style
                 FlekSpinningRing(size: size * 0.55, lineWidth: size > 60 ? 5 : 4)
             } else if state.isInstalling {
@@ -72,7 +78,7 @@ struct FlekInstallIcon: View {
         .frame(width: size, height: size)
         .overlay(alignment: .bottom) {
             // Progress pill near the bottom of the icon (only during download on large icon)
-            if !state.indeterminate && !state.isInstalling && size > 60 {
+            if !state.failed && !state.indeterminate && !state.isInstalling && size > 60 {
                 let trackW = size * 0.78          // ≈ 58 on a 74pt icon
                 let trackH: CGFloat = 18
                 ZStack(alignment: .leading) {

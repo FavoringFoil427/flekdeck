@@ -29994,6 +29994,28 @@
           }
         }
       }
+    },
+    "lc.flek.installFailedTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation Failed"
+          }
+        }
+      }
+    },
+    "lc.flek.installFailedGeneric": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app could not be installed."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

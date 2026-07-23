@@ -66,6 +66,11 @@ struct FlekHomeListView<Menu: View>: View {
                         .overlay {
                             CancelInstallContextMenu { onCancelInstall(inst) }
                         }
+                        // A failed install is tappable to show the failure alert;
+                        // in-progress rows keep long-press-to-cancel only.
+                        .onTapGesture {
+                            if inst.installState.failed { onTap(.installing(inst)) }
+                        }
                 }
             }
             .padding(.horizontal, FlekTheme.screenHPadding)
