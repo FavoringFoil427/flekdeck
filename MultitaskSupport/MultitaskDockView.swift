@@ -2695,7 +2695,25 @@ struct AppSwitcherCard: View {
     @State private var closeAllOffset: CGFloat = 0
     
     private let dismissThreshold: CGFloat = -120
-    
+
+    /// The Customize button's visual content. Extracted so internal-page cards can
+    /// reserve the exact same footprint with an invisible copy (see below).
+    private var customizeLabel: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 14, weight: .semibold))
+            Text("Customize")
+                .font(.system(size: 15, weight: .semibold))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .opacity(0.7)
+        }
+        .foregroundColor(.white.opacity(0.9))
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
+        .modifier(GlassCapsuleBackground())
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // App icon + name above the card (like iOS)
@@ -2749,8 +2767,13 @@ struct AppSwitcherCard: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
             
-            // Customize button — guest apps only. Settings / Installer are
-            // internal pages with no customizable options, so they get no button.
+            // Customize button — guest apps only. Settings / Installer are internal
+            // pages with no customizable options, so instead of dropping the button
+            // (which made their cards shorter and therefore sit lower, then jump up
+            // when a guest-app card joined the row) they reserve the exact same
+            // footprint with an invisible copy. Every card is then the same height,
+            // so internal-page cards stay at the same position regardless of what
+            // else is on the switcher screen.
             if !app.isInternalPage {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -2758,25 +2781,17 @@ struct AppSwitcherCard: View {
                         openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
                     }
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Customize")
-                            .font(.system(size: 15, weight: .semibold))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
-                            .opacity(0.7)
-                    }
-                    .foregroundColor(.white.opacity(0.9))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 11)
-                    .modifier(GlassCapsuleBackground())
+                    customizeLabel
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 4)
                 .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
                     [app.appUUID: $0]
                 }
+            } else {
+                customizeLabel
+                    .padding(.top, 4)
+                    .hidden()
             }
         }
         .offset(y: dragOffset + closeAllOffset)
