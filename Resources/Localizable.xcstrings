@@ -29961,6 +29961,39 @@
           }
         }
       }
+    },
+    "lc.flek.multitaskBar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multitask Bar"
+          }
+        }
+      }
+    },
+    "lc.flek.roundedSwitcherBar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rounded bar corners"
+          }
+        }
+      }
+    },
+    "lc.flek.cornerRadius": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corner radius"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

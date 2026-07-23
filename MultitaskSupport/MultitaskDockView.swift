@@ -12,6 +12,9 @@ import Combine
 
 extension NSNotification.Name {
     static let multitaskBarVisibilityChanged = NSNotification.Name("MultitaskBarVisibilityChanged")
+    /// Posted when the rounded/flat bar design setting is toggled in Settings, so
+    /// the visible bar can re-lay out live instead of waiting for the next layout.
+    static let multitaskBarDesignChanged = NSNotification.Name("MultitaskBarDesignChanged")
 }
 
 // MARK: - App Info Provider
@@ -217,10 +220,12 @@ class AppInfoProvider {
     /// Live read of the LCMultitaskBarLedge setting (rounded tall bar vs the
     /// original short one). Defaults on.
     private var barLedgeSetting: Bool {
-        // The rounded bar is currently the only design and the settings toggle is
-        // hidden. To bring the choice back, return the commented read instead.
-        return true
-        // (LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true)
+        // On  → rounded, tall bar with concave corners (default).
+        // Off → the original short, flat black bar.
+        // Read live here but only applied via `captureBarDesign()` as the bar
+        // (re)lays out, so flipping it in Settings never resizes the bar under the
+        // user's finger; the new design takes effect the next time the bar appears.
+        return LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true
     }
 
     /// The design actually in effect on the visible bar. Captured from the setting
@@ -231,15 +236,26 @@ class AppInfoProvider {
     /// or re-show).
     @Published private(set) var barLedgeActive: Bool = true
 
-    /// Re-reads the setting into `barLedgeActive`; called as the bar is laid out.
+    /// The concave corner radius actually in effect on the visible bar, captured
+    /// from the user's slider setting (falling back to the device screen radius).
+    /// Published so changing the slider re-renders the bar live.
+    @Published private(set) var barCornerRadiusActive: CGFloat = 39
+
+    /// Re-reads the design settings (rounded/flat + corner radius) into the
+    /// published state; called as the bar is laid out and when the settings change.
     func captureBarDesign() {
         let v = barLedgeSetting
         if barLedgeActive != v { barLedgeActive = v }
+        let r = barCornerRadiusSetting
+        if barCornerRadiusActive != r { barCornerRadiusActive = r }
     }
 
-    /// Bar strip height for the active design.
+    /// Bar strip height. Both designs use the same tall strip so the buttons and
+    /// the reserved content sit in exactly the same place: the rounded design
+    /// carves concave corners from the top, while the flat design just draws its
+    /// fill in the lower flat-solid region (square top). Only the corners differ.
     var effectiveBarHeight: CGFloat {
-        barLedgeActive ? Constants.barHeightWithLedge : Constants.barHeight
+        Constants.barHeightWithLedge
     }
 
     /// The device's physical screen corner radius (private UIScreen value) so the
@@ -248,6 +264,14 @@ class AppInfoProvider {
     var deviceScreenCornerRadius: CGFloat {
         let r = (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 0
         return r > 0 ? r : 39
+    }
+
+    /// Resolved concave corner radius from the user setting: the stored slider
+    /// value when set, otherwise the device screen radius (the default "match the
+    /// phone's corners"). Read via `captureBarDesign()` into `barCornerRadiusActive`.
+    private var barCornerRadiusSetting: CGFloat {
+        let v = LCUtils.appGroupUserDefault.double(forKey: "LCMultitaskBarCornerRadius")
+        return v > 0 ? CGFloat(v) : deviceScreenCornerRadius
     }
 
     /// The exact on-screen thickness of the switcher bar strip on its short edge
@@ -261,8 +285,11 @@ class AppInfoProvider {
         // corner radius keeps the app flush on every device — the old fixed base
         // height only lined up on phones whose corner radius matched the assumed
         // value and left a thin gap on the rest.
-        if barLedgeActive && !isBarLandscape {
-            let flatTop = max(effectiveBarHeight - deviceScreenCornerRadius, 0)
+        if !isBarLandscape {
+            // Both designs share the same flat-top line, so both reserve down to it
+            // (the concave corners / the square top sit above it and overlay nothing
+            // that needs reserving).
+            let flatTop = max(effectiveBarHeight - barCornerRadiusActive, 0)
             return flatTop + safeAreaInsets.bottom
         }
         return Constants.barHeight + safeAreaInsets.bottom
@@ -397,6 +424,28 @@ class AppInfoProvider {
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
+        // Re-lay out the bar live when the rounded/flat design toggle changes.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(barDesignSettingChanged),
+            name: .multitaskBarDesignChanged,
+            object: nil
+        )
+    }
+
+    /// Live-apply the rounded/flat bar design when its Settings toggle changes.
+    /// Safe to do live because the toggle is a Settings list row, not a control
+    /// sitting on the bar. `updateDockFrame` re-reads the setting via
+    /// `captureBarDesign()` and animates the strip to the new size/shape. If the
+    /// bar isn't on screen, the next layout picks the design up on its own.
+    @objc private func barDesignSettingChanged() {
+        DispatchQueue.main.async {
+            // Both designs share the same strip size, so re-reading the design
+            // (rounded/flat + corner radius) into the published state is all that's
+            // needed to re-render the bar live — no re-layout. `captureBarDesign`
+            // only publishes when a value actually changed.
+            self.captureBarDesign()
+        }
     }
 
     @objc private func appDidBecomeActive() {
@@ -457,11 +506,15 @@ class AppInfoProvider {
                 container.addSubview(barView)
             }
             container.hitPathProvider = { [weak self] bounds in
-                // Only the tall rounded portrait design has transparent corners;
-                // the plain/landscape bar fills its whole bounds (nil == full rect).
-                guard let self = self, self.barLedgeActive, !self.isLandscapeBar else { return nil }
-                let cg = BarInverseTopCorners(radius: self.deviceScreenCornerRadius)
-                    .path(in: bounds).cgPath
+                // Landscape / plain bar fills its whole bounds (nil == full rect).
+                // Both portrait designs leave the region above the flat-top line
+                // transparent, so hit-test against the actual fill shape and pass
+                // taps above it through to the content beneath.
+                guard let self = self, !self.isLandscapeBar else { return nil }
+                let r = self.barCornerRadiusActive
+                let cg = self.barLedgeActive
+                    ? BarInverseTopCorners(radius: r).path(in: bounds).cgPath
+                    : BarFlatTop(inset: r).path(in: bounds).cgPath
                 return UIBezierPath(cgPath: cg)
             }
             self.barContainer = container
@@ -1773,6 +1826,59 @@ struct BarInverseTopCorners: Shape {
     }
 }
 
+/// The flat design's fill: a plain rectangle covering only the bar's flat solid
+/// part — everything at or below the flat-top line (`inset` = the device corner
+/// radius, the same line the rounded design's flat top sits on). Same geometry as
+/// the rounded bar, just a square top edge instead of concave corners, and the
+/// region above the line stays transparent exactly as it does in the rounded one.
+struct BarFlatTop: Shape {
+    var inset: CGFloat
+    func path(in rect: CGRect) -> Path {
+        let top = min(max(inset, 0), rect.height)
+        return Path(CGRect(x: rect.minX, y: rect.minY + top,
+                           width: rect.width, height: rect.height - top))
+    }
+}
+
+/// The portrait bar's top edge, unifying the flat and rounded designs into one
+/// shape so they can animate into each other (SwiftUI can't tween between two
+/// different `Shape` types). `radius` fixes the flat-top line (`inset` below the
+/// strip top); `curve` is how far the concave corners rise above that line at the
+/// edges — 0 gives a plain square top (flat), `radius` gives the full concave
+/// corners (rounded). Interpolating `curve` (the animatable value) morphs between
+/// the two while the flat-top line — and therefore the content beneath — stays put.
+struct BarTopBar: Shape {
+    var radius: CGFloat
+    var curve: CGFloat
+    var animatableData: CGFloat {
+        get { curve }
+        set { curve = newValue }
+    }
+    func path(in rect: CGRect) -> Path {
+        let r = min(max(radius, 0), min(rect.width / 2, rect.height))
+        let flatTopY = rect.minY + r
+        let c = min(max(curve, 0), r)
+        var p = Path()
+        if c <= 0.5 {
+            // Flat: plain rectangle from the flat-top line down.
+            p.addRect(CGRect(x: rect.minX, y: flatTopY,
+                             width: rect.width, height: rect.maxY - flatTopY))
+            return p
+        }
+        // Concave corners rising `c` above the flat top at each edge.
+        p.move(to: CGPoint(x: rect.minX, y: flatTopY - c))
+        p.addQuadCurve(to: CGPoint(x: rect.minX + c, y: flatTopY),
+                       control: CGPoint(x: rect.minX, y: flatTopY))
+        p.addLine(to: CGPoint(x: rect.maxX - c, y: flatTopY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: flatTopY - c),
+                       control: CGPoint(x: rect.maxX, y: flatTopY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 /// Full-window container that hosts the switcher bar and restricts touches to the
 /// bar's actual visible shape. The bar's hosting view is a full rectangular strip,
 /// but its concave top corners and the transparent overhang above the bar sit over
@@ -1824,10 +1930,18 @@ struct SwitcherBarContentView: View {
         // setupDockView so these concave corners reveal the app behind them.
         .background {
             Group {
-                if dockManager.barLedgeActive && !dockManager.isLandscapeBar {
-                    BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius).fill(Color.black)
-                } else {
+                if dockManager.isLandscapeBar {
+                    // Landscape: plain full-thickness bar on the right edge.
                     Rectangle().fill(Color.black)
+                } else {
+                    // Portrait: one shape that morphs between the flat square top and
+                    // the rounded concave corners by animating how far the corners
+                    // rise above the shared flat-top line (0 when flat, the full
+                    // radius when rounded), so toggling the design animates smoothly.
+                    BarTopBar(radius: dockManager.barCornerRadiusActive,
+                              curve: dockManager.barLedgeActive ? dockManager.barCornerRadiusActive : 0)
+                        .fill(Color.black)
+                        .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeActive)
                 }
             }
             .ignoresSafeArea()
@@ -2269,7 +2383,7 @@ struct AppSwitcherOverlay: View {
                 // it — a rectangular hit area there stole Close all's taps and
                 // flipped this toggle instead. Matching the hit shape to the fill
                 // frees the overhang so Close all receives its taps.
-                .contentShape(BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius))
+                .contentShape(BarInverseTopCorners(radius: dockManager.barCornerRadiusActive))
             }
             .buttonStyle(.plain)
             // Same concave rounded top corners and height as the switcher bar it
@@ -2279,11 +2393,11 @@ struct AppSwitcherOverlay: View {
             // over the material and animating its opacity lets the two states
             // cross-fade smoothly when the toggle flips.
             .background {
-                BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius)
+                BarInverseTopCorners(radius: dockManager.barCornerRadiusActive)
                     .fill(.thinMaterial)
                     .environment(\.colorScheme, .dark)
                     .overlay {
-                        BarInverseTopCorners(radius: dockManager.deviceScreenCornerRadius)
+                        BarInverseTopCorners(radius: dockManager.barCornerRadiusActive)
                             .fill(Color.black)
                             .opacity(dockManager.prefersFloatingButton ? 0 : 1)
                     }
