@@ -344,8 +344,39 @@ class AppInfoProvider {
         static let bringToFrontScale: CGFloat = 1.02
     }
 
+    /// The window the bar and its overlays attach to. `connectedScenes` is an
+    /// *unordered* Set and multi-scene support is enabled, so after an in-place app
+    /// update iOS can restore a stale/background scene from the previous launch.
+    /// Picking `connectedScenes.first`/`windows.first` could then return nil (→ the
+    /// bar container is never added, so the bar never shows) or a not-yet-ready
+    /// window whose `safeAreaInsets` are still zero (→ the bar is sized without the
+    /// home-indicator inset — the "weird sizing"). A clean install has only one
+    /// fresh scene, which is why the bug never appears there. Resolve deterministically
+    /// by preferring the foreground-active scene's key window, then falling back.
     public var keyWindow: UIWindow? {
-        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .sorted { Self.sceneActivationRank($0) < Self.sceneActivationRank($1) }
+        for scene in scenes {
+            if let key = scene.windows.first(where: { $0.isKeyWindow }) { return key }
+        }
+        for scene in scenes {
+            if let visible = scene.windows.first(where: { !$0.isHidden }) ?? scene.windows.first {
+                return visible
+            }
+        }
+        return nil
+    }
+
+    /// Ranks scenes so the foreground-active one wins over restored/background
+    /// scenes left over from a previous launch (lower is preferred).
+    private static func sceneActivationRank(_ scene: UIWindowScene) -> Int {
+        switch scene.activationState {
+        case .foregroundActive:   return 0
+        case .foregroundInactive: return 1
+        case .background:         return 2
+        default:                  return 3
+        }
     }
 
     public var safeAreaInsets: UIEdgeInsets {
@@ -546,7 +577,15 @@ class AppInfoProvider {
         }
 
         let screenBounds = UIScreen.main.bounds
-        let insets = safeAreaInsets
+        var insets = safeAreaInsets
+        // On a fast, state-restored launch (after an in-place update) the window's
+        // safe area can still be zero when the bar first lays out, which would size
+        // the bar without the home-indicator inset. Force a layout pass and re-read
+        // so a late-arriving bottom inset is applied instead of baked in as zero.
+        if !isBarLandscape, insets.bottom == 0, let win = keyWindow {
+            win.layoutIfNeeded()
+            insets = win.safeAreaInsets
+        }
 
         // Cross-thickness of the bar. Deliberately the same slim value in both
         // orientations so the landscape bar matches the portrait one instead of
@@ -1248,7 +1287,10 @@ class AppInfoProvider {
     
     // Find and bring corresponding multitask view to front
     func bringMultitaskViewToFront(uuid: String, from center: CGPoint? = nil) -> Bool {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+        // Use the same foreground-active resolution as `keyWindow` rather than the
+        // unordered `connectedScenes.first`, so a restored/background scene from a
+        // previous launch can't be searched instead of the live one.
+        guard let windowScene = keyWindow?.windowScene else {
             return false
         }
         
@@ -1589,7 +1631,13 @@ class AppInfoProvider {
 
         // Always recreate the overlay so it picks up the latest apps & snapshots
         switcherOverlayController?.view.removeFromSuperview()
-        
+
+        // Resolve the window's safe area before the overlay reads it, so the bottom
+        // toggle bar's height (effectiveBarHeight + safeAreaInsets.bottom) is stable
+        // instead of occasionally rendering with a not-yet-ready zero inset — the
+        // "randomly taller/shorter" toggle. Pairs with the same guard in updateDockFrame.
+        keyWindow.layoutIfNeeded()
+
         let overlayView = AnyView(
             AppSwitcherOverlay()
                 .environmentObject(self)
