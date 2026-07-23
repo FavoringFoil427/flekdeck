@@ -367,7 +367,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
         .sheet(item: $navigationTarget) { target in
-            target.view
+            NavigationView {
+                target.view
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("lc.common.done".loc) {
+                                navigationTarget = nil
+                            }
+                        }
+                    }
+            }
+            .navigationViewStyle(.stack)
         }
         .sheet(item: $gameWarningTarget) { target in
             FlekGameWarningView(appName: target.app.appInfo.displayName() ?? "") { parallel, remember in
