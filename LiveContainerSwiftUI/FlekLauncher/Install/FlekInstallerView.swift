@@ -424,21 +424,26 @@ struct FlekInstallerView: View {
                             }
                             .padding(.horizontal, 4)
 
-                            ForEach(repoSection.apps) { app in
-                                FlekInstallerRow(
-                                    app: app,
-                                    accent: Self.flekBlue,
-                                    installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
-                                    isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
-                                    onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
-                                    onCancel: {
-                                        LCInstallQueue.shared.cancel(url: app.install_url)
-                                    }
-                                )
+                            if repoSection.apps.isEmpty && repoSection.isLoading {
+                                HStack { Spacer(); ProgressView(); Spacer() }
+                                    .frame(height: 66)
+                            } else {
+                                ForEach(repoSection.apps) { app in
+                                    FlekInstallerRow(
+                                        app: app,
+                                        accent: Self.flekBlue,
+                                        installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
+                                        isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
+                                        onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
+                                        onCancel: {
+                                            LCInstallQueue.shared.cancel(url: app.install_url)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
-                    if repoSearch.isLoading {
+                    if repoSearch.isLoading && repoSearch.sections.isEmpty {
                         ProgressView().frame(maxWidth: .infinity).padding()
                     }
                 }
@@ -851,7 +856,13 @@ struct FlekRemoteIcon: View {
             .placeholder {
                 RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Color(.systemGray5))
             }
+            // Decode/downsample to the display size instead of full resolution, and
+            // cancel in-flight loads when the row scrolls away — keeps long result
+            // lists smooth and bounds memory.
+            .setProcessor(DownsamplingImageProcessor(size: CGSize(width: size, height: size)))
+            .scaleFactor(UIScreen.main.scale)
             .cacheOriginalImage()
+            .cancelOnDisappear(true)
             .fade(duration: 0.15)   // only animates on a network load, not on a cache hit
             .resizable()
             .scaledToFill()

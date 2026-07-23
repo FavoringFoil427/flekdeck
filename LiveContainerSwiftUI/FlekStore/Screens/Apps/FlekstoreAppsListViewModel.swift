@@ -141,16 +141,28 @@ class FlekstoreAppsListViewModel: ObservableObject {
     }
     
     // Reset paging and fetch first page
+    // Monotonic token so a fresh reset/search always supersedes an in-flight page
+    // load instead of being dropped by it (or clobbering its results).
+    private var loadGeneration = 0
+
     func resetAndFetchApps() async {
+        loadGeneration &+= 1
+        let generation = loadGeneration
         currentPage = 0
         canLoadMore = true
         apps = []
-        await fetchApps()
+        isLoading = false   // a stale in-flight page load must not block this reset
+        await fetchApps(generation: generation)
     }
     
-    // Fetch next page
+    // Fetch next page (pagination entry point)
     func fetchApps() async {
+        await fetchApps(generation: loadGeneration)
+    }
+
+    private func fetchApps(generation: Int) async {
         guard !isLoading, canLoadMore else { return }
+        guard generation == loadGeneration else { return }
         isLoading = true
         errorMessage = nil
 
@@ -187,6 +199,9 @@ class FlekstoreAppsListViewModel: ObservableObject {
                 let (responseData, _) = try await URLSession.shared.data(from: url)
                 data = responseData
 
+                // A newer reset/search started while awaiting — drop this result.
+                guard generation == loadGeneration else { return }
+
                 let decoded = try JSONDecoder().decode([FSAppModel].self, from: data)
                 let filtered = isAdult ? decoded : decoded.filter { $0.app_isAdult != 1 }
 
@@ -202,6 +217,8 @@ class FlekstoreAppsListViewModel: ObservableObject {
                 let (responseData, _) = try await URLSession.shared.data(from: baseURL)
                 data = responseData
 
+                guard generation == loadGeneration else { return }
+
                 let mappedApps = try decodeCustomRepo(data)
 
                 apps = mappedApps
@@ -209,10 +226,14 @@ class FlekstoreAppsListViewModel: ObservableObject {
             }
 
         } catch {
-            errorMessage = "Failed to load apps"
+            if generation == loadGeneration {
+                errorMessage = "Failed to load apps"
+            }
         }
 
-        isLoading = false
+        if generation == loadGeneration {
+            isLoading = false
+        }
     }
 
     // MARK: - Instant source switching

@@ -111,17 +111,22 @@ struct FlekSearchView: View {
                             onOpenRepo(repoSection.id)
                             close()
                         }) {
-                            ForEach(repoSection.apps) { app in
-                                Button {
-                                    if repoSection.isFlekstore {
-                                        FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                            if repoSection.apps.isEmpty && repoSection.isLoading {
+                                HStack { Spacer(); ProgressView(); Spacer() }
+                                    .frame(height: 74)
+                            } else {
+                                ForEach(repoSection.apps) { app in
+                                    Button {
+                                        if repoSection.isFlekstore {
+                                            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                                        }
+                                        onInstallStoreApp(app)
+                                        close()
+                                    } label: {
+                                        FlekStoreSearchRow(app: app)
                                     }
-                                    onInstallStoreApp(app)
-                                    close()
-                                } label: {
-                                    FlekStoreSearchRow(app: app)
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -145,7 +150,10 @@ struct FlekSearchView: View {
                 if let iconUrl, let url = URL(string: iconUrl) {
                     KFImage(url)
                         .placeholder { Color.clear }
+                        .setProcessor(DownsamplingImageProcessor(size: CGSize(width: 18, height: 18)))
+                        .scaleFactor(UIScreen.main.scale)
                         .cacheOriginalImage()
+                        .cancelOnDisappear(true)
                         .fade(duration: 0.15)
                         .resizable()
                         .scaledToFill()
@@ -248,6 +256,10 @@ class MultiRepoSearchModel: ObservableObject {
         let iconUrl: String
         let isFlekstore: Bool
         let apps: [FSAppModel]
+        /// True while this section's results are still being fetched. Used to keep
+        /// the FlekStore slot pinned at the top with a spinner instead of popping in
+        /// (and reshuffling the list) once its server results arrive.
+        var isLoading: Bool = false
     }
 
     @Published var sections: [RepoSection] = []
@@ -362,12 +374,24 @@ class MultiRepoSearchModel: ObservableObject {
             .filter { !FlekInstallerView.isFlekstore($0) }
             .map { RepoFilterInput(id: $0.sourceURL, name: $0.name, iconUrl: $0.iconUrl,
                                    apps: cachedApps[$0.sourceURL] ?? []) }
-        var results = await Task.detached(priority: .userInitiated) {
+        let customSections = await Task.detached(priority: .userInitiated) {
             Self.filterRepos(inputs, query: query)
         }.value
 
         guard !Task.isCancelled else { return }
-        sections = results
+
+        // Reserve FlekStore's slot at the top with a loading placeholder so its
+        // late-arriving server results fill in place instead of pushing the custom
+        // sections down (which reshuffles the list mid-scroll).
+        let flekRepo = repos.first(where: { FlekInstallerView.isFlekstore($0) })
+        if let flekRepo {
+            let placeholder = RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re",
+                                          iconUrl: flekRepo.iconUrl, isFlekstore: true,
+                                          apps: [], isLoading: true)
+            sections = [placeholder] + customSections
+        } else {
+            sections = customSections
+        }
 
         // FlekStore: server-side search (requires API call)
         flekstoreVM.searchQuery = query
@@ -375,15 +399,15 @@ class MultiRepoSearchModel: ObservableObject {
 
         guard !Task.isCancelled else { return }
 
-        if let flekRepo = repos.first(where: { FlekInstallerView.isFlekstore($0) }),
-           !flekstoreVM.apps.isEmpty {
+        var finalSections = customSections
+        if let flekRepo, !flekstoreVM.apps.isEmpty {
             let capped = Array(flekstoreVM.apps.prefix(Self.maxResultsPerRepo))
-            results.insert(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re",
-                                       iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: capped), at: 0)
+            finalSections.insert(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re",
+                                             iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: capped), at: 0)
         }
 
         if !Task.isCancelled {
-            sections = results
+            sections = finalSections
             isLoading = false
         }
     }
