@@ -208,10 +208,14 @@ struct FlekInstallerView: View {
     /// iOS 26 could instead use `scrollEdgeEffectStyle(.soft, for: .top)`.
     private var topEdgeBlur: some View {
         GeometryReader { geo in
-            let total = max(geo.safeAreaInsets.top + barsBottomInset + 50, 1)
+            // During search the floating bars are hidden, so the blur only needs
+            // to cover the status-bar strip — dropping the 50pt falloff keeps it
+            // from frosting the first repository section header in the results.
+            let falloff: CGFloat = searchActive ? 15 : 50
+            let total = max(geo.safeAreaInsets.top + barsBottomInset + falloff, 1)
             // Real progressive blur: radius ramps from strong at the top edge to
             // none ~50pt below the bottom of the category bar.
-            VariableBlurView(maxBlurRadius: 20, direction: .top)
+            VariableBlurView(maxBlurRadius: searchActive ? 15 : 20, direction: .top)
                 .frame(height: total)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .ignoresSafeArea(edges: .top)
