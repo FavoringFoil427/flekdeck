@@ -92,7 +92,7 @@ struct FlekSearchView: View {
             Spacer()
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if !results.isEmpty {
                         section(title: "lc.flek.installed".loc) {
                             ForEach(results, id: \.self) { app in
@@ -242,7 +242,7 @@ private struct BottomBarHeightKey: PreferenceKey {
 
 @MainActor
 class MultiRepoSearchModel: ObservableObject {
-    struct RepoSection: Identifiable {
+    struct RepoSection: Identifiable, Sendable {
         let id: String          // repo sourceURL
         let name: String
         let iconUrl: String
@@ -252,6 +252,13 @@ class MultiRepoSearchModel: ObservableObject {
 
     @Published var sections: [RepoSection] = []
     @Published var isLoading = false
+
+    /// Cap on matches kept per repo section — bounds both the filtering work and
+    /// the rendered rows for very broad (short) queries so results stay responsive.
+    static let maxResultsPerRepo = 50
+    /// Minimum characters before a repo search runs. 1 = no gate (the per-repo cap
+    /// already bounds broad queries); raise to 2–3 to suppress 1‑character searches.
+    static let minQueryLength = 1
 
     private var repos: [AppRepository] = []
     private var cachedApps: [String: [FSAppModel]] = [:] // keyed by sourceURL
@@ -268,7 +275,7 @@ class MultiRepoSearchModel: ObservableObject {
     func search(_ query: String) {
         searchTask?.cancel()
 
-        guard !query.isEmpty else {
+        guard query.count >= Self.minQueryLength else {
             sections = []
             isLoading = false
             return
@@ -349,20 +356,18 @@ class MultiRepoSearchModel: ObservableObject {
 
         guard !Task.isCancelled else { return }
 
-        // Filter custom repos locally
-        var results: [RepoSection] = []
-        for repo in repos where !FlekInstallerView.isFlekstore(repo) {
-            if let allApps = cachedApps[repo.sourceURL] {
-                let filtered = allApps.filter { $0.app_name.localizedCaseInsensitiveContains(query) }
-                if !filtered.isEmpty {
-                    results.append(RepoSection(id: repo.sourceURL, name: repo.name, iconUrl: repo.iconUrl, isFlekstore: false, apps: filtered))
-                }
-            }
-        }
+        // Filter + rank + cap OFF the main thread. A broad/short query otherwise
+        // scans the entire catalog of every repo on the main actor and stalls the UI.
+        let inputs = repos
+            .filter { !FlekInstallerView.isFlekstore($0) }
+            .map { RepoFilterInput(id: $0.sourceURL, name: $0.name, iconUrl: $0.iconUrl,
+                                   apps: cachedApps[$0.sourceURL] ?? []) }
+        var results = await Task.detached(priority: .userInitiated) {
+            Self.filterRepos(inputs, query: query)
+        }.value
 
-        if !Task.isCancelled {
-            sections = results
-        }
+        guard !Task.isCancelled else { return }
+        sections = results
 
         // FlekStore: server-side search (requires API call)
         flekstoreVM.searchQuery = query
@@ -372,13 +377,55 @@ class MultiRepoSearchModel: ObservableObject {
 
         if let flekRepo = repos.first(where: { FlekInstallerView.isFlekstore($0) }),
            !flekstoreVM.apps.isEmpty {
-            results.insert(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re", iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: flekstoreVM.apps), at: 0)
+            let capped = Array(flekstoreVM.apps.prefix(Self.maxResultsPerRepo))
+            results.insert(RepoSection(id: flekRepo.sourceURL, name: "FlekSt0re",
+                                       iconUrl: flekRepo.iconUrl, isFlekstore: true, apps: capped), at: 0)
         }
 
         if !Task.isCancelled {
             sections = results
             isLoading = false
         }
+    }
+
+    /// Sendable snapshot handed to the off-main filter (no actor-isolated state).
+    private struct RepoFilterInput: Sendable {
+        let id: String
+        let name: String
+        let iconUrl: String
+        let apps: [FSAppModel]
+    }
+
+    /// Pure, main-actor-independent filter. Ranks prefix matches ahead of substring
+    /// matches and caps each repo to `maxResultsPerRepo`, so even a 1‑character query
+    /// returns a bounded, relevant set instead of the whole catalog.
+    nonisolated private static func filterRepos(_ inputs: [RepoFilterInput], query: String) -> [RepoSection] {
+        let q = query.lowercased()
+        guard !q.isEmpty else { return [] }
+
+        var out: [RepoSection] = []
+        for input in inputs {
+            var prefixMatches: [FSAppModel] = []
+            var containsMatches: [FSAppModel] = []
+            for app in input.apps {
+                if prefixMatches.count >= maxResultsPerRepo { break }
+                let name = app.app_name.lowercased()
+                if name.hasPrefix(q) {
+                    prefixMatches.append(app)
+                } else if containsMatches.count < maxResultsPerRepo, name.contains(q) {
+                    containsMatches.append(app)
+                }
+            }
+            var matched = prefixMatches
+            if matched.count < maxResultsPerRepo {
+                matched.append(contentsOf: containsMatches.prefix(maxResultsPerRepo - matched.count))
+            }
+            if !matched.isEmpty {
+                out.append(RepoSection(id: input.id, name: input.name, iconUrl: input.iconUrl,
+                                       isFlekstore: false, apps: matched))
+            }
+        }
+        return out
     }
 }
 
