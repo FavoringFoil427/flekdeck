@@ -1166,12 +1166,13 @@ class AppInfoProvider {
         blurView.clipsToBounds = true
         button.addSubview(blurView)
         
-        let iconImage = UIImage(named: "multitaskIcon")?.withRenderingMode(.alwaysTemplate)
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
+        let iconImage = UIImage(systemName: "iphone.app.switcher", withConfiguration: iconConfig)
         let iconView = UIImageView(image: iconImage)
         iconView.tintColor = .white
-        iconView.contentMode = .scaleAspectFit
-        iconView.frame = button.bounds.insetBy(dx: 6, dy: 6)
-        iconView.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleLeftMargin, .flexibleRightMargin]
+        iconView.contentMode = .center
+        iconView.frame = button.bounds
+        iconView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         iconView.tag = 100 // Tag for reliable lookup
         button.addSubview(iconView)
         
@@ -1291,7 +1292,7 @@ class AppInfoProvider {
         }
     }
 
-    /// Clears the stashed chevron and restores the normal multitask icon.
+    /// Clears the stashed chevron and restores the normal iphone.app.switcher icon.
     private func restoreNavAssistIcon(_ button: UIView) {
         isNavAssistStashed = false
         navAssistChevron?.removeFromSuperview()
@@ -1374,7 +1375,7 @@ class AppInfoProvider {
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         
-        // Remove chevron, restore multitask icon
+        // Remove chevron, restore iphone.app.switcher icon
         restoreNavAssistIcon(button)
 
         // Slide back in from whichever edge it was stashed against.
@@ -3073,12 +3074,9 @@ struct MultitaskHomeDockPill: View {
         Button {
             MultitaskDockManager.shared.showAppSwitcher()
         } label: {
-            Image("multitaskIcon")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
+            Image(systemName: "iphone.app.switcher")
+                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
                 .foregroundStyle(Color.primary.opacity(0.6))
-                .frame(width: FlekTheme.searchPillSize * 0.72, height: FlekTheme.searchPillSize * 0.72)
                 .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
         }
         .buttonStyle(.plain)
