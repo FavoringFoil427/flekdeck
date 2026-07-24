@@ -2090,11 +2090,18 @@ struct SwitcherBarContentView: View {
     
     var body: some View {
         activeBarContent
+        // Make the bar buttons 10% larger (scales the glass pills + glyphs uniformly).
+        .scaleEffect(1.1)
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        // Offset of the buttons from the outer screen edge (the bottom in
-        // portrait, the right edge in landscape once the bar is rotated).
-        // Negative pushes them tighter to the edge; landscape sits a touch closer.
-        .padding(.bottom, dockManager.isLandscapeBar ? -10 : 4)
+        // Landscape hugs the outer (right) edge as before.
+        .padding(.bottom, dockManager.isLandscapeBar ? -10 : 0)
+        // Portrait: center the buttons in the flat solid body — a block spanning the
+        // flat-top line down to the screen bottom (visible flat strip + bottom safe
+        // area). Giving the content exactly that height centers it within; the outer
+        // frame then pins the block to the screen bottom. Landscape has no ledge, so
+        // its height stays unconstrained (nil).
+        .frame(height: dockManager.isLandscapeBar ? nil : (dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.safeAreaInsets.bottom),
+               alignment: .center)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
         // Bar background. With the ledge setting on (portrait), the dark bar gets
@@ -2537,20 +2544,23 @@ struct AppSwitcherOverlay: View {
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .contentTransition(.opacity)
                     Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 18, weight: .medium))
                         .contentTransition(.opacity)
                 }
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                // Grow to the real bar's height (tall rounded design + bottom
-                // safe area), keeping the label in the bottom button zone.
+                // Center the label in the flat solid body (from the flat-top line
+                // down to the bottom edge), instead of pinning it to the bottom.
+                // Pad the top by the corner-ledge height so centering happens below
+                // the concave corners, while keeping the overall height (bar height
+                // + bottom safe area) so the bar shape/background is unchanged.
                 .frame(maxWidth: .infinity,
-                       minHeight: dockManager.effectiveBarHeight + dockManager.safeAreaInsets.bottom,
-                       alignment: .bottom)
+                       minHeight: dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.safeAreaInsets.bottom,
+                       alignment: .center)
+                .padding(.top, dockManager.barCornerRadiusActive)
                 // Limit the tap area to the bar's actual visible shape. The frame is
                 // as tall as the real bar (incl. the concave overhang), but that
                 // overhang is transparent and overlaps the "Close all" button above
