@@ -69,6 +69,8 @@ struct LCSettingsView: View {
     @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = true
     @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
     @AppStorage("LCMultitaskBottomWindowBar", store: LCUtils.appGroupUserDefault) var bottomWindowBar = false
+    // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
+    @AppStorage("LCMultitaskBarLedge", store: LCUtils.appGroupUserDefault) var roundedSwitcherBar = true
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
@@ -618,6 +620,14 @@ struct LCSettingsView: View {
                             }
                             Toggle(isOn: $redirectURLToHost) {
                                 Text("lc.settings.redirectURLToHost".loc)
+                            }
+                            Toggle(isOn: $roundedSwitcherBar) {
+                                Text("lc.flek.roundedSwitcherBar".loc)
+                            }
+                            .onChange(of: roundedSwitcherBar) { _ in
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("MultitaskBarDesignChanged"),
+                                    object: nil)
                             }
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {

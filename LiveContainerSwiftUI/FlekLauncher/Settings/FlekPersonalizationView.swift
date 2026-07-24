@@ -24,11 +24,6 @@ struct FlekPersonalizationView: View {
     @AppStorage("dynamicColors", store: LCUtils.appGroupUserDefault) private var dynamicColors = true
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
     @AppStorage("LCFrameShortcutIcons", store: LCUtils.appGroupUserDefault) private var frameShortIcon = false
-    // Multitask switcher bar: rounded (tall, concave corners) when on, flat short
-    // bar when off. On by default. Applied the next time the bar lays out.
-    @AppStorage("LCMultitaskBarLedge", store: LCUtils.appGroupUserDefault) private var roundedSwitcherBar = true
-    // Concave corner radius of the rounded bar, in points. Slider hidden for now.
-    // @AppStorage("LCMultitaskBarCornerRadius", store: LCUtils.appGroupUserDefault) private var barCornerRadius: Double = 0
 
     @State private var showCollection = false
     @State private var showPhotoPicker = false
@@ -86,25 +81,6 @@ struct FlekPersonalizationView: View {
                     .background(card)
                 }
 
-                // MARK: Multitask Bar
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader("lc.flek.multitaskBar".loc)
-                    VStack(spacing: 0) {
-                        Toggle("lc.flek.roundedSwitcherBar".loc, isOn: $roundedSwitcherBar)
-                            .padding(.horizontal, 16).padding(.vertical, 12)
-                            .onChange(of: roundedSwitcherBar) { _ in
-                                // Ask the dock manager to re-lay out the visible bar
-                                // right away instead of on the next app switch.
-                                NotificationCenter.default.post(
-                                    name: NSNotification.Name("MultitaskBarDesignChanged"),
-                                    object: nil)
-                            }
-                        // Corner-radius slider hidden for now; the bar uses the
-                        // device screen radius by default. Re-enable by restoring the
-                        // `if roundedSwitcherBar { Slider(...) }` block here.
-                    }
-                    .background(card)
-                }
             }
             .padding(16)
         }
