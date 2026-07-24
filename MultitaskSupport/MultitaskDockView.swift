@@ -334,7 +334,7 @@ class AppInfoProvider {
         static let barBottomMargin: CGFloat = 16.0
         
         // MARK: - Navigation Assist
-        static let navAssistSize: CGFloat = 50.0
+        static let navAssistSize: CGFloat = 65.0
         static let navAssistMargin: CGFloat = 8.0
         
         // MARK: - Animation
@@ -1322,7 +1322,8 @@ class AppInfoProvider {
     private func stashNavAssist(_ button: UIView, edge: NavAssistEdge, along: CGFloat, animated: Bool) {
         let screenBounds = keyWindow!.bounds
         let size = Constants.navAssistSize
-        // Show half the button so the chevron arrow is always visible
+        // Show half the button off the edge; the chevron is positioned in the
+        // visible half (below) so it stays fully on-screen.
         let visibleAmount: CGFloat = size * 0.50
 
         // Center for the half-off-screen stashed position, and the chevron that
@@ -1347,25 +1348,43 @@ class AppInfoProvider {
 
         isNavAssistStashed = true
 
-        // Add or update chevron indicator
-        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+        // Add or update chevron indicator, positioned in the visible half of the
+        // button (the half facing the screen interior) so the edge can't clip it.
+        let config = UIImage.SymbolConfiguration(pointSize: 16.8, weight: .bold)  // 20% larger than the base 14
         let chevronImage = UIImage(systemName: chevronName, withConfiguration: config)
 
-        if let existing = navAssistChevron {
-            existing.image = chevronImage
-        } else {
-            let chevronView = UIImageView(image: chevronImage)
-            chevronView.tintColor = .white
-            chevronView.contentMode = .center
-            chevronView.frame = button.bounds
-            chevronView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            
-            button.viewWithTag(100)?.isHidden = true
-            button.addSubview(chevronView)
-            navAssistChevron = chevronView
+        // Center the chevron on the centroid of the visible half-disk — the true
+        // middle of the not-hidden part of the round button — rather than the
+        // rectangular midpoint of the half, which reads as off toward the interior.
+        let mid = size / 2
+        let centroidOffset = 2 * size / (3 * CGFloat.pi)  // half-disk centroid from the flat (edge) side
+        let chevronCenter: CGPoint
+        switch edge {
+        case .right:  chevronCenter = CGPoint(x: mid - centroidOffset, y: mid)
+        case .left:   chevronCenter = CGPoint(x: mid + centroidOffset, y: mid)
+        case .bottom: chevronCenter = CGPoint(x: mid, y: mid - centroidOffset)
+        case .top:    chevronCenter = CGPoint(x: mid, y: mid + centroidOffset)
         }
 
-        moveNavAssist(button, to: newCenter, alpha: 0.85, animated: animated)
+        let chevronView: UIImageView
+        if let existing = navAssistChevron {
+            existing.image = chevronImage
+            chevronView = existing
+        } else {
+            let v = UIImageView(image: chevronImage)
+            v.tintColor = .white
+            v.contentMode = .center
+            button.viewWithTag(100)?.isHidden = true
+            button.addSubview(v)
+            navAssistChevron = v
+            chevronView = v
+        }
+        chevronView.sizeToFit()
+        chevronView.center = chevronCenter
+
+        // See-through while stashed (down from the default), but the frosted
+        // background stays so the chevron keeps contrast against app content.
+        moveNavAssist(button, to: newCenter, alpha: 0.55, animated: animated)
     }
     
     private func unstashNavAssist() {
