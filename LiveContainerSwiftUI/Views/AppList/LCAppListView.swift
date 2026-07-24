@@ -1553,6 +1553,35 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         extract(path, destination, progress)
     }
     
+    /// Finds the `.app` bundle inside a decompressed IPA tree, tolerating archives
+    /// that don't use the standard top-level `Payload/App.app` layout (a wrapper
+    /// folder with different casing or name, extra nesting, or no wrapper at all).
+    /// Breadth-first so the shallowest match wins, preferring one directly inside a
+    /// `Payload` folder. Does not descend into a found `.app`. Returns nil if none.
+    nonisolated static func findAppBundle(in root: URL, fm: FileManager) -> URL? {
+        var queue: [(url: URL, depth: Int)] = [(root, 0)]
+        var fallback: URL? = nil
+        while !queue.isEmpty {
+            let (dir, depth) = queue.removeFirst()
+            guard depth <= 8,
+                  let entries = try? fm.contentsOfDirectory(
+                    at: dir, includingPropertiesForKeys: [.isDirectoryKey]) else { continue }
+            for entry in entries {
+                let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                guard isDir else { continue }
+                if entry.pathExtension.lowercased() == "app" {
+                    if entry.deletingLastPathComponent().lastPathComponent.lowercased() == "payload" {
+                        return entry
+                    }
+                    if fallback == nil { fallback = entry }
+                } else {
+                    queue.append((entry, depth + 1))
+                }
+            }
+        }
+        return fallback
+    }
+
     func installIpaFile(_ url:URL, item: InstallItem) async throws {
         let fm = FileManager()
         
@@ -1568,29 +1597,27 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         _ = installObserver
         let decompressProgress = Progress.discreteProgress(totalUnitCount: 100)
         installProgress.addChild(decompressProgress, withPendingUnitCount: 80)
-        let payloadPath = fm.temporaryDirectory.appendingPathComponent("Payload")
-        if fm.fileExists(atPath: payloadPath.path) {
-            try fm.removeItem(at: payloadPath)
+        // Decompress into a clean, dedicated folder (auto-removed when this method
+        // exits) so the extracted tree is isolated from other temp files.
+        let extractDir = fm.temporaryDirectory.appendingPathComponent("lc_extract_\(UUID().uuidString)")
+        if fm.fileExists(atPath: extractDir.path) {
+            try fm.removeItem(at: extractDir)
         }
-        
+        try fm.createDirectory(at: extractDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: extractDir) }
+
         // decompress
-        guard await decompress(url.path, fm.temporaryDirectory.path, decompressProgress) == 0 else {
+        guard await decompress(url.path, extractDir.path, decompressProgress) == 0 else {
             throw "lc.appList.urlFileIsNotIpaError".loc
         }
 
-        let payloadContents = try fm.contentsOfDirectory(atPath: payloadPath.path)
-        var appBundleName : String? = nil
-        for fileName in payloadContents {
-            if fileName.hasSuffix(".app") {
-                appBundleName = fileName
-                break
-            }
-        }
-        guard let appBundleName = appBundleName else {
+        // Locate the .app bundle anywhere in the extracted tree. A valid IPA uses a
+        // top-level `Payload/App.app`, but archives in the wild often differ — a
+        // wrapper folder with different casing or name, an extra level of nesting,
+        // or no wrapper at all — so search for the .app rather than assume `Payload/`.
+        guard let appFolderPath = Self.findAppBundle(in: extractDir, fm: fm) else {
             throw "lc.appList.bundleNotFondError".loc
         }
-        
-        let appFolderPath = payloadPath.appendingPathComponent(appBundleName)
         
         guard let newAppInfo = LCAppInfo(bundlePath: appFolderPath.path) else {
             throw "lc.appList.infoPlistCannotReadError".loc
@@ -1602,7 +1629,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 initVal: newAppInfo.bundleIdentifier()!
             ) else {
                 // User cancelled
-                try fm.removeItem(at: payloadPath)
                 throw CancellationError()
             }
             let trimmed = chosenBundleId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1647,7 +1673,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             
             guard let installOptionChosen = await installReplaceAlert.open() else {
                 // user cancelled
-                try fm.removeItem(at: payloadPath)
                 throw CancellationError()
             }
             
