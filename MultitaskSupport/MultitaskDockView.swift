@@ -448,6 +448,13 @@ class AppInfoProvider {
     
     override init() {
         super.init()
+        // Every launch starts with the switcher bar as the control. The
+        // floating-button choice is session-only and deliberately NOT restored on
+        // relaunch, so the user always returns to the bar after quitting (and, since
+        // the bar mode lays the bar out, its sizing is always captured correctly —
+        // floating-button mode skips that layout).
+        prefersFloatingButton = false
+        LCUtils.appGroupUserDefault.set(false, forKey: MultitaskDockManager.preferFloatingButtonKey)
         keyWindow!.rootViewController!.view.addSubview(self.windowHostingView)
         if let win = keyWindow { attachSafeAreaSentinel(to: win) }
         setupDockView()
@@ -561,6 +568,10 @@ class AppInfoProvider {
     
     private func setupDockView() {
         DispatchQueue.main.async {
+            // Capture the design once at startup so `barCornerRadiusActive` reflects
+            // the device radius from the start (used by the bar reserve and the
+            // switcher toggle) even before the bar is first laid out.
+            self.captureBarDesign()
             let barView = AnyView(SwitcherBarContentView()
                 .environmentObject(self)
                 .preferredColorScheme(.dark)
@@ -733,6 +744,12 @@ class AppInfoProvider {
         
         DispatchQueue.main.async {
             self.isVisible = true
+            // Capture the design (corner radius + rounded/flat) now, even in
+            // floating-button mode where the bar isn't laid out. Otherwise
+            // `captureBarDesign()` — which only runs inside `updateDockFrame` — never
+            // fires, leaving `barCornerRadiusActive` at its default and the switcher
+            // toggle / bar reserve sized with the wrong radius.
+            self.captureBarDesign()
 
             // Honor the saved control preference: show the floating button
             // instead of the bar when the user has chosen it.
@@ -1036,6 +1053,11 @@ class AppInfoProvider {
                 if !showsFloatingButton {
                     self.refreshOrientationLock()
                 }
+                // Safety net: guarantee a control is on screen. If an app is
+                // foreground but its window read as not-ready when we tried to show
+                // the floating button above, this re-checks (and retries) so hiding
+                // the bar can never leave the user with neither control.
+                self.ensureControlAccessible()
             }
         }
     }
@@ -1700,7 +1722,13 @@ class AppInfoProvider {
     
     func showAppSwitcher() {
         guard let keyWindow = self.keyWindow else { return }
-        
+
+        // Ensure the design is captured before the overlay's bottom toggle renders,
+        // so it uses the real corner radius (not the uncaptured default) — otherwise,
+        // if the switcher is opened in floating-button mode, the toggle draws an
+        // over-tall solid chin.
+        captureBarDesign()
+
         captureSnapshots()
         captureSpringboardSnapshot()
         // Sync the preference to whatever control is actually active right now,
