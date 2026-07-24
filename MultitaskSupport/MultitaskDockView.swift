@@ -1166,13 +1166,12 @@ class AppInfoProvider {
         blurView.clipsToBounds = true
         button.addSubview(blurView)
         
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
-        let iconImage = UIImage(systemName: "square.stack", withConfiguration: iconConfig)
+        let iconImage = UIImage(named: "multitaskIcon")?.withRenderingMode(.alwaysTemplate)
         let iconView = UIImageView(image: iconImage)
         iconView.tintColor = .white
-        iconView.contentMode = .center
-        iconView.frame = button.bounds
-        iconView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        iconView.contentMode = .scaleAspectFit
+        iconView.frame = button.bounds.insetBy(dx: 6, dy: 6)
+        iconView.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleLeftMargin, .flexibleRightMargin]
         iconView.tag = 100 // Tag for reliable lookup
         button.addSubview(iconView)
         
@@ -1292,7 +1291,7 @@ class AppInfoProvider {
         }
     }
 
-    /// Clears the stashed chevron and restores the normal square.stack icon.
+    /// Clears the stashed chevron and restores the normal multitask icon.
     private func restoreNavAssistIcon(_ button: UIView) {
         isNavAssistStashed = false
         navAssistChevron?.removeFromSuperview()
@@ -1375,7 +1374,7 @@ class AppInfoProvider {
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         
-        // Remove chevron, restore square.stack icon
+        // Remove chevron, restore multitask icon
         restoreNavAssistIcon(button)
 
         // Slide back in from whichever edge it was stashed against.
@@ -3074,9 +3073,12 @@ struct MultitaskHomeDockPill: View {
         Button {
             MultitaskDockManager.shared.showAppSwitcher()
         } label: {
-            Image(systemName: "square.stack")
-                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+            Image("multitaskIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
                 .foregroundStyle(Color.primary.opacity(0.6))
+                .frame(width: FlekTheme.searchPillSize * 0.72, height: FlekTheme.searchPillSize * 0.72)
                 .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
         }
         .buttonStyle(.plain)
