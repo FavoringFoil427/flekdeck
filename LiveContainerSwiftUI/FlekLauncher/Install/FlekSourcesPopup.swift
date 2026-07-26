@@ -72,11 +72,19 @@ struct FlekSourcesPopup: View {
             Text("lc.flek.addSource".loc).font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
             HStack(spacing: 16) {
                 Image(systemName: "link").font(.system(size: 22)).foregroundStyle(Color(white: 0.45))
-                TextField("https://fleksign.com/repo", text: $newRepoURL)
+                TextField("", text: $newRepoURL)
                     .font(.system(size: 14))
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
+                    .overlay(alignment: .leading) {
+                        if newRepoURL.isEmpty {
+                            Text(verbatim: "https://fleksign.com/repo")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 if isAdding {
                     ProgressView().frame(width: 33, height: 33)
                 } else {
