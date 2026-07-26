@@ -68,14 +68,12 @@ struct LCSettingsView: View {
     @AppStorage("LCMultitaskMode", store: LCUtils.appGroupUserDefault) var multitaskMode: MultitaskMode = .virtualWindow
     @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = true
     @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
-    @AppStorage("LCMultitaskBottomWindowBar", store: LCUtils.appGroupUserDefault) var bottomWindowBar = false
     // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
     @AppStorage("LCMultitaskBarLedge", store: LCUtils.appGroupUserDefault) var roundedSwitcherBar = true
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
     @AppStorage("LCMaxOneAppOnStage", store: LCUtils.appGroupUserDefault) var onlyOneAppOnStage = false
-    @AppStorage("LCDockWidth", store: LCUtils.appGroupUserDefault) var dockWidth: Double = 80
     @AppStorage("LCRedirectURLToHost", store: LCUtils.appGroupUserDefault) var redirectURLToHost = false
     
     @AppStorage("LCSideJITServerAddress", store: LCUtils.appGroupUserDefault) var sideJITServerAddress : String = ""
@@ -615,9 +613,6 @@ struct LCSettingsView: View {
                                     Text("lc.settings.restartTerminatedApp".loc)
                                 }
                             }
-                            Toggle(isOn: $bottomWindowBar) {
-                                Text("lc.settings.bottomWindowBar".loc)
-                            }
                             Toggle(isOn: $redirectURLToHost) {
                                 Text("lc.settings.redirectURLToHost".loc)
                             }
@@ -629,21 +624,6 @@ struct LCSettingsView: View {
                                     name: NSNotification.Name("MultitaskBarDesignChanged"),
                                     object: nil)
                             }
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("lc.settings.dockWidth".loc)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text("\(Int(dockWidth))px")
-                                        .foregroundColor(.secondary)
-                                        .font(.caption)
-                                }
-                                Slider(value: $dockWidth, in: 60...110) {
-                                    Text("lc.settings.dockWidth".loc)
-                                }
-                                .tint(.accentColor)
-                            }
-                            .padding(.vertical, 4)
                         }
                     } footer: {
                         Text("lc.settings.multitaskDesc".loc)
