@@ -626,10 +626,13 @@ struct LCSettingsView: View {
                                         .foregroundColor(.secondary)
                                         .font(.caption)
                                 }
-                                // 0% = flat bar, 100% = fully rounded concave corners.
-                                // Snaps in 5% steps, with major stops marked at
-                                // 0/20/40/60/80/100.
-                                BarRoundingSlider(value: $barLedgeAmount) {
+                                // 0% = flat bar, 100% = fully rounded concave corners,
+                                // in 10% steps.
+                                Slider(value: $barLedgeAmount, in: 0...100, step: 10) {
+                                    Text("lc.flek.roundedSwitcherBar".loc)
+                                }
+                                .tint(.accentColor)
+                                .onChange(of: barLedgeAmount) { _ in
                                     NotificationCenter.default.post(
                                         name: NSNotification.Name("MultitaskBarDesignChanged"),
                                         object: nil)
@@ -1112,63 +1115,5 @@ struct LCSettingsView: View {
             errorInfo = error.localizedDescription
             errorShow = true
         }
-    }
-}
-
-/// Slider for the switcher-bar rounding amount (0…100). Snaps to 5% increments
-/// while drawing major stop marks only at 0/20/40/60/80/100, so users get fine
-/// control without the clutter of a tick at every step. Custom because the
-/// system Slider draws one tick per `step`, which at 5% would be ~20 marks.
-fileprivate struct BarRoundingSlider: View {
-    @Binding var value: Double
-    var onEditingChanged: () -> Void = {}
-
-    private let step: Double = 5
-    private let majorStops: [Double] = [0, 20, 40, 60, 80, 100]
-    private let thumb: CGFloat = 27
-    private let track: CGFloat = 5
-
-    var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            let travel = max(width - thumb, 1)
-            let thumbX = CGFloat(min(max(value, 0), 100) / 100) * travel
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color(.systemGray4))
-                    .frame(width: travel, height: track)
-                    .offset(x: thumb / 2)
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: thumbX, height: track)
-                    .offset(x: thumb / 2)
-                ForEach(majorStops, id: \.self) { stop in
-                    Circle()
-                        .fill(Color(.systemGray))
-                        .frame(width: 5, height: 5)
-                        .offset(x: thumb / 2 + CGFloat(stop / 100) * travel - 2.5)
-                }
-                Circle()
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
-                    .frame(width: thumb, height: thumb)
-                    .offset(x: thumbX)
-            }
-            .frame(height: thumb)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in
-                        let f = Double(min(max(0, g.location.x - thumb / 2), travel) / travel)
-                        let snapped = min(max((f * 100 / step).rounded() * step, 0), 100)
-                        if snapped != value {
-                            value = snapped
-                            onEditingChanged()
-                        }
-                    }
-            )
-        }
-        .frame(height: thumb)
     }
 }
