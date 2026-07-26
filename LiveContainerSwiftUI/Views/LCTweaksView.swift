@@ -356,10 +356,10 @@ struct LCTweaksView: View {
     @Binding var tweakFolders : [String]
     
     var body: some View {
-        NavigationView {
-            LCTweakFolderView(baseUrl: LCPath.tweakPath, isRoot: true, tweakFolders: $tweakFolders)
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
-
+        // Rendered inside the Settings navigation stack (pushed via NavigationLink),
+        // so it must not introduce its own NavigationView — otherwise the "Tweaks"
+        // principal title lands in a nested nav bar instead of the shared one used
+        // by the other Settings sections.
+        LCTweakFolderView(baseUrl: LCPath.tweakPath, isRoot: true, tweakFolders: $tweakFolders)
     }
 }
