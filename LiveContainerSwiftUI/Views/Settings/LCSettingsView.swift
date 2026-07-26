@@ -69,7 +69,8 @@ struct LCSettingsView: View {
     @AppStorage("LCLaunchInMultitaskMode") var launchInMultitaskMode = true
     @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
     // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
-    @AppStorage("LCMultitaskBarLedge", store: LCUtils.appGroupUserDefault) var roundedSwitcherBar = true
+    // Bar rounding amount, 0 (flat) … 100 (fully rounded concave corners).
+    @AppStorage("LCMultitaskBarLedgeAmount", store: LCUtils.appGroupUserDefault) var barLedgeAmount: Double = 100
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
@@ -616,14 +617,28 @@ struct LCSettingsView: View {
                             Toggle(isOn: $redirectURLToHost) {
                                 Text("lc.settings.redirectURLToHost".loc)
                             }
-                            Toggle(isOn: $roundedSwitcherBar) {
-                                Text("lc.flek.roundedSwitcherBar".loc)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text("lc.flek.roundedSwitcherBar".loc)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Text("\(Int(barLedgeAmount))%")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                                // 0% = flat bar, 100% = fully rounded concave corners,
+                                // in 5 steps (0/25/50/75/100).
+                                Slider(value: $barLedgeAmount, in: 0...100, step: 25) {
+                                    Text("lc.flek.roundedSwitcherBar".loc)
+                                }
+                                .tint(.accentColor)
+                                .onChange(of: barLedgeAmount) { _ in
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("MultitaskBarDesignChanged"),
+                                        object: nil)
+                                }
                             }
-                            .onChange(of: roundedSwitcherBar) { _ in
-                                NotificationCenter.default.post(
-                                    name: NSNotification.Name("MultitaskBarDesignChanged"),
-                                    object: nil)
-                            }
+                            .padding(.vertical, 4)
                         }
                     } footer: {
                         Text("lc.settings.multitaskDesc".loc)

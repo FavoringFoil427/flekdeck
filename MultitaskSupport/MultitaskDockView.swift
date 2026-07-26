@@ -219,15 +219,20 @@ class AppInfoProvider {
     /// ObjC-accessible flag for whether the switcher bar is currently shown
     @objc public var barVisible: Bool { return isSwitcherBarVisible }
 
-    /// Live read of the LCMultitaskBarLedge setting (rounded tall bar vs the
-    /// original short one). Defaults on.
-    private var barLedgeSetting: Bool {
-        // On  → rounded, tall bar with concave corners (default).
-        // Off → the original short, flat black bar.
-        // Read live here but only applied via `captureBarDesign()` as the bar
-        // (re)lays out, so flipping it in Settings never resizes the bar under the
-        // user's finger; the new design takes effect the next time the bar appears.
-        return LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true
+    /// Live read of the LCMultitaskBarLedgeAmount setting: how rounded the bar's
+    /// concave top corners are, as a fraction 0 (flat, the original short bar) …
+    /// 1 (full device-radius rounded corners). Migrates from the old on/off
+    /// boolean `LCMultitaskBarLedge` (on → 1, off → 0) until the slider is used.
+    /// Read live here but only applied via `captureBarDesign()` as the bar
+    /// (re)lays out, so changing it in Settings never resizes the bar under the
+    /// user's finger.
+    private var barLedgeAmountSetting: CGFloat {
+        let d = LCUtils.appGroupUserDefault
+        if let stored = d.object(forKey: "LCMultitaskBarLedgeAmount") as? NSNumber {
+            return max(0, min(1, CGFloat(stored.doubleValue) / 100.0))
+        }
+        let legacyOn = d.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true
+        return legacyOn ? 1 : 0
     }
 
     /// The design actually in effect on the visible bar. Captured from the setting
@@ -238,6 +243,11 @@ class AppInfoProvider {
     /// or re-show).
     @Published private(set) var barLedgeActive: Bool = true
 
+    /// How rounded the bar's concave corners actually are on the visible bar,
+    /// 0 (flat) … 1 (full `barCornerRadiusActive`). Captured from the slider
+    /// setting; published so moving the slider re-renders the bar live.
+    @Published private(set) var barLedgeAmountActive: CGFloat = 1
+
     /// The concave corner radius actually in effect on the visible bar, captured
     /// from the user's slider setting (falling back to the device screen radius).
     /// Published so changing the slider re-renders the bar live.
@@ -246,8 +256,12 @@ class AppInfoProvider {
     /// Re-reads the design settings (rounded/flat + corner radius) into the
     /// published state; called as the bar is laid out and when the settings change.
     func captureBarDesign() {
-        let v = barLedgeSetting
-        if barLedgeActive != v { barLedgeActive = v }
+        let amount = barLedgeAmountSetting
+        if barLedgeAmountActive != amount { barLedgeAmountActive = amount }
+        // Any rounding at all uses the concave-cornered hit path; only a fully
+        // flat bar (0) uses the plain flat-top hit path.
+        let active = amount > 0
+        if barLedgeActive != active { barLedgeActive = active }
         let r = barCornerRadiusSetting
         if barCornerRadiusActive != r { barCornerRadiusActive = r }
     }
@@ -2139,9 +2153,9 @@ struct SwitcherBarContentView: View {
                     // rise above the shared flat-top line (0 when flat, the full
                     // radius when rounded), so toggling the design animates smoothly.
                     BarTopBar(radius: dockManager.barCornerRadiusActive,
-                              curve: dockManager.barLedgeActive ? dockManager.barCornerRadiusActive : 0)
+                              curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
                         .fill(Color.black)
-                        .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeActive)
+                        .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeAmountActive)
                 }
             }
             .ignoresSafeArea()
