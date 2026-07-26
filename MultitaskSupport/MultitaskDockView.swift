@@ -2660,7 +2660,11 @@ struct AppSwitcherOverlay: View {
     private func positionedCustomizeDropdown(_ menuApp: DockAppModel, rect: CGRect, size: CGSize) -> some View {
         let menuWidth: CGFloat = 260
         let estHeight: CGFloat = 210
-        let x = min(max(rect.midX - menuWidth / 2, 8), max(8, size.width - menuWidth - 8))
+        // Center the menu on the card rather than the (right-aligned) button. The
+        // button's trailing edge sits 20pt inside the card's right edge, so the
+        // card's horizontal center is (button.maxX + 20) - cardWidth/2.
+        let cardCenterX = rect.maxX + 20 - cardWidth / 2
+        let x = min(max(cardCenterX - menuWidth / 2, 8), max(8, size.width - menuWidth - 8))
         let y = min(rect.maxY + 6, max(8, size.height - estHeight - 8))
         return CustomizeDropdown(app: menuApp, onDismiss: dismissCustomizeMenu)
             .offset(x: x, y: y)
@@ -2865,27 +2869,11 @@ struct AppSwitcherCard: View {
     
     private let dismissThreshold: CGFloat = -120
 
-    /// The Customize button's visual content. Extracted so internal-page cards can
-    /// reserve the exact same footprint with an invisible copy (see below).
-    private var customizeLabel: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "gearshape")
-                .font(.system(size: 14, weight: .semibold))
-            Text("Customize")
-                .font(.system(size: 15, weight: .semibold))
-            Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
-                .opacity(0.7)
-        }
-        .foregroundColor(.white.opacity(0.9))
-        .padding(.horizontal, 18)
-        .padding(.vertical, 11)
-        .modifier(GlassCapsuleBackground())
-    }
-
     var body: some View {
         VStack(spacing: 8) {
-            // App icon + name above the card (like iOS)
+            // App icon + left-aligned name, with the Customize button inline on the
+            // trailing edge. Row spans the card width with 10pt side margins: name
+            // group sits 10pt from the left, the slider button 10pt from the right.
             HStack(spacing: 6) {
                 if let icon = SwitcherBarContentView.cachedIcon(for: app) {
                     Image(uiImage: icon)
@@ -2899,12 +2887,40 @@ struct AppSwitcherCard: View {
                         .font(.system(size: 24))
                         .frame(width: 32, height: 32)
                 }
-                
+
                 Text(app.appName)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                // Customize button — guest apps only. Internal Settings / Installer
+                // pages have no customizable options, so they show just the name.
+                // Opens the same menu the old under-card button did.
+                if !app.isInternalPage {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                            .frame(height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
+                        [app.appUUID: $0]
+                    }
+                }
             }
+            // Inset the row 20pt on each side so the name (left) and the customize
+            // button (right) sit just inside the card's edges.
+            .frame(width: cardWidth - 40)
+            .padding(.horizontal, 20)
             
             // Card with snapshot
             ZStack {
@@ -2935,33 +2951,6 @@ struct AppSwitcherCard: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
-            
-            // Customize button — guest apps only. Settings / Installer are internal
-            // pages with no customizable options, so instead of dropping the button
-            // (which made their cards shorter and therefore sit lower, then jump up
-            // when a guest-app card joined the row) they reserve the exact same
-            // footprint with an invisible copy. Every card is then the same height,
-            // so internal-page cards stay at the same position regardless of what
-            // else is on the switcher screen.
-            if !app.isInternalPage {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                        openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
-                    }
-                } label: {
-                    customizeLabel
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-                .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
-                    [app.appUUID: $0]
-                }
-            } else {
-                customizeLabel
-                    .padding(.top, 4)
-                    .hidden()
-            }
         }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
