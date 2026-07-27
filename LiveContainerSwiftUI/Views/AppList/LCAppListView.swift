@@ -1105,6 +1105,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         do {
             if #available(iOS 16.0, *), sharedModel.multiLCStatus != 2, parallel {
                 try await app.runApp(multitask: true)
+                // Landscape-only apps come up portrait in the (portrait-locked)
+                // virtual-window multitask; nudge the user to rotate the device.
+                await MainActor.run { maybeShowLandscapeRotateHint(for: app) }
             } else {
                 try await app.runApp(multitask: false)
             }
@@ -1112,6 +1115,48 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             errorInfo = error.localizedDescription
             errorShow = true
         }
+    }
+
+    /// Whether the app runs only in landscape (cached in LCAppInfo.plist, computed
+    /// on demand as a fallback — mirrors the springboard badge check).
+    private func isLandscapeOnly(_ app: LCAppModel) -> Bool {
+        if let cached = app.appInfo.info()?["LCLandscapeOnly"] as? Bool { return cached }
+        guard let bundlePath = app.appInfo.bundlePath(), !bundlePath.isEmpty else { return false }
+        return AppOrientation.isLandscapeOnly(bundlePath: bundlePath)
+    }
+
+    /// One-time-per-app hint telling the user to enable rotation and turn the
+    /// device to landscape, shown when a landscape-only app is opened in multitask.
+    private func maybeShowLandscapeRotateHint(for app: LCAppModel) {
+        guard isLandscapeOnly(app) else { return }
+        let key = app.appInfo.bundleIdentifier() ?? app.appInfo.displayName() ?? ""
+        guard !key.isEmpty else { return }
+        let dismissed = Set(UserDefaults.standard.stringArray(forKey: "LCLandscapeRotateHintDismissed") ?? [])
+        if dismissed.contains(key) { return }
+        presentLandscapeRotateHint(rememberKey: key)
+    }
+
+    /// Presents the landscape-rotate hint alert on the top-most view controller.
+    /// A non-nil `rememberKey` adds a "Don't show again" action for that app.
+    func presentLandscapeRotateHint(rememberKey: String?) {
+        let alert = UIAlertController(
+            title: "Rotate to Landscape",
+            message: "This app is designed to be used in landscape. Turn off Portrait Orientation Lock in Control Center and rotate your device to use it properly in multitask.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        if let rememberKey {
+            alert.addAction(UIAlertAction(title: "Don't show again", style: .default) { _ in
+                var dismissed = Set(UserDefaults.standard.stringArray(forKey: "LCLandscapeRotateHintDismissed") ?? [])
+                dismissed.insert(rememberKey)
+                UserDefaults.standard.set(Array(dismissed), forKey: "LCLandscapeRotateHintDismissed")
+            })
+        }
+        var top = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        top?.present(alert, animated: true)
     }
 
     // MARK: - Home context menu
@@ -1772,6 +1817,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         if let installedBundlePath = finalNewApp.bundlePath() {
             finalNewApp.info()?["LCIsGame"] = GameDetector.isGame(bundlePath: installedBundlePath)
             finalNewApp.info()?["LCIsGameV"] = GameDetector.detectorVersion
+            finalNewApp.info()?["LCLandscapeOnly"] = AppOrientation.isLandscapeOnly(bundlePath: installedBundlePath)
             finalNewApp.save()
         }
 
