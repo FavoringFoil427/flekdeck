@@ -308,14 +308,11 @@ class AppInfoProvider {
         // corner radius keeps the app flush on every device — the old fixed base
         // height only lined up on phones whose corner radius matched the assumed
         // value and left a thin gap on the rest.
-        if !isBarLandscape {
-            // Both designs share the same flat-top line, so both reserve down to it
-            // (the concave corners / the square top sit above it and overlay nothing
-            // that needs reserving).
-            let flatTop = max(effectiveBarHeight - barCornerRadiusActive, 0)
-            return flatTop + safeAreaInsets.bottom
-        }
-        return Constants.barHeight + safeAreaInsets.bottom
+        // Both designs and both orientations share the same flat-top line, so reserve
+        // down to it (the concave corners / square top sit above it and overlay
+        // nothing that needs reserving). Landscape uses the identical value now that
+        // its bar is the same shaped strip as portrait.
+        return barFlatRegion
     }
 
     /// Reserves (or clears) space for the switcher bar on an internal page,
@@ -404,6 +401,18 @@ class AppInfoProvider {
 
     public var safeAreaInsets: UIEdgeInsets {
         keyWindow?.safeAreaInsets ?? .zero
+    }
+
+    /// The visible solid strip of the bar (below the concave corners). Floored to
+    /// the button height so the buttons are always covered: portrait gets button
+    /// room from its ~34pt home-indicator inset, but landscape has none — and with a
+    /// large device corner radius (~55pt) the natural region (effectiveBarHeight -
+    /// cornerRadius + inset) fell short of the 44pt buttons. Portrait's larger
+    /// natural value still wins, so it's unaffected.
+    public var barFlatRegion: CGFloat {
+        let buttonRoom = Constants.barButtonSize * 1.1 + 14   // buttons + margin
+        let base = max(effectiveBarHeight - barCornerRadiusActive, 0) + safeAreaInsets.bottom
+        return max(base, buttonRoom)
     }
 
     // MARK: - Bar Edge / Orientation
@@ -613,10 +622,12 @@ class AppInfoProvider {
             }
             container.hitPathProvider = { [weak self] bounds in
                 // Landscape / plain bar fills its whole bounds (nil == full rect).
-                // Both portrait designs leave the region above the flat-top line
-                // transparent, so hit-test against the actual fill shape and pass
-                // taps above it through to the content beneath.
-                guard let self = self, !self.isLandscapeBar else { return nil }
+                // Both designs (portrait and landscape) leave the region above the
+                // flat-top line transparent, so hit-test against the actual fill shape
+                // and pass taps above it through to the content beneath. The point is
+                // converted into the bar's un-rotated local space below, so the same
+                // local shape works in landscape after the -90° transform.
+                guard let self = self else { return nil }
                 let r = self.barCornerRadiusActive
                 let cg = self.barLedgeActive
                     ? BarInverseTopCorners(radius: r).path(in: bounds).cgPath
@@ -666,7 +677,8 @@ class AppInfoProvider {
         // orientations so the landscape bar matches the portrait one instead of
         // ballooning to include the large horizontal safe-area inset (e.g. the
         // notch), which previously made it a wide full-height sidebar.
-        let thickness = effectiveBarHeight + insets.bottom
+        // Strip = visible flat region + the concave corner radius carved above it.
+        let thickness = barFlatRegion + barCornerRadiusActive
 
 
         let boundsSize: CGSize
@@ -2126,39 +2138,26 @@ struct SwitcherBarContentView: View {
         // Make the bar buttons 10% larger (scales the glass pills + glyphs uniformly).
         .scaleEffect(1.1)
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
-        // Landscape hugs the outer (right) edge as before.
-        .padding(.bottom, dockManager.isLandscapeBar ? -10 : 0)
-        // Portrait: center the buttons in the flat solid body — a block spanning the
-        // flat-top line down to the screen bottom (visible flat strip + bottom safe
-        // area). Giving the content exactly that height centers it within; the outer
-        // frame then pins the block to the screen bottom. Landscape has no ledge, so
-        // its height stays unconstrained (nil).
-        .frame(height: dockManager.isLandscapeBar ? nil : (dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.safeAreaInsets.bottom),
-               alignment: .center)
+        // Center the buttons in the flat solid body — a block spanning the flat-top
+        // line down to the screen edge (visible flat strip + safe area). Same formula
+        // in both orientations: the bar view is a horizontal strip that landscape just
+        // rotates -90°, so the identical height/shape applies either way.
+        .frame(height: dockManager.barFlatRegion, alignment: .center)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .ignoresSafeArea()
-        // Bar background. With the ledge setting on (portrait), the dark bar gets
-        // concave top corners so the app content above looks like it has rounded
-        // bottom corners nesting into the bar. Off / landscape = a plain black bar
-        // as before. The host view's own backgroundColor is cleared in
-        // setupDockView so these concave corners reveal the app behind them.
+        // Bar background: one shape (portrait AND landscape) that morphs between a flat
+        // square top and rounded concave corners via barLedgeAmountActive — the app
+        // content above then looks like it has rounded corners nesting into the bar.
+        // In landscape the whole bar view is rotated -90°, so the concave "top" edge
+        // lands on the screen-inward side and the shape rotates correctly with no
+        // landscape special case. The host view's backgroundColor is cleared in
+        // setupDockView so the concave corners reveal the app behind them.
         .background {
-            Group {
-                if dockManager.isLandscapeBar {
-                    // Landscape: plain full-thickness bar on the right edge.
-                    Rectangle().fill(Color.black)
-                } else {
-                    // Portrait: one shape that morphs between the flat square top and
-                    // the rounded concave corners by animating how far the corners
-                    // rise above the shared flat-top line (0 when flat, the full
-                    // radius when rounded), so toggling the design animates smoothly.
-                    BarTopBar(radius: dockManager.barCornerRadiusActive,
-                              curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
-                        .fill(Color.black)
-                        .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeAmountActive)
-                }
-            }
-            .ignoresSafeArea()
+            BarTopBar(radius: dockManager.barCornerRadiusActive,
+                      curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
+                .fill(Color.black)
+                .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeAmountActive)
+                .ignoresSafeArea()
         }
     }
     
