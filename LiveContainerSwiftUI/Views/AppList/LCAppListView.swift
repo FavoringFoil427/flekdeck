@@ -1073,53 +1073,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     // directly via the bound items array, and persistHomeOrder() saves
     // the result on drop completion.
 
-    /// Best-effort detection of whether a guest app is a game.
-    ///
-    /// The App Store category (`LSApplicationCategoryType`) is the canonical signal,
-    /// but it's optional and frequently missing on sideloaded / repackaged IPAs, so
-    /// we also look at Game Mode / game-controller declarations and for game-engine
-    /// artifacts inside the bundle.
-    ///
-    /// IMPORTANT: this reads the guest's real `Info.plist` from disk. `appInfo.info()`
-    /// returns LiveContainer's own `LCAppInfo.plist` metadata — not the app's
-    /// `Info.plist` — which is why the previous category-only check never matched.
+    /// Whether a guest app is a game. Prefers the flag computed and cached at
+    /// install time (see `GameDetector` and the install path in `installIpaFile`);
+    /// falls back to computing it now for apps installed before caching existed
+    /// (and caches the result so it's a cheap flag read next time).
     func isGame(_ app: LCAppModel) -> Bool {
+        if let cached = app.appInfo.info()?["LCIsGame"] as? Bool {
+            return cached
+        }
         guard let bundlePath = app.appInfo.bundlePath(), !bundlePath.isEmpty else { return false }
-        let bundleURL = URL(fileURLWithPath: bundlePath)
-        let fm = FileManager.default
-
-        // 1. Guest Info.plist declarations.
-        if let plist = NSDictionary(contentsOf: bundleURL.appendingPathComponent("Info.plist")) {
-            if let cat = plist["LSApplicationCategoryType"] as? String,
-               cat.localizedCaseInsensitiveContains("game") {
-                return true
-            }
-            // Game Mode / game-controller opt-ins are, in practice, game-only.
-            for key in ["GCSupportsGameMode", "LSSupportsGameMode", "GCSupportsControllerUserInteraction"] {
-                if (plist[key] as? Bool) == true { return true }
-            }
-        }
-
-        // 2. Game-engine artifacts — reliable for engine games with no category.
-        // Unity: framework or Data/ marker files.
-        if fm.fileExists(atPath: bundleURL.appendingPathComponent("Frameworks/UnityFramework.framework").path) {
-            return true
-        }
-        let unityData = bundleURL.appendingPathComponent("Data")
-        for marker in ["globalgamemanagers", "boot.config", "il2cpp_data", "unity default resources"] {
-            if fm.fileExists(atPath: unityData.appendingPathComponent(marker).path) { return true }
-        }
-        // Godot (.pck) and Cocos2d-x (libcocos*) — a shallow scan of the bundle root.
-        // (Deliberately not matching bare *.pak: Chromium-based apps ship resource
-        // .pak files, so it would false-positive on browsers.)
-        if let contents = try? fm.contentsOfDirectory(atPath: bundlePath) {
-            for name in contents {
-                let lower = name.lowercased()
-                if lower.hasSuffix(".pck") || lower.hasPrefix("libcocos") { return true }
-            }
-        }
-
-        return false
+        let result = GameDetector.isGame(bundlePath: bundlePath)
+        app.appInfo.info()?["LCIsGame"] = result
+        app.appInfo.save()
+        return result
     }
 
     func launchHomeApp(_ app: LCAppModel, parallel: Bool) async {
@@ -1796,7 +1762,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             finalNewApp.spoofSDKVersion = true
         }
         finalNewApp.installationDate = Date.now
-        
+        // Detect (once) whether this is a game and cache it, so the launch-time
+        // check is a cheap flag read instead of a per-tap bundle scan. Runs off
+        // the main thread here, after the bundle is in place and signed.
+        if let installedBundlePath = finalNewApp.bundlePath() {
+            finalNewApp.info()?["LCIsGame"] = GameDetector.isGame(bundlePath: installedBundlePath)
+            finalNewApp.save()
+        }
+
         await MainActor.run {
             if let appToReplace {
                 let newAppModel = LCAppModel(appInfo: finalNewApp, delegate: self)
