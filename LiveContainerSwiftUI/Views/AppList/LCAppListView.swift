@@ -1078,12 +1078,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// falls back to computing it now for apps installed before caching existed
     /// (and caches the result so it's a cheap flag read next time).
     func isGame(_ app: LCAppModel) -> Bool {
-        if let cached = app.appInfo.info()?["LCIsGame"] as? Bool {
+        let info = app.appInfo.info()
+        // Trust the cached flag only if it was computed by the current detector.
+        if (info?["LCIsGameV"] as? Int) == GameDetector.detectorVersion,
+           let cached = info?["LCIsGame"] as? Bool {
             return cached
         }
         guard let bundlePath = app.appInfo.bundlePath(), !bundlePath.isEmpty else { return false }
         let result = GameDetector.isGame(bundlePath: bundlePath)
-        app.appInfo.info()?["LCIsGame"] = result
+        info?["LCIsGame"] = result
+        info?["LCIsGameV"] = GameDetector.detectorVersion
         app.appInfo.save()
         return result
     }
@@ -1767,6 +1771,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // the main thread here, after the bundle is in place and signed.
         if let installedBundlePath = finalNewApp.bundlePath() {
             finalNewApp.info()?["LCIsGame"] = GameDetector.isGame(bundlePath: installedBundlePath)
+            finalNewApp.info()?["LCIsGameV"] = GameDetector.detectorVersion
             finalNewApp.save()
         }
 
