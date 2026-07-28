@@ -70,7 +70,7 @@ struct LCSettingsView: View {
     @AppStorage("LCLaunchMultitaskMaximized") var launchMultitaskMaximized = false
     // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
     // Bar rounding amount, 0 (flat) … 100 (fully rounded concave corners).
-    @AppStorage("LCMultitaskBarLedgeAmount", store: LCUtils.appGroupUserDefault) var barLedgeAmount: Double = 100
+    @AppStorage("LCMultitaskBarLedgeAmount", store: LCUtils.appGroupUserDefault) var barLedgeAmount: Double = 60
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true

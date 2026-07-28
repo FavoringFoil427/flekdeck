@@ -223,6 +223,7 @@ class AppInfoProvider {
     /// concave top corners are, as a fraction 0 (flat, the original short bar) …
     /// 1 (full device-radius rounded corners). Migrates from the old on/off
     /// boolean `LCMultitaskBarLedge` (on → 1, off → 0) until the slider is used.
+    /// With neither key set, defaults to `Self.barLedgeAmountDefault`.
     /// Read live here but only applied via `captureBarDesign()` as the bar
     /// (re)lays out, so changing it in Settings never resizes the bar under the
     /// user's finger.
@@ -231,9 +232,15 @@ class AppInfoProvider {
         if let stored = d.object(forKey: "LCMultitaskBarLedgeAmount") as? NSNumber {
             return max(0, min(1, CGFloat(stored.doubleValue) / 100.0))
         }
-        let legacyOn = d.object(forKey: "LCMultitaskBarLedge") as? Bool ?? true
-        return legacyOn ? 1 : 0
+        if let legacyOn = d.object(forKey: "LCMultitaskBarLedge") as? Bool {
+            return legacyOn ? 1 : 0
+        }
+        return Self.barLedgeAmountDefault
     }
+
+    /// Default bar rounding when the user has never touched the slider — must
+    /// match the `LCMultitaskBarLedgeAmount` @AppStorage default in settings.
+    private static let barLedgeAmountDefault: CGFloat = 0.6
 
     /// The design actually in effect on the visible bar. Captured from the setting
     /// only when the bar (re)appears via `captureBarDesign()` — never mid-session —
@@ -630,7 +637,8 @@ class AppInfoProvider {
                 guard let self = self else { return nil }
                 let r = self.barCornerRadiusActive
                 let cg = self.barLedgeActive
-                    ? BarInverseTopCorners(radius: r).path(in: bounds).cgPath
+                    ? BarTopBar(radius: r, curve: r * self.barLedgeAmountActive)
+                        .path(in: bounds).cgPath
                     : BarFlatTop(inset: r).path(in: bounds).cgPath
                 return UIBezierPath(cgPath: cg)
             }
@@ -2007,29 +2015,6 @@ class AppInfoProvider {
 }
 
 // MARK: - Switcher Bar Content View
-@available(iOS 16.0, *)
-/// A rectangle whose top-left and top-right corners are carved *inward* (concave
-/// fillets), so the app content above the switcher bar looks like it has rounded
-/// bottom corners nesting into the bar. The flat top sits `radius` below the two
-/// corners, which rise to the screen edges.
-struct BarInverseTopCorners: Shape {
-    var radius: CGFloat
-    func path(in rect: CGRect) -> Path {
-        let r = min(radius, rect.width / 2, rect.height)
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY + r),
-                       control: CGPoint(x: rect.minX, y: rect.minY + r))
-        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY + r))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
-                       control: CGPoint(x: rect.maxX, y: rect.minY + r))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.closeSubpath()
-        return p
-    }
-}
-
 /// The flat design's fill: a plain rectangle covering only the bar's flat solid
 /// part — everything at or below the flat-top line (`inset` = the device corner
 /// radius, the same line the rounded design's flat top sits on). Same geometry as
@@ -2599,24 +2584,29 @@ struct AppSwitcherOverlay: View {
                 // it — a rectangular hit area there stole Close all's taps and
                 // flipped this toggle instead. Matching the hit shape to the fill
                 // frees the overhang so Close all receives its taps.
-                .contentShape(BarInverseTopCorners(radius: dockManager.barCornerRadiusActive))
+                .contentShape(BarTopBar(radius: dockManager.barCornerRadiusActive,
+                                        curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive))
             }
             .buttonStyle(.plain)
             // Same concave rounded top corners and height as the switcher bar it
-            // hides. Solid black while the bar is the active control; once the user
-            // taps Hide (floating-button mode), the black fades out to reveal a
-            // translucent ultra-thin-material bar underneath. Layering the black
-            // over the material and animating its opacity lets the two states
-            // cross-fade smoothly when the toggle flips.
+            // hides — including the rounding amount from the Settings slider, so
+            // this chin always matches the real bar. Solid black while the bar is
+            // the active control; once the user taps Hide (floating-button mode),
+            // the black fades out to reveal a translucent ultra-thin-material bar
+            // underneath. Layering the black over the material and animating its
+            // opacity lets the two states cross-fade smoothly when the toggle flips.
             .background {
-                BarInverseTopCorners(radius: dockManager.barCornerRadiusActive)
+                BarTopBar(radius: dockManager.barCornerRadiusActive,
+                          curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
                     .fill(.thinMaterial)
                     .environment(\.colorScheme, .dark)
                     .overlay {
-                        BarInverseTopCorners(radius: dockManager.barCornerRadiusActive)
+                        BarTopBar(radius: dockManager.barCornerRadiusActive,
+                                  curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
                             .fill(Color.black)
                             .opacity(dockManager.prefersFloatingButton ? 0 : 1)
                     }
+                    .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeAmountActive)
                     .ignoresSafeArea()
             }
             .offset(y: exiting ? exitButtonOffset : 0)
