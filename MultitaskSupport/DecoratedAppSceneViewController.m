@@ -145,8 +145,50 @@ void UIKitFixesInit(void) {
 }
 
 
-// Stolen from UIKitester
+- (UIMenu *)customizeMenu {
+    __weak typeof(self) weakSelf = self;
+
+    UIAction *copyPid = [UIAction actionWithTitle:[NSString stringWithFormat:@"%@ %d", @"lc.multitask.copyPid".loc, self.appSceneVC.pid]
+                                            image:[UIImage systemImageNamed:@"doc.on.doc"]
+                                       identifier:nil
+                                          handler:^(UIAction *action) {
+        UIPasteboard.generalPasteboard.string = @(weakSelf.appSceneVC.pid).stringValue;
+    }];
+
+    BOOL isPiPActive = [PiPManager.shared isPiPWithVC:self.appSceneVC];
+    UIAction *togglePiP = [UIAction actionWithTitle:isPiPActive ? @"lc.multitask.disablePip".loc : @"lc.multitask.enablePip".loc
+                                              image:[UIImage systemImageNamed:isPiPActive ? @"pip.exit" : @"pip.enter"]
+                                         identifier:nil
+                                            handler:^(UIAction *action) {
+        if([PiPManager.shared isPiPWithVC:weakSelf.appSceneVC]) {
+            [PiPManager.shared stopPiP];
+        } else {
+            [PiPManager.shared startPiPWithVC:weakSelf.appSceneVC];
+        }
+    }];
+
+    // A real slider living inside a real menu — the reason this menu is built in
+    // UIKit rather than as a SwiftUI `Menu`, which takes actions and submenus only.
+    UICustomViewMenuElement *scaleSlider = [UICustomViewMenuElement elementWithViewProvider:^UIView *(UICustomViewMenuElement *element) {
+        return [weakSelf scaleSliderViewWithTitle:@"lc.multitask.scale".loc
+                                              min:0.5
+                                              max:2.0
+                                            value:weakSelf.scaleRatio
+                                     stepInterval:0.01];
+    }];
+
+    return [UIMenu menuWithTitle:@"" children:@[copyPid, togglePiP, scaleSlider]];
+}
+
 - (UIView *)scaleSliderViewWithTitle:(NSString *)title min:(CGFloat)minValue max:(CGFloat)maxValue value:(CGFloat)initialValue stepInterval:(CGFloat)step {
+    __weak typeof(self) weakSelf = self;
+    return [DecoratedAppSceneViewController scaleSliderViewWithTitle:title min:minValue max:maxValue value:initialValue stepInterval:step onChange:^(CGFloat newValue) {
+        [weakSelf applyScaleRatio:newValue];
+    }];
+}
+
+// Stolen from UIKitester
++ (UIView *)scaleSliderViewWithTitle:(NSString *)title min:(CGFloat)minValue max:(CGFloat)maxValue value:(CGFloat)initialValue stepInterval:(CGFloat)step onChange:(void (^)(CGFloat newValue))onChange {
     UIView *containerView = [[UIView alloc] init];
     containerView.translatesAutoresizingMaskIntoConstraints = NO;
     containerView.exclusiveTouch = YES;
@@ -181,13 +223,21 @@ void UIKitFixesInit(void) {
     
     [stackView addArrangedSubview:slider];
     
-    [slider addTarget:self action:@selector(scaleSliderChanged:) forControlEvents:UIControlEventValueChanged];
-    
+    // UIAction rather than target/action: this builder is a class method, so there's
+    // no instance to act as the target — the caller supplies the behaviour instead.
+    [slider addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        onChange(((UISlider *)action.sender).value);
+    }] forControlEvents:UIControlEventValueChanged];
+
     return containerView;
 }
 
 - (void)scaleSliderChanged:(_UIPrototypingMenuSlider *)slider {
-    self.scaleRatio = slider.value;
+    [self applyScaleRatio:slider.value];
+}
+
+- (void)applyScaleRatio:(CGFloat)newValue {
+    self.scaleRatio = newValue;
     self.appSceneVC.scaleRatio = _scaleRatio;
     self.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(_scaleRatio, _scaleRatio, 1.0);
     __weak typeof(self) weakSelf = self;

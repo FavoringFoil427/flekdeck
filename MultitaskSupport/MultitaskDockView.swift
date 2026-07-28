@@ -2425,7 +2425,6 @@ struct AppSwitcherOverlay: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var isPresented = false
     @State private var exiting = false
-    @State private var openMenuUUID: String? = nil
     @State private var showCloseAllConfirm = false
     
     private let cardSpacing: CGFloat = 16
@@ -2619,47 +2618,8 @@ struct AppSwitcherOverlay: View {
         .onTapGesture {
             exitToSpringboard()
         }
-        // Custom Customize dropdown, rendered above every card and anchored to the
-        // tapped card's Customize button via CustomizeAnchorKey.
-        .overlayPreferenceValue(CustomizeAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    if let uuid = openMenuUUID,
-                       let anchor = anchors[uuid],
-                       let menuApp = dockManager.apps.first(where: { $0.appUUID == uuid }) {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture { dismissCustomizeMenu() }
-                        positionedCustomizeDropdown(menuApp, rect: proxy[anchor], size: proxy.size)
-                    }
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-            }
-        }
     }
 
-    private func dismissCustomizeMenu() {
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-            openMenuUUID = nil
-        }
-    }
-
-    // Positions the dropdown just below the button, clamped on-screen (a normal
-    // function so the `let` math isn't constrained by the ViewBuilder).
-    private func positionedCustomizeDropdown(_ menuApp: DockAppModel, rect: CGRect, size: CGSize) -> some View {
-        let menuWidth: CGFloat = 260
-        let estHeight: CGFloat = 210
-        // Center the menu on the card rather than the (right-aligned) button. The
-        // button's trailing edge sits 20pt inside the card's right edge, so the
-        // card's horizontal center is (button.maxX + 20) - cardWidth/2.
-        let cardCenterX = rect.maxX + 20 - cardWidth / 2
-        let x = min(max(cardCenterX - menuWidth / 2, 8), max(8, size.width - menuWidth - 8))
-        let y = min(rect.maxY + 6, max(8, size.height - estHeight - 8))
-        return CustomizeDropdown(app: menuApp, onDismiss: dismissCustomizeMenu)
-            .offset(x: x, y: y)
-            .transition(.scale(scale: 0.92, anchor: .top).combined(with: .opacity))
-    }
-    
     /// Tapping the background returns to the springboard: cards slide off to the
     /// left, buttons drop past the bottom edge, and the blur fades to reveal the
     /// home. The manager minimizes the app windows behind the overlay and removes
@@ -2702,8 +2662,7 @@ struct AppSwitcherOverlay: View {
                     cardWidth: cardWidth,
                     cardHeight: cardHeight,
                     cornerRadius: cardCornerRadius,
-                    cardIndex: pair.offset,
-                    openMenuUUID: $openMenuUUID
+                    cardIndex: pair.offset
                 )
                 .id(pair.element.appUUID)
                 // Graceful exit if the card is removed while still partly on-screen.
@@ -2723,118 +2682,67 @@ struct AppSwitcherOverlay: View {
 
 // MARK: - Customize Dropdown (menu-style, but with a slider)
 
-// Collects each card's Customize-button frame so the overlay can anchor the
-// dropdown to the right button.
-@available(iOS 16.0, *)
-struct CustomizeAnchorKey: PreferenceKey {
-    static var defaultValue: [String: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
+/// Hosts a UIKit button so the Customize menu can be a genuine `UIMenu`: it needs
+/// `UICustomViewMenuElement` to carry a live slider, which SwiftUI's `Menu` can't do.
+/// `showsMenuAsPrimaryAction` keeps the interaction a single tap, and the menu is
+/// rebuilt on each presentation so PID, PiP state and scale are always current.
+/// Spans the card row so the menu is anchored to — and therefore centred on — the
+/// card, while only the trailing icon area accepts touches. Without the width the
+/// menu hangs off the card's right edge; without the narrowed hit area the app name
+/// beside the icon would open the menu too.
+final class WideAnchorMenuButton: UIButton {
+    var touchableWidth: CGFloat = 44
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.contains(point) && point.x >= bounds.width - touchableWidth
     }
 }
 
-// Menu-row press highlight.
 @available(iOS 16.0, *)
-struct MenuRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? Color.white.opacity(0.14) : Color.clear)
-    }
-}
-
-// A dropdown that looks and behaves like a system menu — opens downward from the
-// Customize button, overlays the cards, taps-away to dismiss — but, unlike a real
-// UIMenu, can contain a continuous slider.
-@available(iOS 16.0, *)
-struct CustomizeDropdown: View {
+struct CustomizeMenuButton: UIViewRepresentable {
     let app: DockAppModel
-    var onDismiss: () -> Void
-    @State private var currentScale: CGFloat = 1.0
 
-    private var decoratedVC: DecoratedAppSceneViewController? {
-        app.view?._viewDelegate() as? DecoratedAppSceneViewController
-    }
-    private var pidString: String {
-        decoratedVC.map { "\($0.appSceneVC.pid)" } ?? "—"
-    }
-    private var isPiPActive: Bool {
-        guard let vc = decoratedVC else { return false }
-        return PiPManager.shared?.isPiP(withVC: vc.appSceneVC) == true
-    }
-    private func copyPID() {
-        guard let vc = decoratedVC else { return }
-        UIPasteboard.general.string = "\(vc.appSceneVC.pid)"
-    }
-    private func togglePiP() {
-        guard let vc = decoratedVC, let pip = PiPManager.shared else { return }
-        if pip.isPiP(withVC: vc.appSceneVC) { pip.stopPiP() } else { pip.startPiP(withVC: vc.appSceneVC) }
-    }
-    private func applyScale(_ newValue: CGFloat) {
-        if let vc = decoratedVC {
-            vc.scaleRatio = newValue
-            vc.appSceneVC.scaleRatio = newValue
-            vc.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
-        } else if let pageView = app.view {
-            // Internal pages (Settings / Installer) have no guest process — scale the
-            // hosting view's content layer directly instead.
-            pageView.layer.sublayerTransform = CATransform3DMakeScale(newValue, newValue, 1.0)
-        }
+    func makeUIView(context: Context) -> UIButton {
+        let button = WideAnchorMenuButton(type: .system)
+        button.setImage(UIImage(systemName: "slider.horizontal.3",
+                                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)),
+                        for: .normal)
+        button.tintColor = UIColor.white.withAlphaComponent(0.9)
+        button.contentHorizontalAlignment = .trailing
+        button.showsMenuAsPrimaryAction = true
+        // A menu renders in its presenting view's trait environment, and the switcher
+        // overlay forces .dark over an opaque black backdrop. Glass is adaptive: with
+        // near-black behind it and a dark appearance it has almost nothing to frost,
+        // so it reads as clear where the springboard's menu reads as frosted. Opt this
+        // button back into the window's real appearance so the two match.
+        button.overrideUserInterfaceStyle = Self.windowInterfaceStyle
+        updateMenu(on: button)
+        return button
     }
 
-    private func row(_ title: String, _ system: String, action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-            onDismiss()
-        } label: {
-            HStack(spacing: 10) {
-                Text(title).font(.system(size: 15))
-                Spacer(minLength: 8)
-                Image(systemName: system).font(.system(size: 15))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(MenuRowButtonStyle())
+    /// The appearance the app is actually running in, read from the window rather
+    /// than the surrounding view tree, which the overlay has overridden.
+    private static var windowInterfaceStyle: UIUserInterfaceStyle {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.keyWindow?.traitCollection.userInterfaceStyle ?? .unspecified
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Full menu on every card. Internal pages (Settings / Installer) have
-            // no guest process, so PID shows "—" and PiP is a no-op there, but the
-            // rows are shown for consistency.
-            row("Copy PID \(pidString)", "doc.on.doc") { copyPID() }
-            Divider().overlay(Color.white.opacity(0.12))
-            row(isPiPActive ? "Disable PiP" : "Enable PiP",
-                isPiPActive ? "pip.exit" : "pip.enter") { togglePiP() }
-            Divider().overlay(Color.white.opacity(0.12))
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("UI Scale", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 15))
-                    Spacer()
-                    Text("\(Int(currentScale * 100))%")
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.7))
+    func updateUIView(_ button: UIButton, context: Context) {
+        updateMenu(on: button)
+    }
+
+    private func updateMenu(on button: UIButton) {
+        let app = self.app
+        // Deferred so the menu reflects state at the moment it opens, not at layout.
+        button.menu = UIMenu(title: "", children: [
+            UIDeferredMenuElement.uncached { completion in
+                guard let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController else {
+                    completion([])
+                    return
                 }
-                .foregroundStyle(.white)
-                Slider(value: $currentScale, in: 0.5...2.0, step: 0.05)
-                    .tint(.white)
-                    .onChange(of: currentScale) { newValue in applyScale(newValue) }
+                completion(vc.customizeMenu().children)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-        }
-        .frame(width: 260)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
-        .environment(\.colorScheme, .dark)
-        .onAppear { if let vc = decoratedVC { currentScale = vc.scaleRatio } }
+        ])
     }
 }
 
@@ -2847,7 +2755,6 @@ struct AppSwitcherCard: View {
     let cornerRadius: CGFloat
     
     let cardIndex: Int
-    @Binding var openMenuUUID: String?
     
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var dragOffset: CGFloat = 0
@@ -2883,27 +2790,17 @@ struct AppSwitcherCard: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
-
-                // Customize button — guest apps only. Internal Settings / Installer
-                // pages have no customizable options, so they show just the name.
-                // Opens the same menu the old under-card button did.
+            }
+            // Customize button, laid over the whole row rather than placed in it.
+            // UIKit anchors a button's menu to that button's bounds, so a 32pt button
+            // on the trailing edge put the menu against the card's right edge; a
+            // row-wide source centres it on the card. Only its trailing icon area
+            // takes touches, so the name beside it stays untappable. Guest apps only:
+            // internal Settings / Installer pages have no guest process, so nothing
+            // in the menu would apply to them.
+            .overlay {
                 if !app.isInternalPage {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                            openMenuUUID = (openMenuUUID == app.appUUID) ? nil : app.appUUID
-                        }
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.9))
-                            .frame(height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .anchorPreference(key: CustomizeAnchorKey.self, value: .bounds) {
-                        [app.appUUID: $0]
-                    }
+                    CustomizeMenuButton(app: app)
                 }
             }
             // Inset the row 20pt on each side so the name (left) and the customize

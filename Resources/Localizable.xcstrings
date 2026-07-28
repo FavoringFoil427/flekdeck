@@ -29830,6 +29830,17 @@
         }
       }
     },
+    "lc.multitask.disablePip": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disable PIP"
+          }
+        }
+      }
+    },
     "lc.appBanner.requireFaceId": {
       "extractionState": "manual",
       "localizations": {
