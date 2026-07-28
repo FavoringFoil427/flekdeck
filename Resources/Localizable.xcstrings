@@ -29830,6 +29830,28 @@
         }
       }
     },
+    "lc.appBanner.requireFaceId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Require Face ID"
+          }
+        }
+      }
+    },
+    "lc.appBanner.dontRequireFaceId": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't Require Face ID"
+          }
+        }
+      }
+    },
     "lc.flek.appSources": {
       "extractionState": "manual",
       "localizations": {

@@ -16,6 +16,9 @@ struct FlekSearchView: View {
     let apps: [LCAppModel]
     let darkModeIcon: Bool
     var onSelect: (LCAppModel) -> Void
+    /// Long-press menu for an installed result — the springboard's own app menu, so
+    /// a result offers the same actions as an icon on the home screen.
+    var contextMenu: (LCAppModel) -> AnyView = { _ in AnyView(EmptyView()) }
     var onInstallStoreApp: (FSAppModel) -> Void = { _ in }
     var onOpenRepo: (String) -> Void = { _ in }
 
@@ -96,13 +99,10 @@ struct FlekSearchView: View {
                     if !results.isEmpty {
                         section(title: "lc.flek.installed".loc) {
                             ForEach(results, id: \.self) { app in
-                                Button {
-                                    onSelect(app)
-                                    close()
-                                } label: {
-                                    FlekSearchRow(app: app, darkModeIcon: darkModeIcon)
-                                }
-                                .buttonStyle(.plain)
+                                FlekSearchResultRow(app: app,
+                                                    darkModeIcon: darkModeIcon,
+                                                    onSelect: { onSelect(app); close() },
+                                                    menu: { contextMenu(app) })
                             }
                         }
                     }
@@ -457,9 +457,27 @@ class MultiRepoSearchModel: ObservableObject {
 
 // MARK: - Row views
 
+/// An installed-app result. Observes the model so hiding state changes — an unhide
+/// from the menu — redraw the row instead of leaving a stale lock badge.
+private struct FlekSearchResultRow: View {
+    @ObservedObject var app: LCAppModel
+    let darkModeIcon: Bool
+    var onSelect: () -> Void
+    var menu: () -> AnyView
+
+    var body: some View {
+        Button(action: onSelect) {
+            FlekSearchRow(app: app, darkModeIcon: darkModeIcon, isLocked: app.uiIsLocked)
+        }
+        .buttonStyle(.plain)
+        .contextMenu { menu() }
+    }
+}
+
 private struct FlekSearchRow: View {
     let app: LCAppModel
     let darkModeIcon: Bool
+    let isLocked: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -468,10 +486,19 @@ private struct FlekSearchRow: View {
                 .frame(width: 64, height: 64)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.appInfo.displayName() ?? "?")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(app.appInfo.displayName() ?? "?")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                    // Hidden apps are reachable from search only, so say so here:
+                    // tapping one asks for Face ID before it launches.
+                    if isLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.6))
+                    }
+                }
                 Text("\(app.appInfo.version() ?? "?") - \(app.appInfo.bundleIdentifier() ?? "?")")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.white.opacity(0.7))

@@ -201,6 +201,19 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         return sharedAppSortManager.sortedHiddenApps
     }
     
+    /// Apps offered to search. Hidden apps are included: the springboard draws no
+    /// icon for them, so search is the only place they can still be found. Strict
+    /// Hiding Mode keeps them out until the session is unlocked — the same rule the
+    /// URL-scheme launch path applies — and launching one still passes through the
+    /// Face ID gate in `launchHomeApp`.
+    var searchableApps: [LCAppModel] {
+        var apps = sortedApps
+        if sharedModel.isHiddenAppUnlocked || !LCUtils.appGroupUserDefault.bool(forKey: "LCStrictHiding") {
+            apps.append(contentsOf: sortedHiddenApps)
+        }
+        return apps
+    }
+
     var filteredApps: [LCAppModel] {
         let apps = sortedApps
         if searchContext.debouncedQuery.isEmpty {
@@ -288,9 +301,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if showSearch {
                 FlekSearchView(
                     isPresented: $showSearch,
-                    apps: sortedApps,
+                    apps: searchableApps,
                     darkModeIcon: darkModeIcon,
                     onSelect: { app in handleHomeTap(.installed(app)) },
+                    contextMenu: { app in AnyView(installedContextMenu(app)) },
                     onInstallStoreApp: { app in
                         installQueue.enqueue(
                             url: app.install_url,
@@ -1253,11 +1267,21 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             children: [copyUrl, saveIcon, createClip]
         )
 
+        // Same toggle as the Lock App switch in the app's settings, surfaced here
+        // so it's one long-press away. Labelled by the action it performs, not the
+        // state it's in.
+        let lockToggle = UIAction(
+            title: app.uiIsLocked ? "lc.appBanner.dontRequireFaceId".loc : "lc.appBanner.requireFaceId".loc,
+            image: UIImage(systemName: app.uiIsLocked ? "lock.open" : "faceid")
+        ) { [self] _ in
+            Task { await toggleAppLock(app) }
+        }
+
         let settings = UIAction(
             title: "lc.tabView.settings".loc,
             image: UIImage(systemName: "gear")
         ) { [self] _ in
-            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
+            Task { await openAppSettings(app) }
         }
 
         let moveCards = UIAction(
@@ -1269,7 +1293,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
 
-        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, settings, moveCards]
+        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, lockToggle, settings, moveCards]
 
         if !app.uiIsShared {
             let uninstall = UIAction(
@@ -1382,13 +1406,28 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Label("lc.appBanner.addToHomeScreen".loc, systemImage: "plus.app")
         }
 
+        // Same toggle as the Lock App switch in the app's settings, surfaced here
+        // so it's one long-press away. Labelled by the action it performs, not the
+        // state it's in.
         Button {
-            openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
+            Task { await toggleAppLock(app) }
+        } label: {
+            if app.uiIsLocked {
+                Label("lc.appBanner.dontRequireFaceId".loc, systemImage: "lock.open")
+            } else {
+                Label("lc.appBanner.requireFaceId".loc, systemImage: "faceid")
+            }
+        }
+
+        Button {
+            Task { await openAppSettings(app) }
         } label: {
             Label("lc.tabView.settings".loc, systemImage: "gear")
         }
 
         Button {
+            // Rearranging happens on the home screen, so leave search if it's up.
+            showSearch = false
             // Delay so the context menu dismissal animation finishes
             // before the view switches to edit mode.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -1405,6 +1444,34 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Label("lc.appBanner.uninstall".loc, systemImage: "trash")
             }
         }
+    }
+
+    /// Flip the app's lock, mirroring the settings screen's Lock App toggle: write the
+    /// published state first, then let `setLocked` do the work. Turning the lock off
+    /// prompts for Face ID and rolls `uiIsLocked` back itself if that fails; it also
+    /// clears the hidden flag, so a hidden app returns to the springboard.
+    func toggleAppLock(_ app: LCAppModel) async {
+        let newLockState = !app.uiIsLocked
+        app.uiIsLocked = newLockState
+        await app.setLocked(newLockState: newLockState)
+    }
+
+    /// A locked app's settings hold the lock and hide toggles, so authenticate before
+    /// showing them — the same gate `LCAppBanner` applies. This matters now that
+    /// hidden apps are reachable from search: without it the menu would hand out an
+    /// unhide switch to anyone who can type the app's name.
+    func openAppSettings(_ app: LCAppModel) async {
+        if app.appInfo.isLocked && !sharedModel.isHiddenAppUnlocked {
+            do {
+                if !(try await LCUtils.authenticateUser()) { return }
+            } catch {
+                errorInfo = error.localizedDescription
+                errorShow = true
+                return
+            }
+        }
+        showSearch = false
+        openNavigationView(view: AnyView(LCAppSettingsView(model: app, appDataFolders: $appDataFolderNames, tweakFolders: $tweakFolderNames)))
     }
 
     func homeCopyLaunchUrl(_ app: LCAppModel) {
