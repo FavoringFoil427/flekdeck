@@ -1,16 +1,15 @@
 {
   "images" : [
     {
+      "filename" : "394b22840fe93060ac1c05052b032407c16e18de.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "icons8-твиттерх-100.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "icons8-твиттерх-100 1.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

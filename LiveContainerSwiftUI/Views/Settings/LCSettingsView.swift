@@ -282,7 +282,7 @@ struct LCSettingsView: View {
                         categoryRow("lc.flek.personalization".loc, "paintbrush.fill", .purple)
                     }
                     NavigationLink { launchBehaviorPage } label: {
-                        categoryRow("lc.flek.cat.launch".loc, "app.grid", .blue)
+                        categoryRow("lc.flek.cat.launch".loc, "app.grid", .blue, iconSize: 22)
                     }
                     if #available(iOS 16.1, *) {
                         NavigationLink { multitaskPage } label: {
@@ -290,38 +290,23 @@ struct LCSettingsView: View {
                         }
                     }
                     NavigationLink { jitPage } label: {
-                        categoryRow("lc.flek.cat.jit".loc, "j.circle", .blue)
+                        categoryRow("lc.flek.cat.jit".loc, "j.circle", .blue, iconSize: 20)
                     }
                     NavigationLink { contentRestrictionsPage } label: {
-                        categoryRow("lc.flek.cat.content".loc, "nosign", .red)
+                        categoryRow("lc.flek.cat.content".loc, "nosign", .red, iconSize: 20)
                     }
                     NavigationLink { signingPage } label: {
-                        categoryRow("lc.flek.cat.signing".loc, "signature", .mint)
+                        categoryRow("lc.flek.cat.signing".loc, "signature", .mint, iconSize: 15)
                     }
                     NavigationLink { LCTweaksView(tweakFolders: $tweakFolderNames) } label: {
-                        categoryRow("Tweaks", "wrench.and.screwdriver.fill", .orange)
+                        categoryRow("Tweaks", "wrench.and.screwdriver.fill", .orange, iconSize: 17)
                     }
                 }
                 Section {
-                    HStack {
-                        Image("GitHub")
-                        Button("LiveContainer/LiveContainer") {
-                            openGitHub()
-                        }
-                    }
-                    HStack {
-                        Image("GitHub")
-                        Button("Huge_Black") {
-                            openGitHub2()
-                        }
-                    }
-                    
-                    HStack {
-                        Image("Twitter")
-                        Button("khanhduytran0") {
-                            openTwitter()
-                        }
-                    }
+                    linkRow("GitHub", "GitHub - LiveContainer", action: openGitHub)
+                    linkRow("Twitter", "khanhduytran0", action: openTwitter)
+                    linkRow("GitHub", "GitHub - Huge_Black", action: openGitHub2)
+                    linkRow("FleksignIcon", "Fleksign", action: openFleksign)
                 } footer: {
                     Text("lc.settings.warning".loc)
                 }
@@ -542,16 +527,68 @@ struct LCSettingsView: View {
         return lastChar.isLowercase
     }
 
+    /// An external-link row. The artwork is already a full-bleed tile, so it's sized
+    /// and clipped to the same 30pt rounded square as the category icons rather than
+    /// drawn at its native size, which is far larger than a row.
     @ViewBuilder
-    private func categoryRow(_ title: String, _ systemImage: String, _ color: Color) -> some View {
-        Label {
-            Text(title)
-        } icon: {
+    private func linkRow(_ imageName: String, _ title: String, action: @escaping () -> Void) -> some View {
+        // These open URLs rather than pushing a view, so there's no NavigationLink to
+        // supply a disclosure indicator — it's drawn by hand to match the category
+        // rows above. `.plain` keeps the title in the label colour like those rows
+        // (a bare Button would tint it), and the content shape makes the whole row
+        // tappable rather than just the text.
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text(title)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(UIColor.tertiaryLabel))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// `iconSize` is per-symbol on purpose. Point size sets the em, not the drawn
+    /// shape, and how much of that em a symbol inks varies by design — an enclosed
+    /// glyph like `j.circle` or a thin one like `app.grid` reads far smaller than a
+    /// `.fill` symbol at the same size. The default suits most of the set; the
+    /// densest symbols pass a smaller value rather than everything sharing one size
+    /// and half the rows looking undersized.
+    @ViewBuilder
+    private func categoryRow(_ title: String, _ systemImage: String, _ color: Color,
+                             iconSize: CGFloat = 17) -> some View {
+        // Laid out by hand rather than with `Label`: its icon-to-title gap is fixed
+        // and too wide for a tile this size, and it can't be tightened otherwise.
+        let tile = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        HStack(spacing: 10) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: iconSize, weight: .regular))
                 .foregroundStyle(.white)
-                .frame(width: 29, height: 29)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(color))
+                .frame(width: 30, height: 30)
+                .background(
+                    tile.fill(color)
+                        // Sheen over the colour, brightest at the top and gone by the
+                        // bottom. Drawn in the same shape as the fill so it needs no
+                        // clipping, and it sits in the background so the white glyph
+                        // stays on top of it.
+                        .overlay(
+                            tile.fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.45), Color.white.opacity(0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        )
+                )
+            Text(title)
         }
     }
 
@@ -798,6 +835,10 @@ struct LCSettingsView: View {
     }
 
     
+    func openFleksign() {
+        UIApplication.shared.open(URL(string: "https://fleksign.com")!)
+    }
+
     func openGitHub() {
         UIApplication.shared.open(URL(string: "https://github.com/LiveContainer/LiveContainer")!)
     }
