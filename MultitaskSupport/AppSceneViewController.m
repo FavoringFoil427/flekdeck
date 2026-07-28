@@ -34,6 +34,10 @@
 - (instancetype)initWithBundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID delegate:(id<AppSceneViewControllerDelegate>)delegate {
     self = [super initWithNibName:nil bundle:nil];
     self.view = [[UIView alloc] init];
+    // Black, not clear: the guest's presentation view doesn't always cover this
+    // view (aspect mismatch, mid-rotation), and a clear backdrop would let the
+    // decorated container's colour show through the gap.
+    self.view.backgroundColor = UIColor.blackColor;
     self.contentView = [[UIView alloc] init];
     [self.view addSubview:_contentView];
     self.delegate = delegate;
@@ -211,6 +215,12 @@
         [weakSelf appTerminationCleanUp];
     }];
     
+    // Black out every layer between us and the guest's rendered content. The
+    // host view sits above self.view, so colouring self.view alone still left
+    // white showing wherever the guest's drawable is smaller than the container
+    // (landscape aspect mismatch, mid-rotation).
+    [self applyBackdropColor];
+
     [self.contentView addSubview:self.presenter.presentationView];
     self.contentView.layer.anchorPoint = CGPointMake(0, 0);
     self.contentView.layer.position = CGPointMake(0, 0);
@@ -233,6 +243,7 @@
     }
     if(!diff) return;
     
+    [self applyBackdropColor];
     UIMutableApplicationSceneSettings *baseSettings = [diff settingsByApplyingToMutableCopyOfSettings:settings];
     UIApplicationSceneTransitionContext *newContext = [context copy];
     newContext.actions = nil;
@@ -246,7 +257,16 @@
     }
 }
 
+// Re-stamped rather than set once: UIKit can swap or re-style the presentation
+// view when the guest flips orientation, which would drop a one-shot colour.
+- (void)applyBackdropColor {
+    self.view.backgroundColor = UIColor.blackColor;
+    self.contentView.backgroundColor = UIColor.blackColor;
+    self.presenter.presentationView.backgroundColor = UIColor.blackColor;
+}
+
 - (void)viewWillLayoutSubviews {
+    [self applyBackdropColor];
     [self updateFrameWithSettingsBlock:self.nextUpdateSettingsBlock];
     self.nextUpdateSettingsBlock = nil;
 }

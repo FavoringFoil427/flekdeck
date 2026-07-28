@@ -94,7 +94,12 @@ void UIKitFixesInit(void) {
     navigationBar.items = @[navigationItem];
     
     self.view.axis = UILayoutConstraintAxisVertical;
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    // Backdrop behind the guest scene. Black rather than systemBackground: when
+    // the guest doesn't fill the container — commonly in landscape, where an app
+    // that renders at a different aspect (or hasn't caught up to a rotation yet)
+    // leaves strips on the sides — this is what shows through, and white strips
+    // read as broken. Black matches the letterboxing every other app does.
+    self.view.backgroundColor = UIColor.blackColor;
     self.view.layer.cornerRadius = 0;
     self.view.layer.masksToBounds = YES;
 
