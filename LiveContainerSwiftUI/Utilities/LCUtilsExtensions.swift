@@ -309,12 +309,12 @@ extension LCUtils {
                     }
                 }
                 guard let appToLaunch else {
-                    onServerMessage?("StosDebug is not installed in LiveContainer.")
+                    onServerMessage?("StosDebug is not installed in FlekLauncher.")
                     return false
                 }
                 
                 if !appToLaunch.uiIsShared {
-                    onServerMessage?("StosDebug is installed in LiveContainer, but is not a shared app. Convert it to a shared app to continue.")
+                    onServerMessage?("StosDebug is installed in FlekLauncher, but is not a shared app. Convert it to a shared app to continue.")
                     return false
                 }
                 // check if stosdebug is already running
@@ -328,7 +328,7 @@ extension LCUtils {
                     }
                 }
                 guard let freeScheme else {
-                    onServerMessage?("No free LiveContainer is available. Please either: \n(1)close one, \n(2)install a new one, \n(3)choose another method to enable JIT.")
+                    onServerMessage?("No free FlekLauncher is available. Please either: \n(1)close one, \n(2)install a new one, \n(3)choose another method to enable JIT.")
                     return false
                 }
                 
@@ -336,7 +336,7 @@ extension LCUtils {
                 LCUtils.appGroupUserDefault.set(freeScheme, forKey: "LCLaunchExtensionScheme")
                 LCUtils.appGroupUserDefault.set(appToLaunch.appInfo.relativeBundlePath, forKey: "LCLaunchExtensionBundleID")
                 LCUtils.appGroupUserDefault.set(Date.now, forKey: "LCLaunchExtensionLaunchDate")
-                onServerMessage?("JIT acquisition will continue in another LiveContainer.")
+                onServerMessage?("JIT acquisition will continue in another FlekLauncher.")
                 
                 await UIApplication.shared.open(launchURL)
             } else {
@@ -370,12 +370,12 @@ extension LCUtils {
                     }
                 }
                 guard let appToLaunch else {
-                    onServerMessage?("StikDebug is not installed in LiveContainer.")
+                    onServerMessage?("StikDebug is not installed in FlekLauncher.")
                     return false
                 }
                 
                 if !appToLaunch.uiIsShared {
-                    onServerMessage?("StikDebug is installed in LiveContainer, but is not a shared app. Convert it to a shared app to continue.")
+                    onServerMessage?("StikDebug is installed in FlekLauncher, but is not a shared app. Convert it to a shared app to continue.")
                     return false
                 }
                 // check if stikdebug is already running
@@ -389,7 +389,7 @@ extension LCUtils {
                     }
                 }
                 guard let freeScheme else {
-                    onServerMessage?("No free LiveContainer is available. Please either: \n(1)close one, \n(2)install a new one, \n(3)choose another method to enable JIT.")
+                    onServerMessage?("No free FlekLauncher is available. Please either: \n(1)close one, \n(2)install a new one, \n(3)choose another method to enable JIT.")
                     return false
                 }
                 
@@ -397,7 +397,7 @@ extension LCUtils {
                 LCUtils.appGroupUserDefault.set(freeScheme, forKey: "LCLaunchExtensionScheme")
                 LCUtils.appGroupUserDefault.set(appToLaunch.appInfo.relativeBundlePath, forKey: "LCLaunchExtensionBundleID")
                 LCUtils.appGroupUserDefault.set(Date.now, forKey: "LCLaunchExtensionLaunchDate")
-                onServerMessage?("JIT acquisition will continue in another LiveContainer.")
+                onServerMessage?("JIT acquisition will continue in another FlekLauncher.")
                 
             } else {
                 launchURL = URL(string: launchURLStr)!
