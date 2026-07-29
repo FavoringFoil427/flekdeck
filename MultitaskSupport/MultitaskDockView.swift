@@ -168,6 +168,8 @@ class AppInfoProvider {
     @Published var frontmostAppUUID: String?
     @Published var isHomeState: Bool = false
     @Published var isAppSwitcherOpen: Bool = false
+    /// The interface orientation the switcher overrode, restored when it closes.
+    private var orientationBeforeSwitcher: UIInterfaceOrientation?
     @Published var isClosingAll: Bool = false
     /// Snapshot of the springboard (wallpaper + icons) captured when the switcher
     /// opens, shown blurred behind the cards — the app-switcher equivalent of
@@ -197,6 +199,10 @@ class AppInfoProvider {
     /// captured in landscape is a landscape image — without its original shape the
     /// card can only stretch it to fit.
     var appSnapshotSizes: [String: CGSize] = [:]
+    /// The quarter-turn each capture needs to sit upright in a portrait card, in
+    /// radians. Shared by both card paths so a guest app and an internal page
+    /// captured side by side are turned the same way.
+    var appSnapshotRotations: [String: CGFloat] = [:]
     /// Genuinely frozen captures, preferred over `appSnapshotViews` when available.
     ///
     /// `resizableSnapshotView` does not freeze a view that hosts a guest process's
@@ -422,6 +428,20 @@ class AppInfoProvider {
         keyWindow?.safeAreaInsets ?? .zero
     }
 
+    /// A cached copy for SwiftUI bodies to read.
+    ///
+    /// `safeAreaInsets` resolves `keyWindow`, which enumerates every connected scene,
+    /// allocates, sorts them and then scans their windows. That is fine once per
+    /// layout but ruinous inside a view body, where it runs per card per frame — it
+    /// showed up as the switcher carousel stuttering and dropping touches. Refreshed
+    /// wherever the real insets can change.
+    @Published private(set) var cachedSafeAreaInsets: UIEdgeInsets = .zero
+
+    func refreshCachedSafeAreaInsets() {
+        let current = safeAreaInsets
+        if cachedSafeAreaInsets != current { cachedSafeAreaInsets = current }
+    }
+
     /// The visible solid strip of the bar (below the concave corners). Floored to
     /// the button height so the buttons are always covered: portrait gets button
     /// room from its ~34pt home-indicator inset, but landscape has none — and with a
@@ -499,6 +519,7 @@ class AppInfoProvider {
         LCUtils.appGroupUserDefault.set(false, forKey: MultitaskDockManager.preferFloatingButtonKey)
         keyWindow!.rootViewController!.view.addSubview(self.windowHostingView)
         if let win = keyWindow { attachSafeAreaSentinel(to: win) }
+        refreshCachedSafeAreaInsets()
         setupDockView()
         NotificationCenter.default.addObserver(
             self,
@@ -547,6 +568,7 @@ class AppInfoProvider {
             // area is ready, and `ensureControlAccessible` won't re-lay out a bar
             // that's already shown — so it would otherwise stay mis-sized.
             if let win = self.keyWindow { self.attachSafeAreaSentinel(to: win) }
+            self.refreshCachedSafeAreaInsets()
             if self.isVisible && self.isSwitcherBarVisible {
                 self.updateDockFrame(animated: false)
             }
@@ -564,6 +586,7 @@ class AppInfoProvider {
             safeAreaSentinel.onChange = { [weak self] in
                 guard let self else { return }
                 DispatchQueue.main.async {
+                    self.refreshCachedSafeAreaInsets()
                     if self.isVisible && self.isSwitcherBarVisible {
                         self.updateDockFrame(animated: false)
                     }
@@ -752,6 +775,7 @@ class AppInfoProvider {
             self.appSnapshotViews.removeValue(forKey: appUUID)
             self.appSnapshotSizes.removeValue(forKey: appUUID)
             self.appSnapshotImages.removeValue(forKey: appUUID)
+            self.appSnapshotRotations.removeValue(forKey: appUUID)
             if let hostVC = self.internalPageControllers.removeValue(forKey: appUUID) {
                 hostVC.willMove(toParent: nil)
                 hostVC.view.removeFromSuperview()
@@ -1762,33 +1786,34 @@ class AppInfoProvider {
         let viewSize = captureRect.size
         guard viewSize.width > 0 && viewSize.height > 0 else { return }
 
-        func uprightForPortraitCard(_ image: UIImage, capturedAt view: UIView) -> UIImage {
-            // Cards are always portrait. A landscape capture is turned a quarter turn
-            // so it fills one rather than sitting as a band between black margins —
-            // the pixels are untouched, only the orientation flag changes, so this
-            // costs nothing and never resamples.
-            guard image.size.width > image.size.height, let cgImage = image.cgImage else {
-                return image
-            }
-
-            // Which way to turn depends on which edge the user rotated towards, so the
-            // content ends up the same way up as when they were looking at it.
-            let interfaceOrientation = view.window?.windowScene?.interfaceOrientation
+        // Cards are always portrait, so a landscape capture is turned a quarter turn to
+        // fill one rather than sitting as a band between black margins. Which way to
+        // turn depends on the edge the user rotated towards, so the content ends up
+        // the same way up as when they were looking at it.
+        var quarterTurn: CGFloat = 0
+        if viewSize.width > viewSize.height {
+            let interfaceOrientation = appView.window?.windowScene?.interfaceOrientation
                 ?? keyWindow?.windowScene?.interfaceOrientation
-            let turn: UIImage.Orientation
             switch interfaceOrientation {
             case .landscapeLeft:
-                turn = .left
+                quarterTurn = -.pi / 2
             case .landscapeRight:
-                turn = .right
+                quarterTurn = .pi / 2
             default:
                 // The interface is portrait but the capture is not: a landscape-only
                 // guest rendering sideways inside an upright host. The interface can't
                 // say which way it is being read, so use the device. Note the axes are
                 // mirrored — device landscapeLeft is interface landscapeRight.
-                turn = UIDevice.current.orientation == .landscapeLeft ? .right : .left
+                quarterTurn = UIDevice.current.orientation == .landscapeLeft ? .pi / 2 : -.pi / 2
             }
-            return UIImage(cgImage: cgImage, scale: image.scale, orientation: turn)
+        }
+        appSnapshotRotations[appUUID] = quarterTurn
+
+        func uprightForPortraitCard(_ image: UIImage) -> UIImage {
+            // Re-tagging the CGImage costs nothing and never resamples.
+            guard quarterTurn != 0, let cgImage = image.cgImage else { return image }
+            return UIImage(cgImage: cgImage, scale: image.scale,
+                           orientation: quarterTurn < 0 ? .left : .right)
         }
 
         // A frozen bitmap of the app exactly as it looks right now. `drawHierarchy`
@@ -1797,17 +1822,26 @@ class AppInfoProvider {
         // screen, which is the moment this runs. `afterScreenUpdates: true` is what
         // makes the hosted content resolve; with `false` the guest's layer has not
         // been committed into the context and comes back blank.
-        let renderer = UIGraphicsImageRenderer(size: viewSize)
-        var drawn = false
-        let image = renderer.image { _ in
-            drawn = appView.drawHierarchy(
-                in: CGRect(origin: CGPoint(x: -captureRect.origin.x, y: -captureRect.origin.y),
-                           size: appView.bounds.size),
-                afterScreenUpdates: true)
-        }
-        if drawn {
-            appSnapshotImages[appUUID] = uprightForPortraitCard(image, capturedAt: appView)
-            appSnapshotSizes[appUUID] = viewSize
+        // Internal pages only. A guest app renders into a remote layer composited by
+        // the render server, and the host process cannot read those pixels back:
+        // `drawHierarchy` reports success — it did draw the local hierarchy — but the
+        // guest's content simply is not in it, so the bitmap comes out black. Internal
+        // pages are ordinary in-process views and capture correctly.
+        if app.isInternalPage {
+            let renderer = UIGraphicsImageRenderer(size: viewSize)
+            var drawn = false
+            let image = renderer.image { _ in
+                drawn = appView.drawHierarchy(
+                    in: CGRect(origin: CGPoint(x: -captureRect.origin.x, y: -captureRect.origin.y),
+                               size: appView.bounds.size),
+                    afterScreenUpdates: true)
+            }
+            if drawn {
+                appSnapshotImages[appUUID] = uprightForPortraitCard(image)
+                appSnapshotSizes[appUUID] = viewSize
+            } else {
+                appSnapshotImages.removeValue(forKey: appUUID)
+            }
         } else {
             appSnapshotImages.removeValue(forKey: appUUID)
         }
@@ -1854,6 +1888,7 @@ class AppInfoProvider {
 
         // Lock now and synchronously — `refreshOrientationLock` defers to the next
         // runloop, which is already too late for the presentation below.
+        orientationBeforeSwitcher = keyWindow.windowScene?.interfaceOrientation
         AppDelegate.orientationLock = .portrait
         keyWindow.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
 
@@ -1891,6 +1926,7 @@ class AppInfoProvider {
         // The springboard snapshot is the overlay's blurred backdrop, so it is taken
         // here — after any rotation — to match the portrait overlay it sits behind.
         captureSpringboardSnapshot()
+        refreshCachedSafeAreaInsets()
         // Sync the preference to whatever control is actually active right now,
         // so the overlay's toggle reflects the current state — the user may have
         // switched between the bar and the floating button in-app since it was
@@ -1986,8 +2022,44 @@ class AppInfoProvider {
         }
     }
 
+    /// Puts the interface back where it was before the switcher forced portrait.
+    ///
+    /// Releasing the lock is not enough on its own: `.allButUpsideDown` still includes
+    /// portrait, so UIKit has no reason to leave it, and no fresh device-orientation
+    /// event arrives if the phone never physically moved. Without an explicit request
+    /// the app returns upright even though it is being held sideways.
+    private func restoreOrientationAfterSwitcher() {
+        guard let scene = keyWindow?.windowScene else { return }
+
+        // Follow the device where it can say — that way turning the phone while the
+        // switcher was open wins over what we recorded — and fall back to the recorded
+        // orientation when it cannot (face up, flat on a table, unknown).
+        let target: UIInterfaceOrientation
+        switch UIDevice.current.orientation {
+        case .landscapeLeft: target = .landscapeRight   // device and interface axes are mirrored
+        case .landscapeRight: target = .landscapeLeft
+        case .portrait: target = .portrait
+        default: target = orientationBeforeSwitcher ?? scene.interfaceOrientation
+        }
+        orientationBeforeSwitcher = nil
+        guard target != scene.interfaceOrientation else { return }
+
+        let mask: UIInterfaceOrientationMask
+        switch target {
+        case .landscapeLeft: mask = .landscapeLeft
+        case .landscapeRight: mask = .landscapeRight
+        default: mask = .portrait
+        }
+        // The lock still says portrait-only at this point; widen it first or the
+        // request is refused against the supported set.
+        AppDelegate.orientationLock = .allButUpsideDown
+        keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+    }
+
     func dismissAppSwitcher() {
         isAppSwitcherOpen = false
+        restoreOrientationAfterSwitcher()
 
         // Put the chosen control into its final state INSTANTLY (no transition)
         // so it's already in place behind the overlay before it fades — the app
@@ -2541,11 +2613,21 @@ struct AppSwitcherOverlay: View {
     private let cardCornerRadius: CGFloat = 34
 
     // Card dimensions — proportional to screen like iOS app switcher
+    /// Raised from 0.62 to hold the card's original height. Card height now follows
+    /// the trimmed snapshot's aspect rather than the screen's, which is shorter, so
+    /// at the old fraction the card lost ~11% of its height.
     private var cardWidth: CGFloat {
-        UIScreen.main.bounds.width * 0.62
+        UIScreen.main.bounds.width * 0.70
     }
+    /// Shaped like the snapshot it holds, not like the whole screen. Snapshots are
+    /// captured with the safe-area periphery trimmed off, so they are shorter than
+    /// the screen — sizing the card from the full screen aspect left the image
+    /// slightly too tall for it, and filling the card then cropped the sides.
     private var cardHeight: CGFloat {
-        cardWidth * (UIScreen.main.bounds.height / UIScreen.main.bounds.width)
+        let screen = UIScreen.main.bounds
+        let insets = dockManager.cachedSafeAreaInsets
+        let contentHeight = max(screen.height - insets.top - insets.bottom, 1)
+        return cardWidth * (contentHeight / screen.width)
     }
 
     // How far the cards slide left and the buttons slide down when the user taps
@@ -2588,7 +2670,7 @@ struct AppSwitcherOverlay: View {
                 // safe area (the overlay ignores the safe area, so add it back
                 // here) instead of pushing everything toward the bottom.
                 Spacer()
-                    .frame(minHeight: dockManager.safeAreaInsets.top + 12)
+                    .frame(minHeight: dockManager.cachedSafeAreaInsets.top + 12)
 
                 // Horizontal scrolling app cards
                 ScrollViewReader { proxy in
@@ -2682,7 +2764,7 @@ struct AppSwitcherOverlay: View {
                 // the concave corners, while keeping the overall height (bar height
                 // + bottom safe area) so the bar shape/background is unchanged.
                 .frame(maxWidth: .infinity,
-                       minHeight: dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.safeAreaInsets.bottom,
+                       minHeight: dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.cachedSafeAreaInsets.bottom,
                        alignment: .center)
                 .padding(.top, dockManager.barCornerRadiusActive)
                 // Limit the tap area to the bar's actual visible shape. The frame is
@@ -2931,7 +3013,8 @@ struct AppSwitcherCard: View {
                 } else if let snapshotView = dockManager.appSnapshotViews[app.appUUID] {
                     SnapshotViewRepresentable(
                         snapshotView: snapshotView,
-                        naturalSize: dockManager.appSnapshotSizes[app.appUUID] ?? .zero)
+                        naturalSize: dockManager.appSnapshotSizes[app.appUUID] ?? .zero,
+                        rotation: dockManager.appSnapshotRotations[app.appUUID] ?? 0)
                         .frame(width: cardWidth, height: cardHeight)
                         .clipped()
                 } else {
@@ -3193,16 +3276,20 @@ struct SnapshotViewRepresentable: UIViewRepresentable {
     let snapshotView: UIView
     /// The snapshot's shape when it was taken.
     var naturalSize: CGSize = .zero
+    /// Quarter-turn needed to sit upright in a portrait card.
+    var rotation: CGFloat = 0
 
     func makeUIView(context: Context) -> SnapshotFitView {
         let container = SnapshotFitView()
         container.naturalSize = naturalSize
+        container.rotation = rotation
         container.setSnapshot(snapshotView)
         return container
     }
 
     func updateUIView(_ container: SnapshotFitView, context: Context) {
         container.naturalSize = naturalSize
+        container.rotation = rotation
         container.setSnapshot(snapshotView)
     }
 }
@@ -3217,6 +3304,9 @@ struct SnapshotViewRepresentable: UIViewRepresentable {
 final class SnapshotFitView: UIView {
     var naturalSize: CGSize = .zero {
         didSet { if naturalSize != oldValue { setNeedsLayout() } }
+    }
+    var rotation: CGFloat = 0 {
+        didSet { if rotation != oldValue { setNeedsLayout() } }
     }
 
     init() {
@@ -3244,15 +3334,21 @@ final class SnapshotFitView: UIView {
             snapshot.frame = bounds
             return
         }
-        // The snapshot is placed as captured: same proportions, never rotated, scaled
-        // only to fit inside the card. A landscape app therefore sits as a horizontal
-        // band in a portrait card — the whole app is visible, exactly as it looked on
-        // screen, rather than stretched or cropped to fill the card's shape.
-        let scale = min(bounds.width / source.width, bounds.height / source.height)
-        let size = CGSize(width: source.width * scale, height: source.height * scale)
-        snapshot.frame = CGRect(x: (bounds.width - size.width) / 2,
-                                y: (bounds.height - size.height) / 2,
-                                width: size.width, height: size.height)
+        // Aspect-fill. This path carries a live replicant of a guest's remote layer,
+        // which keeps re-rendering as the guest re-lays out, so its content can differ
+        // from the size recorded at capture. Filling crops that mismatch away; fitting
+        // would strand the content in black margins.
+        //
+        // A turned capture is measured against its post-turn footprint, so the card is
+        // filled by what the viewer actually sees rather than by the untured shape.
+        let footprint = rotation == 0 ? source : CGSize(width: source.height, height: source.width)
+        let scale = max(bounds.width / footprint.width, bounds.height / footprint.height)
+        snapshot.transform = .identity
+        snapshot.bounds = CGRect(origin: .zero,
+                                 size: CGSize(width: source.width * scale,
+                                              height: source.height * scale))
+        snapshot.transform = rotation == 0 ? .identity : CGAffineTransform(rotationAngle: rotation)
+        snapshot.center = CGPoint(x: bounds.midX, y: bounds.midY)
     }
 }
 
