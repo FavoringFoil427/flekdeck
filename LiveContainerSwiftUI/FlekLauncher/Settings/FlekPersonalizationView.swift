@@ -122,7 +122,7 @@ struct FlekPersonalizationView: View {
     private static let tileFill = Color(red: 136/255, green: 136/255, blue: 136/255).opacity(0.15)
 
     private var currentPreview: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .top) {
             Group {
                 if !wallpaperPhoto.isEmpty, let img = FlekWallpaperStore.loadPhoto(named: wallpaperPhoto) {
                     Image(uiImage: img).resizable().scaledToFill()
@@ -138,7 +138,7 @@ struct FlekPersonalizationView: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .padding(.horizontal, 16).frame(height: 21)
                 .background(Capsule().fill(Color.black.opacity(0.2)))
-                .padding(.leading, 10).padding(.top, 8)
+                .padding(.top, 8)
         }
     }
 
