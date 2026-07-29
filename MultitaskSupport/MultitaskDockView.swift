@@ -1747,21 +1747,18 @@ class AppInfoProvider {
               let appView = app.view,
               !appView.isHidden, appView.alpha > 0.1 else { return }
         
-        // Internal pages pin their bottom controls (e.g. the Installer's Import
-        // IPA / search row and blur) above the switcher-bar edge, so in the live
-        // app they clear the bar. That reserved region is the full bottom safe
-        // area — the device inset plus the extra strip we add via
-        // additionalSafeAreaInsets — and the page also pads its controls further
-        // up while the bar is shown. The switcher card has no bar, so that region
-        // reads as empty space below the controls. Trim the whole reserved
-        // safe-area region (bottom in portrait, right in landscape) from the
-        // capture so the controls sit flush against the card edge.
-        var captureRect = appView.bounds
-        if app.isInternalPage {
-            let reserved = appView.safeAreaInsets
-            captureRect.size.height -= reserved.bottom
-            captureRect.size.width -= reserved.right
-        }
+        // Capture the content region only, dropping the safe-area periphery on every
+        // edge. The guest is handed those insets as `peripheryInsets` and fills them
+        // with its own background, which on screen reads as the status-bar and
+        // home-indicator strips — but a card has neither, so they arrive as dead
+        // margin around the app. Internal pages need the same treatment for a second
+        // reason: they pin their bottom controls above the switcher bar, and that
+        // reserved strip is part of the safe area too.
+        //
+        // Trimming every edge rather than just the bottom keeps this correct in
+        // landscape, where the periphery sits on the sides — and those sides become
+        // the top and bottom of the card once the capture is turned upright.
+        let captureRect = appView.bounds.inset(by: appView.safeAreaInsets)
         let viewSize = captureRect.size
         guard viewSize.width > 0 && viewSize.height > 0 else { return }
 
