@@ -303,10 +303,10 @@ struct LCSettingsView: View {
                     }
                 }
                 Section {
+                    linkRow("FleksignIcon", "FlekSign.com", action: openFleksign)
                     linkRow("GitHub", "GitHub - LiveContainer", action: openGitHub)
                     linkRow("Twitter", "khanhduytran0", action: openTwitter)
                     linkRow("GitHub", "GitHub - Huge_Black", action: openGitHub2)
-                    linkRow("FleksignIcon", "Fleksign", action: openFleksign)
                 } footer: {
                     Text("lc.settings.warning".loc)
                 }
