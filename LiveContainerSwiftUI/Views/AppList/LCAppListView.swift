@@ -193,6 +193,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @Environment(\.colorScheme) private var colorScheme
     
     @ObservedObject var searchContext: SearchContext
+    /// The device's own bottom safe-area inset — the home indicator, if there is one.
+    @State private var homeBottomSafeInset: CGFloat = LCDeviceSafeArea.bottomInset()
     var sortedApps: [LCAppModel] {
         return sharedAppSortManager.sortedApps
     }
@@ -206,6 +208,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// Hiding Mode keeps them out until the session is unlocked — the same rule the
     /// URL-scheme launch path applies — and launching one still passes through the
     /// Face ID gate in `launchHomeApp`.
+    /// How far the home bottom bar sits from the edge.
+    ///
+    /// List mode sits lower than grid by sinking into the home-indicator inset. A
+    /// device with a physical home button has no such inset, so the negative value
+    /// pushed the bar off the bottom of the screen — there, fall back to the grid's
+    /// margin instead.
+    private var homeBottomBarInset: CGFloat {
+        guard homeLayout == FlekHomeLayout.list.rawValue else { return 5 }
+        return homeBottomSafeInset > 2 ? -9 : 5
+    }
+
     var searchableApps: [LCAppModel] {
         var apps = sortedApps
         if sharedModel.isHiddenAppUnlocked || !LCUtils.appGroupUserDefault.bool(forKey: "LCStrictHiding") {
@@ -283,8 +296,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 } else {
                     homeBottomBar
                         .id(colorScheme)
-                        // List sits a bit lower toward the bottom edge than the grid.
-                        .padding(.bottom, homeLayout == FlekHomeLayout.list.rawValue ? -9 : 5)
+                        .padding(.bottom, homeBottomBarInset)
                 }
             }
             }
@@ -332,6 +344,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .animation(.easeOut(duration: 0.25), value: showSearch)
         .onAppear {
+            homeBottomSafeInset = LCDeviceSafeArea.bottomInset()
             if !didAppear { onAppear() }
             if flekstoreSharedModel.appInstallURL != "" {
                 installQueue.enqueue(

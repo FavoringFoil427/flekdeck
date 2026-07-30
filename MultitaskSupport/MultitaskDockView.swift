@@ -346,12 +346,20 @@ class AppInfoProvider {
     /// bar is on the right) left a stale inset that pushed bottom content up and
     /// broke the hide-to-bottom-edge behaviour.
     func applyBarInset(to controller: UIHostingController<AnyView>, reserved: Bool) {
-        let amount: CGFloat = reserved ? Constants.barHeight : 0
+        // Reserve the bar's *actual* solid region, minus whatever the device already
+        // insets on that edge — the page's safe area covers that part already.
+        //
+        // This used to reserve a flat `Constants.barHeight` (25pt) against a bar whose
+        // solid region is more than twice that. On a notched phone the home-indicator
+        // inset happened to make up the difference, so it looked right; a device with
+        // a home button has no such inset, and the bar covered the page's bottom
+        // controls.
+        let insets = safeAreaInsets
         if isBarLandscape {
-            controller.additionalSafeAreaInsets.right = amount
+            controller.additionalSafeAreaInsets.right = reserved ? max(barFlatRegion - insets.right, 0) : 0
             controller.additionalSafeAreaInsets.bottom = 0
         } else {
-            controller.additionalSafeAreaInsets.bottom = amount
+            controller.additionalSafeAreaInsets.bottom = reserved ? max(barFlatRegion - insets.bottom, 0) : 0
             controller.additionalSafeAreaInsets.right = 0
         }
     }

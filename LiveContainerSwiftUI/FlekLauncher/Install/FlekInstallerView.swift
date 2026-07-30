@@ -53,10 +53,34 @@ struct FlekInstallerView: View {
     /// right edge, so bottom content stays pinned to the bottom edge.
     private var barOccupiesBottom: Bool { switcherBarVisible && !barIsLandscape }
 
+    /// How far the bottom bar sits from the edge.
+    ///
+    /// With the switcher bar below it the controls are lifted clear of it. Otherwise
+    /// they are pulled back down into the home-indicator inset, leaving a 2pt margin
+    /// above the screen edge — but only as far as that inset actually reaches. A phone
+    /// with a physical home button has no bottom inset at all, and the fixed -18 that
+    /// used to be here pushed the buttons off the bottom of the screen.
+    private var bottomBarInset: CGFloat {
+        if barOccupiesBottom { return 12 }
+        // Where there is a home-indicator inset, sink into it and leave a 2pt margin.
+        // Where there isn't one there is nothing to sink into, so add a margin instead
+        // of letting the controls sit flush against the screen edge.
+        let sinkable = max(bottomSafeInset - 2, 0)
+        return sinkable > 0 ? -min(18, sinkable) : 10
+    }
+
     /// Repo selected during this app session. A static resets on process
     /// relaunch, so the installer defaults back to FlekSt0re after an app
     /// restart while still remembering the choice within a session.
     private static var sessionSelectedRepoURL: String?
+
+    /// The device's own bottom safe-area inset — the home indicator, if there is one.
+    ///
+    /// Read from the window rather than a GeometryReader: a reader placed under
+    /// `ignoresSafeArea` reports zero insets on every device, and the window's value
+    /// also excludes the `additionalSafeAreaInsets` the host adds for the switcher
+    /// bar, which is what we want here.
+    @State private var bottomSafeInset: CGFloat = LCDeviceSafeArea.bottomInset()
 
     private static let flekBlue = Color(red: 0/255, green: 117/255, blue: 255/255)
     private static let screenBG = Color(.systemGroupedBackground)
@@ -98,9 +122,7 @@ struct FlekInstallerView: View {
             .overlay(alignment: .bottom) {
                 bottomBar
                     .padding(.horizontal, 10)
-                    // -18 (not -20) leaves a 2pt margin above the bottom edge for
-                    // the buttons; the blur keeps its own separate offset.
-                    .padding(.bottom, barOccupiesBottom ? 12 : -18)
+                    .padding(.bottom, bottomBarInset)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .multitaskBarVisibilityChanged)) { _ in
@@ -650,6 +672,7 @@ struct FlekInstallerView: View {
     }
 
     private func updateSwitcherBarState() {
+        bottomSafeInset = LCDeviceSafeArea.bottomInset()
         // Read the interface orientation directly so it is always current — the
         // dock manager's cached flag only updates while the bar is visible and
         // can be stale when the page first opens in landscape.
