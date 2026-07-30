@@ -22,7 +22,7 @@
 	<key>encryptedUdid</key>
 	<string>955c3fe297a18615b132bac65ddc8d2c</string>
 	<key>CFBundleExecutable</key>
-	<string>LiveContainer</string>
+	<string>FlekLauncher</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIconUsesAutomaticDarkModeVariant</key>

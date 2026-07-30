@@ -31,7 +31,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "17DCE99C2C7067EC00731D42"
-               BuildableName = "LiveContainer.app"
+               BuildableName = "FlekLauncher.app"
                BlueprintName = "LiveContainer"
                ReferencedContainer = "container:LiveContainer.xcodeproj">
             </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "17DCE99C2C7067EC00731D42"
-            BuildableName = "LiveContainer.app"
+            BuildableName = "FlekLauncher.app"
             BlueprintName = "LiveContainer"
             ReferencedContainer = "container:LiveContainer.xcodeproj">
          </BuildableReference>
@@ -81,7 +81,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "17DCE99C2C7067EC00731D42"
-            BuildableName = "LiveContainer.app"
+            BuildableName = "FlekLauncher.app"
             BlueprintName = "LiveContainer"
             ReferencedContainer = "container:LiveContainer.xcodeproj">
          </BuildableReference>

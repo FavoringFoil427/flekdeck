@@ -36,7 +36,7 @@ jobs:
       - name: Create IPA
         run: |
           mkdir -p build/Payload
-          cp -r build/LiveContainer.xcarchive/Products/Applications/LiveContainer.app build/Payload/
+          cp -r build/LiveContainer.xcarchive/Products/Applications/FlekLauncher.app build/Payload/
           cd build
           zip -r LiveContainer.ipa Payload
           rm -rf Payload

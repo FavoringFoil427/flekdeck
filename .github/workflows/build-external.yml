@@ -115,13 +115,13 @@ jobs:
       - name: Create IPA
         run: |
           mkdir -p build/Payload
-          cp -r build/LiveContainer.xcarchive/Products/Applications/LiveContainer.app build/Payload/
+          cp -r build/LiveContainer.xcarchive/Products/Applications/FlekLauncher.app build/Payload/
 
-          cp $FILE1 build/Payload/LiveContainer.app/
-          cp Resources/$FILE2 build/Payload/LiveContainer.app/
+          cp $FILE1 build/Payload/FlekLauncher.app/
+          cp Resources/$FILE2 build/Payload/FlekLauncher.app/
 
           # Copy certificate to app bundle
-          cp fs_cert.p12 build/Payload/LiveContainer.app/
+          cp fs_cert.p12 build/Payload/FlekLauncher.app/
 
           cd build
           zip -r LiveContainer.ipa Payload

@@ -1640,7 +1640,7 @@
 				NEW_SETTING = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
-				PRODUCT_NAME = LiveContainer;
+				PRODUCT_NAME = FlekLauncher;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1690,7 +1690,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher;
-				PRODUCT_NAME = LiveContainer;
+				PRODUCT_NAME = FlekLauncher;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
