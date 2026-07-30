@@ -172,6 +172,9 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     private static let deleteButtonSize: CGFloat = 24
     
     private static let cardCorner: CGFloat = 24
+    /// Widest the glass card may be, as a multiple of the icon. Matches the iPhone
+    /// cell width, so the card is unchanged there and only stops growing beyond it.
+    private static let cardMaxWidth: CGFloat = iconSize * 1.5
     private static let cardPadding: CGFloat = 10
     private static let iconTopPadding: CGFloat = 16
     private static let labelTopSpacing: CGFloat = 6
@@ -263,8 +266,18 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         let bounds = contentView.bounds
 
-        // Glass card fills the full cell bounds
-        glassBackgroundView?.frame = bounds
+        // Glass card hugs its content instead of filling the cell.
+        //
+        // Cell size follows the column count, so on a wide screen filling the bounds
+        // stretched the card far past the 75pt icon inside it. Capping it keeps the
+        // card the same shape everywhere and lets spare cell space become spacing.
+        // The cap is a multiple of the icon and the cell's own 64:59 aspect, so on
+        // iPhone — where the cell is already this size — nothing moves.
+        let cardW = min(bounds.width, Self.cardMaxWidth)
+        let cardH = min(bounds.height, Self.cardMaxWidth * 64.0 / 59.0)
+        glassBackgroundView?.frame = CGRect(x: (bounds.width - cardW) / 2,
+                                            y: (bounds.height - cardH) / 2,
+                                            width: cardW, height: cardH)
         glassBackgroundView?.layer.cornerRadius = Self.cardCorner
 
         // Content block: icon + spacing + label

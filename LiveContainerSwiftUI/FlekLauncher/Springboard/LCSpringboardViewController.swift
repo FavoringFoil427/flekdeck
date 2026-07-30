@@ -50,7 +50,6 @@ final class LCSpringboardViewController: UIViewController {
     // MARK: - Layout config
 
     private(set) var itemsPerPage: Int = 15
-    private let columns: Int = LCSpringboardPageCell.columns
 
     // MARK: - Lifecycle
 
@@ -113,7 +112,13 @@ final class LCSpringboardViewController: UIViewController {
         }
 
         // Page control overlays the bottom of the CV.
-        let pageControlTopPadding: CGFloat = 4
+        //
+        // iPad landscape sits it lower: the grid fills nearly the whole height there,
+        // so the dots end up crowding the last row of icons. Portrait and iPhone have
+        // slack above the dots already and keep the original placement.
+        let isPadLandscape = UIDevice.current.userInterfaceIdiom == .pad
+            && view.bounds.width > view.bounds.height
+        let pageControlTopPadding: CGFloat = isPadLandscape ? -14 : 4
         let pageControlHeight: CGFloat = 10
         pageControl.frame = CGRect(
             x: 0,
@@ -249,8 +254,12 @@ final class LCSpringboardViewController: UIViewController {
         let cellWidth = LCSpringboardPageCell.computeCellWidth(forWidth: view.bounds.width)
         let cellHeight = floor(cellWidth * 64.0 / 59.0)
         let lineSpacing: CGFloat = 8
-        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
-        itemsPerPage = rows * columns
+        let rows = min(max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing))),
+                       LCSpringboardPageCell.maxRows(forWidth: view.bounds.width))
+        let fitting = rows * LCSpringboardPageCell.columns(forWidth: view.bounds.width)
+        itemsPerPage = min(fitting,
+                           LCSpringboardPageCell.maxItemsPerPage(screenSize: UIScreen.main.bounds.size,
+                                                                 topSafeInset: topSafe))
     }
 
     /// Flatten `pages` back into a single array, padding non-last pages

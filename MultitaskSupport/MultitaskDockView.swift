@@ -296,7 +296,15 @@ class AppInfoProvider {
     /// carves concave corners from the top, while the flat design just draws its
     /// fill in the lower flat-solid region (square top). Only the corners differ.
     var effectiveBarHeight: CGFloat {
-        Constants.barHeightWithLedge
+        // The bar's visible strip is measured *inward* from the screen's corner
+        // radius (`effectiveBarHeight - cornerRadius + bottom inset`), so a shallower
+        // corner yields a thicker bar from the same constant. iPad's corners are about
+        // a third of an iPhone's, which made both the bar and the switcher's chin
+        // noticeably taller there; a smaller constant brings the visible strip back in
+        // line with iPhone's.
+        UIDevice.current.userInterfaceIdiom == .pad
+            ? Constants.barHeightWithLedgePad
+            : Constants.barHeightWithLedge
     }
 
     /// The device's physical screen corner radius (private UIScreen value) so the
@@ -367,6 +375,9 @@ class AppInfoProvider {
     public struct Constants {
         // MARK: - Switcher Bar Layout
         static let barHeight: CGFloat = 25.0
+        /// iPad equivalent of `barHeightWithLedge`. Lower because iPad's shallow screen
+        /// corners would otherwise leave a much thicker strip than iPhone's.
+        static let barHeightWithLedgePad: CGFloat = 58.0
         /// Taller bar strip used when the rounded ledge (concave corners) is on.
         static let barHeightWithLedge: CGFloat = 80.0
         static let barIconSize: CGFloat = 40.0
@@ -468,6 +479,11 @@ class AppInfoProvider {
     /// device is in landscape. The bar always lives on a *short* edge: the
     /// bottom in portrait, the right edge in landscape.
     private var isBarLandscape: Bool {
+        // iPad keeps the bar along the bottom in both orientations. Moving it to the
+        // edge is an iPhone accommodation — there a bottom bar in landscape would eat
+        // most of the little height available — but iPad has the width for it, and
+        // rotating the strip stands the app name on its side for no gain.
+        if UIDevice.current.userInterfaceIdiom == .pad { return false }
         if let orientation = keyWindow?.windowScene?.interfaceOrientation {
             return orientation.isLandscape
         }
@@ -2617,6 +2633,22 @@ struct AppSwitcherOverlay: View {
     
     private let cardSpacing: CGFloat = 16
 
+    /// Room kept below Close all for the chin.
+    ///
+    /// The chin's opaque height is `effectiveBarHeight - cornerRadius + bottom inset`,
+    /// so a device with *smaller* screen corners ends up with a taller chin. A flat
+    /// 50pt cleared it on iPhone, where the large corner radius keeps the chin short,
+    /// but not on iPad — where the radius is a third of the size and the chin grew
+    /// past the button.
+    ///
+    /// Subtracting the button's own bottom padding and flooring at the previous 50
+    /// keeps iPhone spacing exactly as it was and gives iPad only the extra it needs.
+    private var bottomChinReserve: CGFloat {
+        // Plus a small gap: on a 13 mini the subtraction lands exactly on the button's
+        // own padding, leaving the two touching.
+        return max(50, dockManager.barFlatRegion - 20 + 3)
+    }
+
     // Fixed corner radius (matches the Figma design spec).
     private let cardCornerRadius: CGFloat = 34
 
@@ -2739,10 +2771,10 @@ struct AppSwitcherOverlay: View {
                     Text("This closes every open app.")
                 }
 
-                // Reserve the bar's footprint so Close all sits above the bottom
+                // Reserve the chin's footprint so Close all sits above the bottom
                 // bar (which is a separate bottom-anchored layer below).
                 Spacer()
-                    .frame(height: 50)
+                    .frame(height: bottomChinReserve)
             }
 
             // Control preference toggle, styled as the switcher bar it hides: a
@@ -2771,8 +2803,12 @@ struct AppSwitcherOverlay: View {
                 // Pad the top by the corner-ledge height so centering happens below
                 // the concave corners, while keeping the overall height (bar height
                 // + bottom safe area) so the bar shape/background is unchanged.
+                // `barFlatRegion`, not the raw expression: it floors at the button
+                // height. Without that floor a device with no bottom inset and a
+                // shallow corner radius — an iPad with a home button computes 19pt —
+                // gets a chin too short to hold the 44pt controls inside it.
                 .frame(maxWidth: .infinity,
-                       minHeight: dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.cachedSafeAreaInsets.bottom,
+                       minHeight: dockManager.barFlatRegion,
                        alignment: .center)
                 .padding(.top, dockManager.barCornerRadiusActive)
                 // Limit the tap area to the bar's actual visible shape. The frame is

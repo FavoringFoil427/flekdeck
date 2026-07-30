@@ -48,14 +48,88 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     // MARK: - Layout config
 
-    static let columns: Int = 3
+    /// Columns for a given width.
+    ///
+    /// Cell width is simply the available width divided by this, so a fixed count
+    /// meant iPad's far greater width went into making three enormous cells rather
+    /// than fitting more of them — a 75pt icon adrift in a 254pt card. iPhone keeps
+    /// its three; iPad scales with the width it actually has, which also covers
+    /// split-view and Slide Over rather than assuming a full screen.
+    static func columns(forWidth width: CGFloat) -> Int {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return 3 }
+        // Derived from a target cell size rather than bucketed by width, so a cell is
+        // about the same size whichever way the iPad is held. Fixed buckets kept six
+        // columns in landscape too, stretching each cell to 181pt around a 112pt card
+        // — the icons stayed put while the gaps between them grew.
+        let sidePadding: CGFloat = width >= 390 ? 16 : 12
+        let available = width - (sidePadding * 2) + interitemSpacing
+        let count = (available / (targetCellWidth + interitemSpacing)).rounded()
+        return max(3, Int(count))
+    }
+
+    /// Cell size the column count aims for: what iPad portrait already produces, so
+    /// portrait is unchanged and other widths converge on it.
+    private static let targetCellWidth: CGFloat = 121
+    static let interitemSpacing: CGFloat = 12
+
+    /// Space kept below the last row for the page dots, which are pinned near the
+    /// bottom of the springboard view. Portrait rarely fills the height so the old
+    /// 12pt was never noticed; landscape does, and the last row ran into the dots.
+    /// `rowsPerPage` subtracts this too, so a row is dropped rather than overlapping
+    /// if the reserved space no longer leaves room.
+    static let gridBottomInset: CGFloat = 34
+
+    /// Most rows a page may hold.
+    ///
+    /// Rows are otherwise purely derived — available height divided by cell height —
+    /// which on iPad's tall screen fits eight and reads as a dense wall of icons.
+    /// Capping keeps the grid to a comfortable page; iPhone is unaffected, its height
+    /// never reaching the cap.
+    static func maxRows(forWidth width: CGFloat) -> Int {
+        UIDevice.current.userInterfaceIdiom == .pad ? 7 : .max
+    }
+
+    /// The most icons a page may hold, fixed to what *portrait* fits however the
+    /// device is held.
+    ///
+    /// Landscape fits more per row and fewer rows, so its natural capacity differs
+    /// from portrait's — 45 against 42 on an iPad Air. Letting the number change with
+    /// orientation repaginates everything on rotation: icons cross page boundaries and
+    /// the stored page sizes no longer describe the layout. Pinning it to portrait
+    /// keeps a page holding the same items; landscape simply leaves its last row
+    /// short.
+    static func maxItemsPerPage(screenSize: CGSize, topSafeInset: CGFloat) -> Int {
+        let portraitWidth = min(screenSize.width, screenSize.height)
+        let portraitHeight = max(screenSize.width, screenSize.height)
+
+        let cellWidth = computeCellWidth(forWidth: portraitWidth)
+        let cellHeight = floor(cellWidth * 64.0 / 59.0)
+        let lineSpacing: CGFloat = 8
+        let pageControlHeight: CGFloat = 30
+        let topPad: CGFloat = 8
+
+        let pageHeight = portraitHeight - topSafeInset - topPad - pageControlHeight
+        let fitting = Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing))
+        let rows = min(max(1, fitting), maxRows(forWidth: portraitWidth))
+        return max(1, min(rows * columns(forWidth: portraitWidth), absoluteMaxItemsPerPage))
+    }
+
+    /// Ceiling on page capacity across every device.
+    ///
+    /// Capacity is otherwise derived from the screen, so it varies by model — 35 on an
+    /// iPad mini, 42 on an Air, 56 on a Pro 13. Since page boundaries are persisted in
+    /// `homeScreenPageSizes` and shared through the app group, a layout arranged on a
+    /// larger device repaginates when opened on a smaller one. Pinning the ceiling to
+    /// the common iPad capacity keeps a page meaning the same thing everywhere; a
+    /// smaller device still gets less if that is all it fits.
+    static let absoluteMaxItemsPerPage: Int = 42
 
     /// Dynamic cell width with tight margins to maximise icon size.
     static func computeCellWidth(forWidth width: CGFloat) -> CGFloat {
         let screenWidth = max(width, 320)
         let sidePadding: CGFloat = screenWidth >= 390 ? 16 : 12
-        let cols = CGFloat(columns)
-        let totalSpacing: CGFloat = 12 * (cols - 1)
+        let cols = CGFloat(columns(forWidth: screenWidth))
+        let totalSpacing: CGFloat = interitemSpacing * (cols - 1)
         let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
         return floor(availableWidth / cols)
     }
@@ -63,8 +137,8 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// Horizontal margin: centres the grid with leftover space.
     static func computeHorizontalInset(forWidth width: CGFloat) -> CGFloat {
         let screenWidth = max(width, 320)
-        let cols = CGFloat(columns)
-        let totalSpacing: CGFloat = 12 * (cols - 1)
+        let cols = CGFloat(columns(forWidth: screenWidth))
+        let totalSpacing: CGFloat = interitemSpacing * (cols - 1)
         let cellWidth = computeCellWidth(forWidth: screenWidth)
         return max(4, (screenWidth - (cellWidth * cols) - totalSpacing) / 2)
     }
@@ -100,7 +174,8 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let inset = Self.computeHorizontalInset(forWidth: width)
 
         layout.itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 64.0 / 59.0))
-        layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 12, right: inset)
+        layout.sectionInset = UIEdgeInsets(top: 0, left: inset,
+                                           bottom: Self.gridBottomInset, right: inset)
         layout.minimumInteritemSpacing = 12
         layout.minimumLineSpacing = 8
     }
@@ -139,11 +214,15 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         let lineSpacing = layout.minimumLineSpacing
         let bottomInset = layout.sectionInset.bottom
         let availableHeight = contentView.bounds.height - topInset - bottomInset
-        return max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        let fitting = Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing))
+        return min(max(1, fitting), Self.maxRows(forWidth: contentView.bounds.width))
     }
 
     func itemsPerPage() -> Int {
-        return rowsPerPage() * Self.columns
+        let fitting = rowsPerPage() * Self.columns(forWidth: contentView.bounds.width)
+        let topSafe = window?.safeAreaInsets.top ?? 0
+        return min(fitting, Self.maxItemsPerPage(screenSize: UIScreen.main.bounds.size,
+                                                 topSafeInset: topSafe))
     }
 
     /// Reload items, deferring if a context menu is active to avoid cell reuse glitches.
