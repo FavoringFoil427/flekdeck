@@ -611,6 +611,11 @@ class AppInfoProvider {
                 guard let self else { return }
                 DispatchQueue.main.async {
                     self.refreshCachedSafeAreaInsets()
+                    // Re-anchor the portrait-locked switcher overlay to the window's
+                    // new shape the moment it actually has it.
+                    if self.isAppSwitcherOpen, let window = self.keyWindow {
+                        self.applySwitcherPortraitGeometry(in: window)
+                    }
                     if self.isVisible && self.isSwitcherBarVisible {
                         self.updateDockFrame(animated: false)
                     }
@@ -636,6 +641,17 @@ class AppInfoProvider {
 
     @objc private func deviceOrientationDidChange() {
         DispatchQueue.main.async {
+            // Keep the switcher overlay portrait through the turn. Once right away,
+            // and once more after the rotation has settled — this notification
+            // fires on the device moving, which can be a beat before the window
+            // has its new bounds and the scene its new interface orientation.
+            if self.isAppSwitcherOpen, let window = self.keyWindow {
+                self.applySwitcherPortraitGeometry(in: window)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard self.isAppSwitcherOpen, let window = self.keyWindow else { return }
+                    self.applySwitcherPortraitGeometry(in: window)
+                }
+            }
             if self.isVisible {
                 // Snap (not animate) so the bar lands on its new short edge as the
                 // system's own rotation animation completes, avoiding a compounded
@@ -1897,10 +1913,23 @@ class AppInfoProvider {
         appSnapshotRotations[appUUID] = quarterTurn
 
         func uprightForPortraitCard(_ image: UIImage) -> UIImage {
-            // Re-tagging the CGImage costs nothing and never resamples.
-            guard quarterTurn != 0, let cgImage = image.cgImage else { return image }
-            return UIImage(cgImage: cgImage, scale: image.scale,
-                           orientation: quarterTurn < 0 ? .left : .right)
+            // Redrawn, not re-tagged. An orientation tag would be free, but SwiftUI's
+            // `Image(uiImage:).resizable()` is not reliable about honouring one — it
+            // can draw the raw bitmap and leave the card's content sideways. Baking
+            // the turn into the pixels renders the same everywhere. One card-sized
+            // draw per capture, internal pages only.
+            guard quarterTurn != 0 else { return image }
+            let turned = CGSize(width: image.size.height, height: image.size.width)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            format.opaque = true
+            return UIGraphicsImageRenderer(size: turned, format: format).image { ctx in
+                let c = ctx.cgContext
+                c.translateBy(x: turned.width / 2, y: turned.height / 2)
+                c.rotate(by: quarterTurn)
+                image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2,
+                                      width: image.size.width, height: image.size.height))
+            }
         }
 
         // A frozen bitmap of the app exactly as it looks right now, taken through the
@@ -1981,6 +2010,16 @@ class AppInfoProvider {
         AppDelegate.orientationLock = .portrait
         keyWindow.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
 
+        // iPad cannot be turned: the app is resizable there, so the geometry request
+        // below is refused and the wait would burn its whole grace period against a
+        // rotation that never comes. The overlay locks itself to portrait instead —
+        // laid out at portrait size and rotated as a whole to stand upright in
+        // whatever orientation the window is stuck in (see presentAppSwitcher).
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            presentAppSwitcher(in: keyWindow)
+            return
+        }
+
         if let scene = keyWindow.windowScene, scene.interfaceOrientation.isLandscape {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
             whenWindowIsPortrait(keyWindow) { [weak self] in
@@ -1989,6 +2028,52 @@ class AppInfoProvider {
             return
         }
         presentAppSwitcher(in: keyWindow)
+    }
+
+    /// Holds the switcher overlay portrait on iPad, whatever the window does.
+    ///
+    /// An iPad app that supports multiple scenes is resizable, and a resizable
+    /// app's orientation is the system's to decide: `supportedInterfaceOrientations`
+    /// is advisory and every `requestGeometryUpdate` toward portrait is refused. So
+    /// the overlay cannot have the window turned for it, the way iPhone does it.
+    /// Instead its hosting view is given the screen's portrait dimensions outright
+    /// and, when the window is landscape, rotated a quarter turn so it stands the
+    /// way the device's portrait top does. Portrait bounds turned sideways cover a
+    /// landscape window exactly, so nothing shows through around it. Layout inside
+    /// never changes — the view's own coordinate space is always portrait, which is
+    /// what keeps the cards and the chin where they belong no matter how often the
+    /// device turns while the switcher is open.
+    ///
+    /// Called on presentation and again from `deviceOrientationDidChange`, so a
+    /// rotation while open just swaps the quarter turn. iPhone never reaches this:
+    /// there the window itself is forced portrait and autoresizing does the rest.
+    private func applySwitcherPortraitGeometry(in window: UIWindow) {
+        guard UIDevice.current.userInterfaceIdiom == .pad,
+              let view = switcherOverlayController?.view else { return }
+
+        // Sized from the screen, not the window: mid-rotation the window's bounds
+        // pass through arbitrary values, and a size read then would be laid out
+        // into the overlay. The screen's portrait dimensions are the same numbers
+        // whenever they are asked for, so the overlay's layout space never varies —
+        // only its centre and quarter turn do.
+        let screen = UIScreen.main.bounds.size
+        let portrait = CGSize(width: min(screen.width, screen.height),
+                              height: max(screen.width, screen.height))
+
+        // A transformed view and autoresizing fight each other; the geometry here
+        // is reapplied on every rotation instead.
+        view.autoresizingMask = []
+        view.bounds = CGRect(origin: .zero, size: portrait)
+        view.center = CGPoint(x: window.bounds.midX, y: window.bounds.midY)
+
+        // Stand the portrait content up against the hardware's portrait top:
+        // landscapeLeft has that edge on the window's right (+90°), landscapeRight
+        // on its left (-90°).
+        switch window.windowScene?.interfaceOrientation {
+        case .landscapeLeft: view.transform = CGAffineTransform(rotationAngle: .pi / 2)
+        case .landscapeRight: view.transform = CGAffineTransform(rotationAngle: -.pi / 2)
+        default: view.transform = .identity
+        }
     }
 
     /// Calls `body` once the window has finished rotating to portrait, or after a
@@ -2055,7 +2140,10 @@ class AppInfoProvider {
         hc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hc.overrideUserInterfaceStyle = .dark
         switcherOverlayController = hc
-        
+
+        // iPad: the overlay is portrait whichever way the window is stuck.
+        applySwitcherPortraitGeometry(in: keyWindow)
+
         hc.view.alpha = 0
         keyWindow.addSubview(hc.view)
         // Force a full layout + render pass while the overlay is still invisible,
@@ -2085,6 +2173,11 @@ class AppInfoProvider {
             // has no visible effect — it just keeps the bar's state consistent
             // for the exit path.
             self.hostingController?.view.alpha = 0
+            // Re-anchor once the entrance has settled, in case the window was
+            // mid-rotation when the overlay was first placed.
+            if self.isAppSwitcherOpen {
+                self.applySwitcherPortraitGeometry(in: keyWindow)
+            }
         }
     }
     
@@ -2170,7 +2263,10 @@ class AppInfoProvider {
             options: .curveEaseIn
         ) {
             overlay.view.alpha = 0
-            overlay.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
+            // Scaled on top of whatever transform the overlay holds — on iPad that
+            // is the quarter turn keeping it portrait, which an absolute transform
+            // here would visibly snap away mid-fade.
+            overlay.view.transform = overlay.view.transform.scaledBy(x: 1.05, y: 1.05)
         } completion: { _ in
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
@@ -2356,10 +2452,26 @@ struct BarTopBar: Shape {
 /// first laid out with, which is the "wrong size after relaunch" symptom.
 final class SafeAreaSentinelView: UIView {
     var onChange: (() -> Void)?
+    private var lastBounds: CGRect = .zero
+
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
         onChange?()
     }
+
+    /// The window changing shape counts too, not just its safe area. An iPad's
+    /// insets are usually identical both ways up, so a rotation moves the bounds
+    /// without touching them and `safeAreaInsetsDidChange` stays silent — yet the
+    /// switcher overlay must be re-anchored exactly then. Layout passes are the
+    /// authoritative signal: they happen precisely when the window takes each new
+    /// size, including the final one when a rotation animation lands.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds != lastBounds else { return }
+        lastBounds = bounds
+        onChange?()
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
 }
 
@@ -2721,19 +2833,34 @@ struct AppSwitcherOverlay: View {
     // Fixed corner radius (matches the Figma design spec).
     private let cardCornerRadius: CGFloat = 34
 
+    /// The screen the right way up, whichever way it is currently reported.
+    ///
+    /// The overlay is always portrait: on iPhone the window is turned portrait
+    /// before it opens; on iPad — where the system refuses to turn — the hosting
+    /// view is given portrait bounds and rotated whole to stay upright. Its
+    /// content is therefore always laid out in a portrait space, while
+    /// `UIScreen.main.bounds` follows the interface and reports landscape sideways.
+    /// Normalising keeps every metric sized for the space it is actually in;
+    /// on iPhone min/max resolve to exactly the values used before.
+    private var portraitScreen: CGSize {
+        let bounds = UIScreen.main.bounds.size
+        return CGSize(width: min(bounds.width, bounds.height),
+                      height: max(bounds.width, bounds.height))
+    }
+
     // Card dimensions — proportional to screen like iOS app switcher
     /// Raised from 0.62 to hold the card's original height. Card height now follows
     /// the trimmed snapshot's aspect rather than the screen's, which is shorter, so
     /// at the old fraction the card lost ~11% of its height.
     private var cardWidth: CGFloat {
-        UIScreen.main.bounds.width * 0.70
+        portraitScreen.width * 0.70
     }
     /// Shaped like the snapshot it holds, not like the whole screen. Snapshots are
     /// captured with the safe-area periphery trimmed off, so they are shorter than
     /// the screen — sizing the card from the full screen aspect left the image
     /// slightly too tall for it, and filling the card then cropped the sides.
     private var cardHeight: CGFloat {
-        let screen = UIScreen.main.bounds
+        let screen = portraitScreen
         let insets = dockManager.cachedSafeAreaInsets
         let contentHeight = max(screen.height - insets.top - insets.bottom, 1)
         return cardWidth * (contentHeight / screen.width)
@@ -2741,8 +2868,8 @@ struct AppSwitcherOverlay: View {
 
     // How far the cards slide left and the buttons slide down when the user taps
     // the background to return to the springboard.
-    private var exitCardOffset: CGFloat { UIScreen.main.bounds.width + cardWidth }
-    private var exitButtonOffset: CGFloat { UIScreen.main.bounds.height * 0.4 }
+    private var exitCardOffset: CGFloat { portraitScreen.width + cardWidth }
+    private var exitButtonOffset: CGFloat { portraitScreen.height * 0.4 }
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -2794,6 +2921,14 @@ struct AppSwitcherOverlay: View {
                             // settles under `.viewAligned` can snap back to the first
                             // card, which is the intermittent "jumps to left card" bug.
                             DispatchQueue.main.async {
+                                proxy.scrollTo(target, anchor: .center)
+                            }
+                            // And once more after the geometry has settled. On iPad
+                            // the overlay can open while the window is mid-rotation,
+                            // and an offset centred against a transient width leaves
+                            // the row sitting between cards; re-centring is a no-op
+                            // when the first attempt already landed.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                                 proxy.scrollTo(target, anchor: .center)
                             }
                         }
@@ -2974,7 +3109,7 @@ struct AppSwitcherOverlay: View {
                 )
             }
         }
-        .padding(.horizontal, (UIScreen.main.bounds.width - cardWidth) / 2)
+        .padding(.horizontal, (portraitScreen.width - cardWidth) / 2)
     }
 }
 
