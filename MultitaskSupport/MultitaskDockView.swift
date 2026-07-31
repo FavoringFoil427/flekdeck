@@ -171,10 +171,29 @@ class AppInfoProvider {
     /// The interface orientation the switcher overrode, restored when it closes.
     private var orientationBeforeSwitcher: UIInterfaceOrientation?
     @Published var isClosingAll: Bool = false
-    /// Snapshot of the springboard (wallpaper + icons) captured when the switcher
-    /// opens, shown blurred behind the cards — the app-switcher equivalent of
-    /// Spotlight's blurred home background.
+    /// Blurred still of the springboard (wallpaper + icons) drawn behind the
+    /// switcher cards — the app-switcher equivalent of Spotlight's blurred home.
+    ///
+    /// Captured only while the springboard is genuinely unobscured and on screen,
+    /// which is the only state in which its pixels can change. That makes the
+    /// image exactly what the user last saw, the page they were on included, with
+    /// nothing tracking the page: a swipe is itself one of the moments a capture
+    /// is taken, and nothing can move the page while the springboard is covered.
     @Published var springboardSnapshot: UIImage?
+    /// Set when the springboard changed but the moment was wrong to capture it —
+    /// the switcher was up, or an app had already taken the screen. Repaired on
+    /// the next opportunity rather than dropped.
+    private var springboardBackdropDirty = false
+    /// Latest-wins, so a burst (a page settling, then its items reloading)
+    /// renders once instead of once each.
+    private var pendingBackdropCapture: DispatchWorkItem?
+    /// Stamps each capture so a blur finishing after a newer one started is
+    /// discarded rather than published out of order.
+    private var backdropCaptureGeneration = 0
+    /// Set by the springboard while something covers it — search, edit mode, a
+    /// full-screen cover. The dock cannot see those from here, and a capture
+    /// taken through one would bake it into the backdrop.
+    var springboardObscured = false
     /// Published mirror of `isBarLandscape` so the SwiftUI bar content can react
     /// to rotation (its own local geometry is always a horizontal strip and
     /// can't reveal orientation).
@@ -668,6 +687,11 @@ class AppInfoProvider {
             for (_, controller) in self.internalPageControllers {
                 self.applyBarInset(to: controller, reserved: reserved)
             }
+            // A turn re-lays the springboard out — on iPad the grid goes from four
+            // columns by six to six by four — so any backdrop of it is now the wrong
+            // shape as well as the wrong arrangement. The only springboard change
+            // with no signal from the SwiftUI side.
+            self.scheduleSpringboardBackdropCapture(after: 0.5)
         }
     }
     
@@ -841,7 +865,7 @@ class AppInfoProvider {
                 // No apps left: we are effectively on the springboard now. Record the
                 // home state so control-visibility logic stays consistent.
                 self.isHomeState = true
-                self.refreshSpringboardSnapshotWhenVisible()
+                self.scheduleSpringboardBackdropCapture(after: 0.5)
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
@@ -973,7 +997,7 @@ class AppInfoProvider {
                 self.minimizeAllWindows()
                 self.updateFrontmostApp()
                 self.isHomeState = true
-                self.refreshSpringboardSnapshotWhenVisible()
+                self.scheduleSpringboardBackdropCapture(after: 0.5)
                 self.hideDock()
             } else {
                 // All minimized — bring back last used app
@@ -1748,73 +1772,125 @@ class AppInfoProvider {
     
     // MARK: - App Switcher Overlay
     
-    /// Capture the springboard (wallpaper + icons) as a still image, excluding
-    /// the live guest-app windows, so the switcher can show it blurred behind the
-    /// cards (matching Spotlight's blurred home). Renders the layer tree with the
-    /// app-window host hidden; `isHidden` is honoured by layer rendering without a
-    /// screen update, so hiding + restoring in place causes no flicker.
-    /// Re-takes the backdrop on the next runloop, once the springboard is drawn again.
-    /// Same render as before, moved off the path the user waits on.
-    /// Forces the bitmap to decode now rather than on its first draw.
+    /// Resolution the backdrop is rendered at, and the blur that suits it.
     ///
-    /// A `UIGraphicsImageRenderer` image is lazy: nothing decodes until something
-    /// draws it, and the overlay's pre-render pass does not count. That left the
-    /// switcher's first frame showing the live app through the material, with the
-    /// blurred backdrop appearing a frame or two later.
-    private func displayReady(_ image: UIImage) -> UIImage {
-        image.preparingForDisplay() ?? image
+    /// Half of a point: a quarter of the pixels, which makes every stage cheaper in
+    /// proportion — the render, the blur and the decode — and is invisible in an
+    /// image only ever shown blurred under a 35% black scrim.
+    ///
+    /// The radius is not simply scaled to match. Blurring at half size and drawing
+    /// the result back at full size loses detail twice, once to the downscale and
+    /// again to the blur, and the upscale softens what is left; matching the old
+    /// ratio (20 against a half-size image) came out visibly heavier than the 40 it
+    /// was meant to reproduce. This is tuned by eye against the full-size original
+    /// rather than derived from it.
+    private static let backdropRenderScale: CGFloat = 0.5
+    private static let backdropBlurRadius: CGFloat = 10
+
+    /// Asks for a fresh backdrop once the springboard has settled.
+    ///
+    /// Every springboard change funnels through here — a page coming to rest, the
+    /// wallpaper or the icons changing, a rotation. Requests coalesce, and none of
+    /// them is ever on a path the user is waiting on: by the time the switcher can
+    /// be opened the image is already captured, blurred and decoded.
+    func scheduleSpringboardBackdropCapture(after delay: TimeInterval = 0) {
+        springboardBackdropDirty = true
+        pendingBackdropCapture?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.performBackdropCapture() }
+        pendingBackdropCapture = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0), execute: item)
     }
 
-    /// Blurs the backdrop once, at capture time, so the overlay can draw a plain image
-    /// instead of laying a live material over a sharp one.
-    ///
-    /// A `UIVisualEffectView` — which is what a SwiftUI material is — stops rendering
-    /// its blur as soon as an ancestor's alpha drops below 1. Dismissing the switcher
-    /// animates exactly that, so the material vanished on the first frame and exposed
-    /// the sharp springboard underneath it. A pre-blurred image has nothing to drop
-    /// out, and costs nothing at open time since this runs off the critical path.
-    private func blurredForBackdrop(_ image: UIImage) -> UIImage {
-        ciGaussianBlur(image, radius: 40).map(displayReady) ?? displayReady(image)
+    /// Takes the still, if this is a moment when the springboard is what a capture
+    /// would actually get. The guards are the whole correctness argument, so they
+    /// are evaluated here — when the work runs — never when it was asked for.
+    private func performBackdropCapture() {
+        pendingBackdropCapture = nil
+        guard let rootView = keyWindow?.rootViewController?.view,
+              rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
+
+        // Never while the switcher is up: the backdrop would change under the cards.
+        guard switcherOverlayController?.view.window == nil else { return }
+        // Nor through search, edit mode or a cover — all of which live inside the
+        // very view being rendered and would be baked into the image.
+        guard !springboardObscured,
+              keyWindow?.rootViewController?.presentedViewController == nil else { return }
+
+        if hasForegroundAppWindow() {
+            // An app reached the screen before this request could be served. The
+            // springboard is frozen behind it now, so the slow path — which hides
+            // the app host and rasterises the live tree — still yields exactly what
+            // the user left. It costs more, but it is paid during an app launch and
+            // never by the switcher.
+            captureSpringboardSnapshot()
+            return
+        }
+
+        // The springboard is the committed frame, so composite through the render
+        // server rather than rasterising all that glass in-process: ~40ms against
+        // ~380ms. Only valid in precisely this state, which is why it is guarded.
+        guard let image = renderSpringboardFrame(rootView) else {
+            // Falls back to the slower render, which hides the app views itself and
+            // so works whatever is on screen.
+            captureSpringboardSnapshot()
+            return
+        }
+        publishBackdrop(image)
     }
 
-    func refreshSpringboardSnapshotWhenVisible() {
-        // Deliberately *not* clearing the existing snapshot first: the overlay is
-        // still fading out at this point and uses it as its backdrop, so blanking it
-        // here let the app behind show through mid-exit. The old image stays until a
-        // new one is ready.
-        //
-        // The delay is for the same reason — the render must not catch the overlay
-        // itself, which is still on screen for the length of its exit animation.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self, self.isHomeState,
-                  self.switcherOverlayController?.view.window == nil,
-                  let rootView = self.keyWindow?.rootViewController?.view,
-                  rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
+    /// The fast render: composites the last committed frame through the render
+    /// server rather than rasterising all that glass in-process — ~40ms against
+    /// ~380ms. Valid only while the springboard is genuinely the frame on screen,
+    /// which is what every caller guards. Nil if the system declined to draw.
+    private func renderSpringboardFrame(_ rootView: UIView) -> UIImage? {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        format.scale = Self.backdropRenderScale
+        let bounds = rootView.bounds
+        var drawn = false
+        let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { _ in
+            drawn = rootView.drawHierarchy(in: bounds, afterScreenUpdates: false)
+        }
+        return drawn ? image : nil
+    }
 
-            // `drawHierarchy` rather than `layer.render(in:)`: it composites through
-            // the render server instead of rasterising the tree in-process, which
-            // measured ~40ms against ~380ms on a hierarchy this full of glass. It
-            // renders the last committed frame, so it can only be used here — where
-            // the springboard is the thing on screen and nothing needs hiding.
-            let format = UIGraphicsImageRendererFormat.default()
-            format.opaque = true
-            format.scale = 1
-            let renderer = UIGraphicsImageRenderer(bounds: rootView.bounds, format: format)
-            var drawn = false
-            let image = renderer.image { _ in
-                drawn = rootView.drawHierarchy(in: rootView.bounds, afterScreenUpdates: false)
-            }
-            // Falls back to the slower render, which hides the app views itself and so
-            // works whatever is on screen.
-            if drawn {
-                self.springboardSnapshot = self.blurredForBackdrop(image)
-            } else {
-                self.captureSpringboardSnapshot()
+    /// Blurred once here rather than by laying a material over a sharp image: a
+    /// UIVisualEffectView stops rendering as soon as an ancestor's alpha drops
+    /// below 1, and dismissing the switcher animates exactly that — so a live
+    /// material vanished on the first frame of the exit and exposed the sharp
+    /// springboard beneath. A blurred bitmap has nothing to lose.
+    ///
+    /// `preparingForDisplay` matters as much: a renderer image is lazy, and without
+    /// forcing the decode the switcher's first frame showed the live app through
+    /// the material while the bitmap decoded a frame or two later.
+    private static func blurredBackdrop(_ image: UIImage) -> UIImage {
+        let blurred = ciGaussianBlur(image, radius: backdropBlurRadius) ?? image
+        return blurred.preparingForDisplay() ?? blurred
+    }
+
+    /// Blurs and decodes off the main thread, then commits under a generation stamp
+    /// so a slow blur cannot land on top of a newer one. The blur is the expensive
+    /// half and nothing waits on it, so it has no business on the main thread.
+    private func publishBackdrop(_ image: UIImage) {
+        backdropCaptureGeneration += 1
+        let generation = backdropCaptureGeneration
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let ready = Self.blurredBackdrop(image)
+            DispatchQueue.main.async {
+                guard let self, generation == self.backdropCaptureGeneration else { return }
+                // Swapping the image while the overlay is on screen would change the
+                // backdrop under the user; keep the old one and repair later.
+                guard self.switcherOverlayController?.view.window == nil else {
+                    self.springboardBackdropDirty = true
+                    return
+                }
+                self.springboardSnapshot = ready
+                self.springboardBackdropDirty = false
             }
         }
     }
 
-    func captureSpringboardSnapshot() {
+    func captureSpringboardSnapshot(synchronously: Bool = false) {
         guard let rootView = keyWindow?.rootViewController?.view,
               rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
         let wasHidden = windowHostingView.isHidden
@@ -1840,8 +1916,8 @@ class AppInfoProvider {
 
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = true
-        // Blurred behind the cards anyway — render at 1x, not full retina.
-        format.scale = 1
+        // Blurred behind the cards anyway — a fraction of a point, not full retina.
+        format.scale = Self.backdropRenderScale
         let renderer = UIGraphicsImageRenderer(bounds: rootView.bounds, format: format)
         let image = renderer.image { ctx in
             rootView.layer.render(in: ctx.cgContext)
@@ -1849,7 +1925,17 @@ class AppInfoProvider {
 
         for v in hiddenEffectViews { v.isHidden = false }
         windowHostingView.isHidden = wasHidden
-        springboardSnapshot = blurredForBackdrop(image)
+
+        if synchronously {
+            // The one path with nothing to wait for it: the overlay is about to be
+            // built and needs a backdrop in the same turn, or its first frame is
+            // black. Cheap enough at this scale to sit on that path once a session.
+            backdropCaptureGeneration += 1
+            springboardSnapshot = Self.blurredBackdrop(image)
+            springboardBackdropDirty = false
+        } else {
+            publishBackdrop(image)
+        }
     }
 
     func captureSnapshots() {
@@ -2097,13 +2183,23 @@ class AppInfoProvider {
         // over-tall solid chin.
         captureBarDesign()
 
-        // The springboard snapshot is the overlay's blurred backdrop, so it is taken
-        // here — after any rotation — to match the portrait overlay it sits behind.
-        // Reuse the cached backdrop. The springboard is behind an app the whole time
-        // the switcher can be opened, so it cannot have changed since it was last
-        // captured — rendering it again on every open was the largest single cost of
-        // opening the switcher, for an identical image.
-        if springboardSnapshot == nil { captureSpringboardSnapshot() }
+        // Normally nothing happens here. The backdrop is captured whenever the
+        // springboard settles unobscured, so by now it is current, blurred and
+        // decoded — rendering one on this path was the largest single cost of
+        // opening the switcher, and it is gone.
+        //
+        // Only a session that never showed the springboard at all — launched
+        // straight into an app by URL scheme — can arrive with nothing, and an
+        // overlay with no backdrop opens onto flat black. Render one now.
+        //
+        // Deliberately NOT re-rendering merely because the image is marked dirty:
+        // a stale backdrop differs by whatever changed while the springboard was
+        // covered, which under a 40pt blur is nothing anyone can see, and paying
+        // a render here is the exact delay this rework exists to remove. The
+        // pending capture repairs it on its own.
+        if springboardSnapshot == nil {
+            captureSpringboardSnapshot(synchronously: true)
+        }
         refreshCachedSafeAreaInsets()
         // Sync the preference to whatever control is actually active right now,
         // so the overlay's toggle reflects the current state — the user may have
@@ -2191,7 +2287,7 @@ class AppInfoProvider {
         minimizeAllWindows()
         updateFrontmostApp()
         isHomeState = true
-        refreshSpringboardSnapshotWhenVisible()
+        scheduleSpringboardBackdropCapture(after: 0.5)
         hideDock()
         refreshOrientationLock()
         guard let overlay = switcherOverlayController else { return }
@@ -2371,7 +2467,7 @@ class AppInfoProvider {
             }
             // All apps closed: we are back on the springboard.
             self.isHomeState = true
-            self.refreshSpringboardSnapshotWhenVisible()
+            self.scheduleSpringboardBackdropCapture(after: 0.5)
             self.hideDock()
         }
     }

@@ -36,6 +36,10 @@ final class LCSpringboardViewController: UIViewController {
     var onReorder: (([FlekHomeItem]) -> Void)?
     var onEditingChanged: ((Bool) -> Void)?
     var contextMenuProvider: ((FlekHomeItem) -> UIMenu?)?
+    /// Fires once a page has come to rest, after it is on screen. Distinct from
+    /// `scrollViewDidScroll`, which runs every frame of a swipe and flips
+    /// `currentPage` halfway through it — too early and far too often to act on.
+    var onPageSettled: (() -> Void)?
 
     // MARK: - UI
 
@@ -618,6 +622,21 @@ extension LCSpringboardViewController: UIScrollViewDelegate {
             currentPage = page
             pageControl.currentPage = page
         }
+    }
+
+    // The three ways a page can come to rest: carried there by momentum, released
+    // without any, or moved programmatically by the page dots.
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        onPageSettled?()
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { onPageSettled?() }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        onPageSettled?()
     }
 }
 

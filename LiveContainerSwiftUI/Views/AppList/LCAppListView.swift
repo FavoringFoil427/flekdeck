@@ -191,6 +191,36 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
     @Environment(\.colorScheme) private var colorScheme
+
+    @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
+    private var backdropWallpaperName: String = ""
+    @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
+    private var backdropWallpaperPhoto: String = ""
+
+    /// Whether something is currently drawn over the springboard. The switcher's
+    /// backdrop is rendered from this same view, so a capture taken now would bake
+    /// the search sheet or a cover into it; the dock has no way to see that from
+    /// its side, so it is told.
+    private var springboardObscured: Bool {
+        showSearch || isEditing || showSettingsCover || showInstallerCover
+            || gameWarningTarget != nil
+    }
+
+    /// Everything that changes what a capture of the springboard would look like.
+    ///
+    /// Install progress is deliberately absent: it ticks continuously, and a
+    /// backdrop frozen at whatever progress it had is correct rather than stale.
+    private var springboardBackdropSignature: String {
+        [
+            homeLayout,
+            String(darkModeIcon),
+            String(colorScheme == .dark),
+            String(orderedHomeItems.count),
+            backdropWallpaperName,
+            backdropWallpaperPhoto,
+            String(springboardObscured),
+        ].joined(separator: "|")
+    }
     
     @ObservedObject var searchContext: SearchContext
     /// The device's own bottom safe-area inset — the home indicator, if there is one.
@@ -355,6 +385,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 flekstoreSharedModel.appInstallURL = ""
             }
             rebuildOrderedHomeItems()
+            requestSwitcherBackdropCapture()
+        }
+        // Anything that changes the springboard's appearance re-takes the switcher's
+        // backdrop, so it is always the springboard as the user last saw it. The
+        // delay lets the change finish arriving — the search overlay's fade is 0.25s,
+        // a delete's batch animation the same — since the capture must see the frame
+        // that settled, not the one on the way to it.
+        .onChange(of: springboardBackdropSignature) { _ in
+            requestSwitcherBackdropCapture()
         }
         .onChange(of: sharedAppSortManager.sortedApps.count) { _ in
             rebuildOrderedHomeItems()
@@ -705,6 +744,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     },
                     onReorder: { handleHomeReorder() },
                     contextMenuProvider: { homeUIMenu(for: $0) },
+                    // A page coming to rest is the one springboard change with no
+                    // SwiftUI signal, and the one behind a backdrop showing the
+                    // wrong page. Taken almost at once: the switcher button sits
+                    // right there on the home bar, and the gap between letting go
+                    // of a swipe and reaching for it is the only cover this has.
+                    onPageSettled: { requestSwitcherBackdropCapture(after: 0.05) },
                     scrollToPage: $homeScrollToPage
                 )
                 // Grid keeps the original fixed insets (list handles its own).
@@ -1031,6 +1076,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     
+
+    /// Tells the dock the springboard settled, so it can re-take the blurred still
+    /// it shows behind the switcher cards. Cheap to call often: requests coalesce,
+    /// and one is dropped outright if this is not a moment the springboard can be
+    /// captured in.
+    private func requestSwitcherBackdropCapture(after delay: TimeInterval = 0.3) {
+        guard #available(iOS 16.0, *) else { return }
+        MultitaskDockManager.shared.springboardObscured = springboardObscured
+        MultitaskDockManager.shared.scheduleSpringboardBackdropCapture(after: delay)
+    }
 
     func handleHomeTap(_ item: FlekHomeItem) {
         switch item {
