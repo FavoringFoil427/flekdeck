@@ -48,25 +48,140 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     // MARK: - Layout config
 
-    static let columns: Int = 3
+    /// Columns on iPhone, and in any window too narrow for the iPad grid.
+    static let phoneColumns: Int = 3
+    private static let phoneSpacing: CGFloat = 12
+
+    /// Narrowest window that gets the iPad grid. Below it — Slide Over, a small
+    /// Stage Manager window — the phone's three columns suit the width better.
+    private static let padMinWidth: CGFloat = 600
+
+    /// The iPad grid is fixed rather than derived from the height, and both ways
+    /// up hold 24 icons. Page boundaries are persisted, so a capacity that
+    /// changed with orientation would repaginate the home screen on every turn.
+    private static let padPortraitGrid = (columns: 4, rows: 6)
+    private static let padLandscapeGrid = (columns: 6, rows: 4)
+
+    /// Share of the width the iPad grid spans. The rest is the side margin that
+    /// keeps it a centred block rather than icons strewn from edge to edge.
+    private static let padGridWidthFraction: CGFloat = 0.66
+    /// A cell's share of its column; the remainder is the gap to the next one.
+    /// Most of it: the icon inside stays the 75pt it is on iPhone, so the space
+    /// an iPad's width buys goes into the glass card around the icon rather than
+    /// into the gaps, which otherwise read as icons stranded far apart.
+    private static let padCellWidthFraction: CGFloat = 0.86
+    /// Bounds on the iPad cell. The icon inside is a fixed 75pt, so the cell can
+    /// neither crowd it nor grow so large that it is adrift in the card.
+    private static let padCellWidthRange: ClosedRange<CGFloat> = 104...132
+    /// Height an iPad cell never goes below — what the phone's cell has, which is
+    /// what the fixed-size icon and its label need to sit comfortably.
+    private static let padMinCellHeight: CGFloat = 121
+    private static let padMinSpacing: CGFloat = 14
+    /// Widest gap between iPad cells. Past this the spare space goes to the
+    /// margins instead, so a larger iPad gets a bigger grid, not a sparser one.
+    private static let padMaxSpacing: CGFloat = 20
+    /// Room kept below the last row for the page dots, which sit at the bottom
+    /// of the springboard view.
+    private static let padBottomReserve: CGFloat = 34
+
+    /// Padding `LCAppListView` puts around the springboard. Callers with no view
+    /// to measure need it to work out the page size from the screen.
+    static let gridTopPadding: CGFloat = 8
+    static let gridBottomPadding: CGFloat = 89
+
+    /// Whether a page of this size uses the iPad grid.
+    static func usesPadGrid(pageSize: CGSize) -> Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && pageSize.width >= padMinWidth
+    }
+
+    private static func padGrid(forPageSize size: CGSize) -> (columns: Int, rows: Int) {
+        size.width > size.height ? padLandscapeGrid : padPortraitGrid
+    }
+
+    static func columns(forPageSize size: CGSize) -> Int {
+        usesPadGrid(pageSize: size) ? padGrid(forPageSize: size).columns : phoneColumns
+    }
+
+    /// Width one column occupies on iPad, cell plus the gap that follows it.
+    private static func padColumnPitch(forPageSize size: CGSize) -> CGFloat {
+        size.width * padGridWidthFraction / CGFloat(padGrid(forPageSize: size).columns)
+    }
 
     /// Dynamic cell width with tight margins to maximise icon size.
-    static func computeCellWidth(forWidth width: CGFloat) -> CGFloat {
-        let screenWidth = max(width, 320)
-        let sidePadding: CGFloat = screenWidth >= 390 ? 16 : 12
-        let cols = CGFloat(columns)
-        let totalSpacing: CGFloat = 12 * (cols - 1)
-        let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
-        return floor(availableWidth / cols)
+    static func computeCellWidth(forPageSize size: CGSize) -> CGFloat {
+        guard usesPadGrid(pageSize: size) else {
+            let screenWidth = max(size.width, 320)
+            let sidePadding: CGFloat = screenWidth >= 390 ? 16 : 12
+            let cols = CGFloat(phoneColumns)
+            let totalSpacing: CGFloat = phoneSpacing * (cols - 1)
+            let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
+            return floor(availableWidth / cols)
+        }
+        let target = padColumnPitch(forPageSize: size) * padCellWidthFraction
+        return floor(min(max(target, padCellWidthRange.lowerBound), padCellWidthRange.upperBound))
+    }
+
+    static func computeCellHeight(forPageSize size: CGSize) -> CGFloat {
+        let fromAspect = floor(computeCellWidth(forPageSize: size) * 64.0 / 59.0)
+        return usesPadGrid(pageSize: size) ? max(fromAspect, padMinCellHeight) : fromAspect
+    }
+
+    static func interitemSpacing(forPageSize size: CGSize) -> CGFloat {
+        guard usesPadGrid(pageSize: size) else { return phoneSpacing }
+        let gap = padColumnPitch(forPageSize: size) - computeCellWidth(forPageSize: size)
+        return floor(min(max(gap, padMinSpacing), padMaxSpacing))
     }
 
     /// Horizontal margin: centres the grid with leftover space.
-    static func computeHorizontalInset(forWidth width: CGFloat) -> CGFloat {
-        let screenWidth = max(width, 320)
-        let cols = CGFloat(columns)
-        let totalSpacing: CGFloat = 12 * (cols - 1)
-        let cellWidth = computeCellWidth(forWidth: screenWidth)
-        return max(4, (screenWidth - (cellWidth * cols) - totalSpacing) / 2)
+    static func computeHorizontalInset(forPageSize size: CGSize) -> CGFloat {
+        let screenWidth = max(size.width, 320)
+        let cols = CGFloat(columns(forPageSize: size))
+        let totalSpacing = interitemSpacing(forPageSize: size) * (cols - 1)
+        let cellWidth = computeCellWidth(forPageSize: size)
+        let inset = (screenWidth - (cellWidth * cols) - totalSpacing) / 2
+        // Floored on iPad so a fractional point can never leave the row a hair
+        // too narrow for its last column, which would drop it to the next line.
+        return max(4, usesPadGrid(pageSize: size) ? floor(inset) : inset)
+    }
+
+    /// Rows, line spacing and the inset that centres them vertically, for the
+    /// iPad grid. The row count is fixed but gives way when a window is too
+    /// short to hold it, so the last row can never end up under the dock.
+    private static func padVerticalLayout(forPageSize size: CGSize)
+        -> (rows: Int, lineSpacing: CGFloat, topInset: CGFloat) {
+        let cellHeight = computeCellHeight(forPageSize: size)
+        let available = max(0, size.height - padBottomReserve)
+
+        var rows = padGrid(forPageSize: size).rows
+        while rows > 1,
+              CGFloat(rows) * cellHeight + CGFloat(rows - 1) * padMinSpacing > available {
+            rows -= 1
+        }
+
+        let leftover = available - CGFloat(rows) * cellHeight
+        let spacing = rows > 1
+            ? floor(min(max(leftover / CGFloat(rows + 1), padMinSpacing), padMaxSpacing))
+            : 0
+        let gridHeight = CGFloat(rows) * cellHeight + CGFloat(rows - 1) * spacing
+        return (rows, spacing, max(0, floor((available - gridHeight) / 2)))
+    }
+
+    /// Icons an iPad page holds, or nil at a size that uses the phone grid and
+    /// so derives its count from the height instead.
+    static func padItemsPerPage(forPageSize size: CGSize) -> Int? {
+        guard usesPadGrid(pageSize: size) else { return nil }
+        return max(1, padVerticalLayout(forPageSize: size).rows * columns(forPageSize: size))
+    }
+
+    /// The springboard's own size on a screen of the given size: the safe area
+    /// and the padding around the grid taken off. For callers that have no view
+    /// to measure but need to arrive at the same page capacity.
+    static func estimatedPageSize(screenSize: CGSize, safeAreaInsets: UIEdgeInsets) -> CGSize {
+        CGSize(
+            width: screenSize.width - safeAreaInsets.left - safeAreaInsets.right,
+            height: screenSize.height - safeAreaInsets.top - safeAreaInsets.bottom
+                - gridTopPadding - gridBottomPadding
+        )
     }
 
     // MARK: - Init
@@ -95,14 +210,25 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     private func updateFlowLayout() {
         guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return }
 
-        let width = contentView.bounds.width
-        let cellWidth = Self.computeCellWidth(forWidth: width)
-        let inset = Self.computeHorizontalInset(forWidth: width)
+        let size = contentView.bounds.size
+        let inset = Self.computeHorizontalInset(forPageSize: size)
 
-        layout.itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 64.0 / 59.0))
-        layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 12, right: inset)
-        layout.minimumInteritemSpacing = 12
-        layout.minimumLineSpacing = 8
+        layout.itemSize = CGSize(width: Self.computeCellWidth(forPageSize: size),
+                                 height: Self.computeCellHeight(forPageSize: size))
+        layout.minimumInteritemSpacing = Self.interitemSpacing(forPageSize: size)
+
+        if Self.usesPadGrid(pageSize: size) {
+            // The iPad grid no longer fills the height it is given, so centre it
+            // in what is left above the page dots rather than hanging it from
+            // the top with all the slack below the last row.
+            let vertical = Self.padVerticalLayout(forPageSize: size)
+            layout.minimumLineSpacing = vertical.lineSpacing
+            layout.sectionInset = UIEdgeInsets(top: vertical.topInset, left: inset,
+                                               bottom: Self.padBottomReserve, right: inset)
+        } else {
+            layout.minimumLineSpacing = 8
+            layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 12, right: inset)
+        }
     }
 
     // MARK: - Edit mode
@@ -133,6 +259,9 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     /// Calculates how many rows fit in the current page height.
     func rowsPerPage() -> Int {
+        if Self.usesPadGrid(pageSize: contentView.bounds.size) {
+            return Self.padVerticalLayout(forPageSize: contentView.bounds.size).rows
+        }
         guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return 5 }
         let cellHeight = layout.itemSize.height
         let topInset = layout.sectionInset.top
@@ -143,7 +272,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     }
 
     func itemsPerPage() -> Int {
-        return rowsPerPage() * Self.columns
+        return rowsPerPage() * Self.columns(forPageSize: contentView.bounds.size)
     }
 
     /// Reload items, deferring if a context menu is active to avoid cell reuse glitches.

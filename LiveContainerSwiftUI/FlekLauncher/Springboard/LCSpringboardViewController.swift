@@ -50,7 +50,6 @@ final class LCSpringboardViewController: UIViewController {
     // MARK: - Layout config
 
     private(set) var itemsPerPage: Int = 15
-    private let columns: Int = LCSpringboardPageCell.columns
 
     // MARK: - Lifecycle
 
@@ -237,6 +236,13 @@ final class LCSpringboardViewController: UIViewController {
     /// `clipsToBounds = false`, allowing the last row to overflow into the
     /// dock area — matching the real iOS SpringBoard's compact spacing.
     private func recalculateItemsPerPage() {
+        // iPad's grid is fixed, and portrait and landscape hold the same number,
+        // so a page keeps its contents when the device is turned.
+        if let padCount = LCSpringboardPageCell.padItemsPerPage(forPageSize: view.bounds.size) {
+            itemsPerPage = padCount
+            return
+        }
+
         let screenH = UIScreen.main.bounds.height
         let topSafe = view.window?.safeAreaInsets.top ?? 59
         let topPad: CGFloat = 8
@@ -246,11 +252,10 @@ final class LCSpringboardViewController: UIViewController {
         let pageControlHeight: CGFloat = 30
         let pageHeight = effectiveHeight - pageControlHeight
 
-        let cellWidth = LCSpringboardPageCell.computeCellWidth(forWidth: view.bounds.width)
-        let cellHeight = floor(cellWidth * 64.0 / 59.0)
+        let cellHeight = LCSpringboardPageCell.computeCellHeight(forPageSize: view.bounds.size)
         let lineSpacing: CGFloat = 8
         let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
-        itemsPerPage = rows * columns
+        itemsPerPage = rows * LCSpringboardPageCell.phoneColumns
     }
 
     /// Flatten `pages` back into a single array, padding non-last pages

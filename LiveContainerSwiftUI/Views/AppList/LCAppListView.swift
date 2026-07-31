@@ -708,8 +708,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     scrollToPage: $homeScrollToPage
                 )
                 // Grid keeps the original fixed insets (list handles its own).
-                .padding(.top, 8)
-                .padding(.bottom, 89)
+                // Shared with the grid maths, which works the page size back out
+                // from the screen when there is no view to measure.
+                .padding(.top, LCSpringboardPageCell.gridTopPadding)
+                .padding(.bottom, LCSpringboardPageCell.gridBottomPadding)
             }
         }
     }
@@ -976,18 +978,28 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // Estimate itemsPerPage from screen geometry
         // (mirrors LCSpringboardViewController.recalculateItemsPerPage)
         let screenBounds = UIScreen.main.bounds
-        let cellSize = LCSpringboardPageCell.computeCellWidth(forWidth: screenBounds.width)
-        let cellHeight = floor(cellSize * 64.0 / 59.0)
-        let pageControlHeight: CGFloat = 30
-        let topSafe = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.windows.first?.safeAreaInsets.top }
-            .first ?? 59
-        let topPad: CGFloat = 8
-        let lineSpacing: CGFloat = 8
-        let effectiveHeight = screenBounds.height - topSafe - topPad
-        let pageHeight = effectiveHeight - pageControlHeight
-        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
-        let ipp = max(1, rows * LCSpringboardPageCell.columns)
+        let safeArea = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.windows.first?.safeAreaInsets }
+            .first ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+        let pageSize = LCSpringboardPageCell.estimatedPageSize(
+            screenSize: screenBounds.size,
+            safeAreaInsets: safeArea
+        )
+
+        let ipp: Int
+        if let padCount = LCSpringboardPageCell.padItemsPerPage(forPageSize: pageSize) {
+            // iPad: a fixed grid, the same count whichever way it is held.
+            ipp = padCount
+        } else {
+            let cellHeight = LCSpringboardPageCell.computeCellHeight(forPageSize: pageSize)
+            let pageControlHeight: CGFloat = 30
+            let topPad: CGFloat = 8
+            let lineSpacing: CGFloat = 8
+            let effectiveHeight = screenBounds.height - safeArea.top - topPad
+            let pageHeight = effectiveHeight - pageControlHeight
+            let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
+            ipp = max(1, rows * LCSpringboardPageCell.phoneColumns)
+        }
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
         if !sizes.isEmpty {

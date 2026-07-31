@@ -193,7 +193,7 @@ final class LCSpringboardDragManager {
         let touchInPage = gesture.location(in: pageCell.collectionView)
         guard let layout = pageCell.collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return }
 
-        let appsPerRow = LCSpringboardPageCell.columns
+        let appsPerRow = LCSpringboardPageCell.columns(forPageSize: pageCell.bounds.size)
 
         var destinationIndex: Int
         var isEdgeCell = false
