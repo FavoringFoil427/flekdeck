@@ -815,10 +815,16 @@ class AppInfoProvider {
                     // Dismiss overlay without restoring bar (since we're hiding dock next)
                     self.isAppSwitcherOpen = false
                     if let overlay = self.switcherOverlayController {
-                        UIView.animate(withDuration: Constants.shortAnimationDuration1, delay: 0, options: .curveEaseIn) {
+                        // Eased out over the standard duration: this uncovers the live
+                        // springboard, whose icons carry glass the backdrop's snapshot
+                        // does not, and a short ease-in dropped that difference in on
+                        // the last frame.
+                        UIView.animate(withDuration: Constants.standardAnimationDuration,
+                                       delay: 0, options: .curveEaseOut) {
                             overlay.view.alpha = 0
                         } completion: { _ in
                             overlay.view.removeFromSuperview()
+                            overlay.view.alpha = 1
                         }
                     }
                 }
@@ -2203,7 +2209,16 @@ class AppInfoProvider {
             self.isClosingAll = false
             self.isAppSwitcherOpen = false
             if let overlay = self.switcherOverlayController {
-                overlay.view.removeFromSuperview()
+                // Faded rather than whipped away. Behind it is the live springboard,
+                // and the backdrop it is covering has no glass on its icons — pulling
+                // it in one frame made every card's glass snap into existence at once.
+                UIView.animate(withDuration: Constants.standardAnimationDuration,
+                               delay: 0, options: .curveEaseOut) {
+                    overlay.view.alpha = 0
+                } completion: { _ in
+                    overlay.view.removeFromSuperview()
+                    overlay.view.alpha = 1
+                }
             }
             // All apps closed: we are back on the springboard.
             self.isHomeState = true
@@ -2704,6 +2719,14 @@ struct AppSwitcherOverlay: View {
             // resting on it made the glass look like it "appears". Fading it away reveals
             // the LIVE springboard behind the (cleared) overlay, glass already intact.
             .opacity(exiting ? 0 : 1)
+            // Eased out, not in, and on its own curve rather than the one carrying the
+            // cards away. The cards want to accelerate off the screen; the backdrop is
+            // uncovering the real springboard underneath, and easing in held it at full
+            // opacity for most of the animation before dropping it — so the icons' glass
+            // arrived all at once at the very end, which is the pop this fade exists to
+            // prevent. Easing out spends the opacity early and lets the last of it go
+            // gently, so the glass comes up rather than snapping in.
+            .animation(.easeOut(duration: 0.3), value: exiting)
             
             VStack(spacing: 0) {
                 // Pin the content near the top with a small margin below the
