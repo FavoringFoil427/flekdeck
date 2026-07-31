@@ -76,10 +76,10 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// Height an iPad cell never goes below — room for the 82pt icon and its
     /// label with the same breathing space the phone's 121pt cell gives its 75pt.
     private static let padMinCellHeight: CGFloat = 130
-    private static let padMinSpacing: CGFloat = 14
+    private static let padMinSpacing: CGFloat = 16
     /// Widest gap between iPad cells. Past this the spare space goes to the
     /// margins instead, so a larger iPad gets a bigger grid, not a sparser one.
-    private static let padMaxSpacing: CGFloat = 18
+    private static let padMaxSpacing: CGFloat = 20
     /// Room kept below the last row for the page dots, which sit at the bottom
     /// of the springboard view.
     private static let padBottomReserve: CGFloat = 34
@@ -158,10 +158,21 @@ final class LCSpringboardPageCell: UICollectionViewCell {
             rows -= 1
         }
 
-        let leftover = available - CGFloat(rows) * cellHeight
-        let spacing = rows > 1
-            ? floor(min(max(leftover / CGFloat(rows + 1), padMinSpacing), padMaxSpacing))
-            : 0
+        // Rows sit exactly as far apart as columns, so the grid reads as one
+        // lattice rather than two spacings that happen to be close. The height
+        // left over is not shared out between the rows to fill it — it becomes
+        // the inset that centres them, which is what keeps the two equal.
+        let target = interitemSpacing(forPageSize: size)
+        let spacing: CGFloat
+        if rows > 1 {
+            // All the room there is, if the window cannot give it the full gap.
+            // The row-count guard above already promised at least `padMinSpacing`,
+            // so this can only narrow the gap, never close it.
+            let widest = (available - CGFloat(rows) * cellHeight) / CGFloat(rows - 1)
+            spacing = min(target, floor(widest))
+        } else {
+            spacing = 0
+        }
         let gridHeight = CGFloat(rows) * cellHeight + CGFloat(rows - 1) * spacing
         return (rows, spacing, max(0, floor((available - gridHeight) / 2)))
     }
