@@ -66,20 +66,20 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// keeps it a centred block rather than icons strewn from edge to edge.
     private static let padGridWidthFraction: CGFloat = 0.66
     /// A cell's share of its column; the remainder is the gap to the next one.
-    /// Most of it: the icon inside stays the 75pt it is on iPhone, so the space
-    /// an iPad's width buys goes into the glass card around the icon rather than
-    /// into the gaps, which otherwise read as icons stranded far apart.
-    private static let padCellWidthFraction: CGFloat = 0.86
-    /// Bounds on the iPad cell. The icon inside is a fixed 75pt, so the cell can
-    /// neither crowd it nor grow so large that it is adrift in the card.
-    private static let padCellWidthRange: ClosedRange<CGFloat> = 104...132
-    /// Height an iPad cell never goes below — what the phone's cell has, which is
-    /// what the fixed-size icon and its label need to sit comfortably.
-    private static let padMinCellHeight: CGFloat = 121
+    /// Nearly all of it: the column pitch is fixed by the grid's span, so what the
+    /// cell takes the gap gives up — a big card with tight gaps reads as a grid of
+    /// icons rather than icons stranded far apart.
+    private static let padCellWidthFraction: CGFloat = 0.95
+    /// Bounds on the iPad cell, sized around its 82pt icon: the cell can neither
+    /// crowd the icon nor grow so large that it is adrift in the card.
+    private static let padCellWidthRange: ClosedRange<CGFloat> = 114...145
+    /// Height an iPad cell never goes below — room for the 82pt icon and its
+    /// label with the same breathing space the phone's 121pt cell gives its 75pt.
+    private static let padMinCellHeight: CGFloat = 130
     private static let padMinSpacing: CGFloat = 14
     /// Widest gap between iPad cells. Past this the spare space goes to the
     /// margins instead, so a larger iPad gets a bigger grid, not a sparser one.
-    private static let padMaxSpacing: CGFloat = 20
+    private static let padMaxSpacing: CGFloat = 18
     /// Room kept below the last row for the page dots, which sit at the bottom
     /// of the springboard view.
     private static let padBottomReserve: CGFloat = 34

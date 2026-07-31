@@ -167,8 +167,11 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Layout constants
 
-    static let iconSize: CGFloat = 75
-    private static let iconCornerRadius: CGFloat = 17   // 22.37% of iconSize (75 * 0.2237)
+    /// A tenth larger on iPad, matching its larger glass card — the fixed 75pt
+    /// icon read as small inside it. iPhone keeps its exact size.
+    static let iconSize: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 82 : 75
+    private static let iconCornerRadius: CGFloat =
+        UIDevice.current.userInterfaceIdiom == .pad ? 18 : 17   // 22.37% of iconSize
     private static let deleteButtonSize: CGFloat = 24
     
     private static let cardCorner: CGFloat = 24
