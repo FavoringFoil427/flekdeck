@@ -215,13 +215,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// pushed the bar off the bottom of the screen — there, fall back to the grid's
     /// margin instead.
     private var homeBottomBarInset: CGFloat {
-        // iPad landscape sits the bar lower, for the same reason the page dots do:
-        // the grid fills nearly the whole height there, so the default margin leaves
-        // the bar crowding the icons above it.
-        if UIDevice.current.userInterfaceIdiom == .pad,
-           UIScreen.main.bounds.width > UIScreen.main.bounds.height {
-            return -4
-        }
         guard homeLayout == FlekHomeLayout.list.rawValue else { return 5 }
         return homeBottomSafeInset > 2 ? -9 : 5
     }
@@ -993,12 +986,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         let lineSpacing: CGFloat = 8
         let effectiveHeight = screenBounds.height - topSafe - topPad
         let pageHeight = effectiveHeight - pageControlHeight
-        let rows = min(max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing))),
-                       LCSpringboardPageCell.maxRows(forWidth: screenBounds.width))
-        let fitting = rows * LCSpringboardPageCell.columns(forWidth: screenBounds.width)
-        let ipp = max(1, min(fitting,
-                             LCSpringboardPageCell.maxItemsPerPage(screenSize: screenBounds.size,
-                                                                   topSafeInset: topSafe)))
+        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        let ipp = max(1, rows * LCSpringboardPageCell.columns)
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
         if !sizes.isEmpty {
