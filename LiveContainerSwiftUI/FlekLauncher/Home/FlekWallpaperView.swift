@@ -125,7 +125,14 @@ private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 func ciGaussianBlur(_ image: UIImage, radius: CGFloat) -> UIImage? {
     guard let ciImage = CIImage(image: image) else { return nil }
     let filter = CIFilter.gaussianBlur()
-    filter.inputImage = ciImage
+    // Edge pixels stretched outward before blurring, so the kernel has something
+    // to average against out there. An image has nothing beyond its bounds — the
+    // filter reads transparent black — and near an edge more and more of the
+    // kernel falls into that emptiness, darkening and fading the border into the
+    // vignette that framed every blurred wallpaper and switcher backdrop.
+    // Clamping is free: the extended image is infinite but only the part the crop
+    // below asks for is ever rendered.
+    filter.inputImage = ciImage.clampedToExtent()
     filter.radius = Float(radius)
     guard let output = filter.outputImage else { return nil }
     // CIGaussianBlur expands the image; crop back to original extent
