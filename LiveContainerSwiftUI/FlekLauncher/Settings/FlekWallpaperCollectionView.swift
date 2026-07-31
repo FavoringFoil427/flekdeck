@@ -15,6 +15,9 @@ struct FlekWallpaperCollectionView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 14)]
 
+    /// Every tile is this tall, and as wide as its column.
+    private let tileHeight: CGFloat = 180
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -26,9 +29,20 @@ struct FlekWallpaperCollectionView: View {
                             photoWallpaper = ""
                             dismiss()
                         } label: {
-                            wallpaper.thumbnail()
-                                .frame(height: 180)
+                            // The tile fixes its own size and the wallpaper fills
+                            // it, rather than the wallpaper being given a frame and
+                            // sizing it back. A `scaledToFill` image reports the
+                            // size its own proportions need, not the one it was
+                            // offered, so letting it lead made a tile as tall or as
+                            // wide as whatever picture happened to be in it. An
+                            // empty, fully flexible base takes the column's width
+                            // and this height every time; as its overlay, the
+                            // wallpaper is handed exactly that frame to fill and is
+                            // clipped to it, whatever shape it started as.
+                            Color.clear
                                 .frame(maxWidth: .infinity)
+                                .frame(height: tileHeight)
+                                .overlay { wallpaper.thumbnail() }
                                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 18, style: .continuous)
