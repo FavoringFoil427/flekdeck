@@ -25,9 +25,10 @@ enum FlekWallpaper: Identifiable, Equatable {
         }
     }
 
-    static let defaultDescriptor = "asset:FlekWallpaperDefault"
+    static let defaultDescriptor = "asset:wallpaper0"
 
     static let collection: [FlekWallpaper] = [
+        .asset("wallpaper0"),
         .asset("FlekWallpaperDefault"),
         .asset("wallpaper1"),
         .asset("wallpaper2"),
@@ -53,7 +54,7 @@ enum FlekWallpaper: Identifiable, Equatable {
         if descriptor.hasPrefix("asset:") {
             return .asset(String(descriptor.dropFirst("asset:".count)))
         }
-        return .asset("FlekWallpaperDefault")
+        return .asset("wallpaper0")
     }
 
     @ViewBuilder
