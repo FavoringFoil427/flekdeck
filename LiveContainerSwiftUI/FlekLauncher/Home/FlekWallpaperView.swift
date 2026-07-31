@@ -187,7 +187,22 @@ struct FlekBlurredWallpaperOverlay: View {
         .onChange(of: wallpaperPhoto) { _ in generateBlurred() }
     }
 
+    /// Blurred wallpapers, keyed by what produced them. `generateBlurred` runs on
+    /// every appear — including each return from an app — and a Gaussian blur over a
+    /// full-screen image is not cheap to repeat for a result that cannot have changed.
+    private static let blurCache = NSCache<NSString, UIImage>()
+
+    static func clearBlurCache() {
+        blurCache.removeAllObjects()
+    }
+
     private func generateBlurred() {
+        let cacheKey = "\(wallpaperPhoto)|\(wallpaperDescriptor)|\(radius)" as NSString
+        if let cached = Self.blurCache.object(forKey: cacheKey) {
+            blurredImage = cached
+            return
+        }
+
         let screenSize = UIScreen.main.bounds.size
         let sourceImage: UIImage?
 
@@ -211,6 +226,7 @@ struct FlekBlurredWallpaperOverlay: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = ciGaussianBlur(source, radius: radius)
             DispatchQueue.main.async {
+                if let result { Self.blurCache.setObject(result, forKey: cacheKey) }
                 blurredImage = result
             }
         }

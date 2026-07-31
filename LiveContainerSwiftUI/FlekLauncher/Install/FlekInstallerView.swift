@@ -680,7 +680,10 @@ struct FlekInstallerView: View {
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive })
             ?? (UIApplication.shared.connectedScenes.first as? UIWindowScene) {
+            // Matches the dock's own rule: on iPad the bar stays along the bottom in
+            // both orientations, so bottom content must keep making room for it.
             barIsLandscape = scene.interfaceOrientation.isLandscape
+                && UIDevice.current.userInterfaceIdiom != .pad
         }
         if #available(iOS 16.0, *) {
             let mgr = MultitaskDockManager.shared

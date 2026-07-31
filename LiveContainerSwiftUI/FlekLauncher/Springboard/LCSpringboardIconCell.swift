@@ -370,16 +370,35 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     /// Pre-renders an image with rounded corners baked into the pixels.
     /// Avoids using a layer mask which iOS 26 detects and applies an
     /// unwanted Liquid Glass specular highlight to.
-    private static func roundedImage(_ image: UIImage?, size: CGFloat, radius: CGFloat) -> UIImage? {
+    /// Rounded icons, keyed so a cell being recycled reuses one instead of drawing it
+    /// again. `configure` runs for every dequeued cell, so paging a full screen of
+    /// icons was re-rendering each of them — up to a page's worth per swipe.
+    private static let roundedCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    static func clearRoundedImageCache() {
+        roundedCache.removeAllObjects()
+    }
+
+    private static func roundedImage(_ image: UIImage?, size: CGFloat, radius: CGFloat,
+                                     cacheKey: String? = nil) -> UIImage? {
         guard let image else { return nil }
+        let key = cacheKey.map { "\($0)|\(size)|\(radius)" as NSString }
+        if let key, let cached = roundedCache.object(forKey: key) { return cached }
+
         let rect = CGRect(x: 0, y: 0, width: size, height: size)
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
         format.scale = UIScreen.main.scale
-        return UIGraphicsImageRenderer(size: rect.size, format: format).image { _ in
+        let rendered = UIGraphicsImageRenderer(size: rect.size, format: format).image { _ in
             UIBezierPath(roundedRect: rect, cornerRadius: radius).addClip()
             image.draw(in: rect)
         }
+        if let key { roundedCache.setObject(rendered, forKey: key) }
+        return rendered
     }
 
     override func prepareForReuse() {
@@ -420,12 +439,18 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         configuredItem = item
         switch item {
         case .defaultApp(let kind):
-            iconImageView.image = Self.roundedImage(UIImage(named: kind.iconAssetName), size: Self.iconSize, radius: Self.iconCornerRadius)
+            iconImageView.image = Self.roundedImage(UIImage(named: kind.iconAssetName),
+                                                    size: Self.iconSize,
+                                                    radius: Self.iconCornerRadius,
+                                                    cacheKey: "builtin:\(kind.iconAssetName)")
             nameLabel.text = kind.title
             isPlaceholderCell = false
 
         case .installed(let app):
-            iconImageView.image = Self.roundedImage(app.appInfo.iconIsDarkIcon(darkMode), size: Self.iconSize, radius: Self.iconCornerRadius)
+            iconImageView.image = Self.roundedImage(app.appInfo.iconIsDarkIcon(darkMode),
+                                                    size: Self.iconSize,
+                                                    radius: Self.iconCornerRadius,
+                                                    cacheKey: (app.appInfo.relativeBundlePath).map { "app:\($0):\(darkMode)" })
             nameLabel.text = app.appInfo.displayName()
             singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
             isPlaceholderCell = false

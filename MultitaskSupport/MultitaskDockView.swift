@@ -296,7 +296,15 @@ class AppInfoProvider {
     /// carves concave corners from the top, while the flat design just draws its
     /// fill in the lower flat-solid region (square top). Only the corners differ.
     var effectiveBarHeight: CGFloat {
-        Constants.barHeightWithLedge
+        // The bar's visible strip is measured *inward* from the screen's corner
+        // radius (`effectiveBarHeight - cornerRadius + bottom inset`), so a shallower
+        // corner yields a thicker bar from the same constant. iPad's corners are about
+        // a third of an iPhone's, which made both the bar and the switcher's chin
+        // noticeably taller there; a smaller constant brings the visible strip back in
+        // line with iPhone's.
+        UIDevice.current.userInterfaceIdiom == .pad
+            ? Constants.barHeightWithLedgePad
+            : Constants.barHeightWithLedge
     }
 
     /// The device's physical screen corner radius (private UIScreen value) so the
@@ -367,6 +375,9 @@ class AppInfoProvider {
     public struct Constants {
         // MARK: - Switcher Bar Layout
         static let barHeight: CGFloat = 25.0
+        /// iPad equivalent of `barHeightWithLedge`. Lower because iPad's shallow screen
+        /// corners would otherwise leave a much thicker strip than iPhone's.
+        static let barHeightWithLedgePad: CGFloat = 58.0
         /// Taller bar strip used when the rounded ledge (concave corners) is on.
         static let barHeightWithLedge: CGFloat = 80.0
         static let barIconSize: CGFloat = 40.0
@@ -468,6 +479,11 @@ class AppInfoProvider {
     /// device is in landscape. The bar always lives on a *short* edge: the
     /// bottom in portrait, the right edge in landscape.
     private var isBarLandscape: Bool {
+        // iPad keeps the bar along the bottom in both orientations. Moving it to the
+        // edge is an iPhone accommodation — there a bottom bar in landscape would eat
+        // most of the little height available — but iPad has the width for it, and
+        // rotating the strip stands the app name on its side for no gain.
+        if UIDevice.current.userInterfaceIdiom == .pad { return false }
         if let orientation = keyWindow?.windowScene?.interfaceOrientation {
             return orientation.isLandscape
         }
@@ -809,6 +825,7 @@ class AppInfoProvider {
                 // No apps left: we are effectively on the springboard now. Record the
                 // home state so control-visibility logic stays consistent.
                 self.isHomeState = true
+                self.refreshSpringboardSnapshotWhenVisible()
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
@@ -940,6 +957,7 @@ class AppInfoProvider {
                 self.minimizeAllWindows()
                 self.updateFrontmostApp()
                 self.isHomeState = true
+                self.refreshSpringboardSnapshotWhenVisible()
                 self.hideDock()
             } else {
                 // All minimized — bring back last used app
@@ -1719,6 +1737,67 @@ class AppInfoProvider {
     /// cards (matching Spotlight's blurred home). Renders the layer tree with the
     /// app-window host hidden; `isHidden` is honoured by layer rendering without a
     /// screen update, so hiding + restoring in place causes no flicker.
+    /// Re-takes the backdrop on the next runloop, once the springboard is drawn again.
+    /// Same render as before, moved off the path the user waits on.
+    /// Forces the bitmap to decode now rather than on its first draw.
+    ///
+    /// A `UIGraphicsImageRenderer` image is lazy: nothing decodes until something
+    /// draws it, and the overlay's pre-render pass does not count. That left the
+    /// switcher's first frame showing the live app through the material, with the
+    /// blurred backdrop appearing a frame or two later.
+    private func displayReady(_ image: UIImage) -> UIImage {
+        image.preparingForDisplay() ?? image
+    }
+
+    /// Blurs the backdrop once, at capture time, so the overlay can draw a plain image
+    /// instead of laying a live material over a sharp one.
+    ///
+    /// A `UIVisualEffectView` — which is what a SwiftUI material is — stops rendering
+    /// its blur as soon as an ancestor's alpha drops below 1. Dismissing the switcher
+    /// animates exactly that, so the material vanished on the first frame and exposed
+    /// the sharp springboard underneath it. A pre-blurred image has nothing to drop
+    /// out, and costs nothing at open time since this runs off the critical path.
+    private func blurredForBackdrop(_ image: UIImage) -> UIImage {
+        ciGaussianBlur(image, radius: 40).map(displayReady) ?? displayReady(image)
+    }
+
+    func refreshSpringboardSnapshotWhenVisible() {
+        // Deliberately *not* clearing the existing snapshot first: the overlay is
+        // still fading out at this point and uses it as its backdrop, so blanking it
+        // here let the app behind show through mid-exit. The old image stays until a
+        // new one is ready.
+        //
+        // The delay is for the same reason — the render must not catch the overlay
+        // itself, which is still on screen for the length of its exit animation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.isHomeState,
+                  self.switcherOverlayController?.view.window == nil,
+                  let rootView = self.keyWindow?.rootViewController?.view,
+                  rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
+
+            // `drawHierarchy` rather than `layer.render(in:)`: it composites through
+            // the render server instead of rasterising the tree in-process, which
+            // measured ~40ms against ~380ms on a hierarchy this full of glass. It
+            // renders the last committed frame, so it can only be used here — where
+            // the springboard is the thing on screen and nothing needs hiding.
+            let format = UIGraphicsImageRendererFormat.default()
+            format.opaque = true
+            format.scale = 1
+            let renderer = UIGraphicsImageRenderer(bounds: rootView.bounds, format: format)
+            var drawn = false
+            let image = renderer.image { _ in
+                drawn = rootView.drawHierarchy(in: rootView.bounds, afterScreenUpdates: false)
+            }
+            // Falls back to the slower render, which hides the app views itself and so
+            // works whatever is on screen.
+            if drawn {
+                self.springboardSnapshot = self.blurredForBackdrop(image)
+            } else {
+                self.captureSpringboardSnapshot()
+            }
+        }
+    }
+
     func captureSpringboardSnapshot() {
         guard let rootView = keyWindow?.rootViewController?.view,
               rootView.bounds.width > 0, rootView.bounds.height > 0 else { return }
@@ -1754,7 +1833,7 @@ class AppInfoProvider {
 
         for v in hiddenEffectViews { v.isHidden = false }
         windowHostingView.isHidden = wasHidden
-        springboardSnapshot = image
+        springboardSnapshot = blurredForBackdrop(image)
     }
 
     func captureSnapshots() {
@@ -1824,12 +1903,14 @@ class AppInfoProvider {
                            orientation: quarterTurn < 0 ? .left : .right)
         }
 
-        // A frozen bitmap of the app exactly as it looks right now. `drawHierarchy`
-        // renders through the render server, so unlike `layer.render(in:)` it can
-        // capture the guest's hosted layer — but only while the view is actually on
-        // screen, which is the moment this runs. `afterScreenUpdates: true` is what
-        // makes the hosted content resolve; with `false` the guest's layer has not
-        // been committed into the context and comes back blank.
+        // A frozen bitmap of the app exactly as it looks right now, taken through the
+        // render server.
+        //
+        // `afterScreenUpdates: false`: the page is already on screen and committed, so
+        // there is nothing pending to wait for. `true` forces a synchronous screen
+        // update, which is what made an open with an internal page in the list cost
+        // ~140ms against ~38ms for two guest apps.
+        //
         // Internal pages only. A guest app renders into a remote layer composited by
         // the render server, and the host process cannot read those pixels back:
         // `drawHierarchy` reports success — it did draw the local hierarchy — but the
@@ -1842,7 +1923,7 @@ class AppInfoProvider {
                 drawn = appView.drawHierarchy(
                     in: CGRect(origin: CGPoint(x: -captureRect.origin.x, y: -captureRect.origin.y),
                                size: appView.bounds.size),
-                    afterScreenUpdates: true)
+                    afterScreenUpdates: false)
             }
             if drawn {
                 appSnapshotImages[appUUID] = uprightForPortraitCard(image)
@@ -1933,7 +2014,11 @@ class AppInfoProvider {
 
         // The springboard snapshot is the overlay's blurred backdrop, so it is taken
         // here — after any rotation — to match the portrait overlay it sits behind.
-        captureSpringboardSnapshot()
+        // Reuse the cached backdrop. The springboard is behind an app the whole time
+        // the switcher can be opened, so it cannot have changed since it was last
+        // captured — rendering it again on every open was the largest single cost of
+        // opening the switcher, for an identical image.
+        if springboardSnapshot == nil { captureSpringboardSnapshot() }
         refreshCachedSafeAreaInsets()
         // Sync the preference to whatever control is actually active right now,
         // so the overlay's toggle reflects the current state — the user may have
@@ -2013,6 +2098,7 @@ class AppInfoProvider {
         minimizeAllWindows()
         updateFrontmostApp()
         isHomeState = true
+        refreshSpringboardSnapshotWhenVisible()
         hideDock()
         refreshOrientationLock()
         guard let overlay = switcherOverlayController else { return }
@@ -2025,7 +2111,6 @@ class AppInfoProvider {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
-            self.springboardSnapshot = nil
             self.ensureControlAccessible()
         }
     }
@@ -2089,7 +2174,6 @@ class AppInfoProvider {
         } completion: { _ in
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
-            self.springboardSnapshot = nil
             self.ensureControlAccessible()
         }
     }
@@ -2191,6 +2275,7 @@ class AppInfoProvider {
             }
             // All apps closed: we are back on the springboard.
             self.isHomeState = true
+            self.refreshSpringboardSnapshotWhenVisible()
             self.hideDock()
         }
     }
@@ -2617,6 +2702,22 @@ struct AppSwitcherOverlay: View {
     
     private let cardSpacing: CGFloat = 16
 
+    /// Room kept below Close all for the chin.
+    ///
+    /// The chin's opaque height is `effectiveBarHeight - cornerRadius + bottom inset`,
+    /// so a device with *smaller* screen corners ends up with a taller chin. A flat
+    /// 50pt cleared it on iPhone, where the large corner radius keeps the chin short,
+    /// but not on iPad — where the radius is a third of the size and the chin grew
+    /// past the button.
+    ///
+    /// Subtracting the button's own bottom padding and flooring at the previous 50
+    /// keeps iPhone spacing exactly as it was and gives iPad only the extra it needs.
+    private var bottomChinReserve: CGFloat {
+        // Plus a small gap: on a 13 mini the subtraction lands exactly on the button's
+        // own padding, leaving the two touching.
+        return max(50, dockManager.barFlatRegion - 20 + 3)
+    }
+
     // Fixed corner radius (matches the Figma design spec).
     private let cardCornerRadius: CGFloat = 34
 
@@ -2655,17 +2756,12 @@ struct AppSwitcherOverlay: View {
                         .scaledToFill()
                         .ignoresSafeArea()
                 }
-                // Blur + scrim fade out on exit so the sharp home is revealed
-                // (the snapshot, then the real springboard once the overlay goes).
-                ZStack {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                        .ignoresSafeArea()
-                    // Slight scrim so the cards keep contrast over the blurred home.
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                }
+                // The snapshot arrives already blurred, so no live material here — one
+                // would stop rendering the moment the overlay's alpha animates on
+                // dismissal, flashing the sharp image underneath. Only the scrim
+                // remains, to keep the cards legible over it.
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
             }
             // Fade the entire blurred-home background out on exit. The snapshot is
             // captured with layer rendering, which can't capture the icons' glass, so
@@ -2739,10 +2835,10 @@ struct AppSwitcherOverlay: View {
                     Text("This closes every open app.")
                 }
 
-                // Reserve the bar's footprint so Close all sits above the bottom
+                // Reserve the chin's footprint so Close all sits above the bottom
                 // bar (which is a separate bottom-anchored layer below).
                 Spacer()
-                    .frame(height: 50)
+                    .frame(height: bottomChinReserve)
             }
 
             // Control preference toggle, styled as the switcher bar it hides: a
@@ -2771,8 +2867,12 @@ struct AppSwitcherOverlay: View {
                 // Pad the top by the corner-ledge height so centering happens below
                 // the concave corners, while keeping the overall height (bar height
                 // + bottom safe area) so the bar shape/background is unchanged.
+                // `barFlatRegion`, not the raw expression: it floors at the button
+                // height. Without that floor a device with no bottom inset and a
+                // shallow corner radius — an iPad with a home button computes 19pt —
+                // gets a chin too short to hold the 44pt controls inside it.
                 .frame(maxWidth: .infinity,
-                       minHeight: dockManager.effectiveBarHeight - dockManager.barCornerRadiusActive + dockManager.cachedSafeAreaInsets.bottom,
+                       minHeight: dockManager.barFlatRegion,
                        alignment: .center)
                 .padding(.top, dockManager.barCornerRadiusActive)
                 // Limit the tap area to the bar's actual visible shape. The frame is
