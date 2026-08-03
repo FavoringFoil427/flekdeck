@@ -180,6 +180,56 @@ class AppInfoProvider {
     /// can't reveal orientation).
     @Published var isLandscapeBar: Bool = false
 
+    /// The screen the switcher overlay sizes its cards against.
+    ///
+    /// Published rather than read from `UIScreen` where it is needed. A plain read
+    /// is not something SwiftUI can depend on, so nothing re-ran the overlay's body
+    /// when the device turned: the cards kept the width and height the previous
+    /// orientation gave them, which on iPad left a landscape-shaped card sitting in
+    /// a portrait window, clipped and off-centre. iPhone turns the window portrait
+    /// before the switcher opens and holds it, so this never changes there.
+    @Published private(set) var switcherScreenSize: CGSize = UIScreen.main.bounds.size
+
+    /// Points the overlay at the window's current shape: the box it is laid out in,
+    /// and the size its cards measure themselves against.
+    ///
+    /// Both, because either alone leaves the layout wrong. The published size fixes
+    /// the card metrics; the frame fixes the space they are arranged in. The hosting
+    /// view is parented straight to the window and never becomes a child view
+    /// controller, so nothing tells it the window turned — autoresizing is supposed
+    /// to carry it, and when it does not the column is laid out against the old
+    /// height and runs off the bottom of the new one.
+    ///
+    /// Deliberately NOT sampled while the turn is in progress.
+    ///
+    /// The window reports its new bounds the moment the orientation notification
+    /// arrives, but the views are still under the rotation's transition transform.
+    /// Re-laying the overlay out against that caught the scroll view mid-turn: it
+    /// measured a viewport of the previous orientation's size scaled by the aspect
+    /// change — 1698pt wide inside an 820pt window — and kept it, which dragged the
+    /// whole row off the left of the screen. Everything inside the row was correct;
+    /// the box around it was not. So this waits for the animation to finish, and
+    /// samples again after, in case the first look was still early.
+    func refreshSwitcherScreenSize(immediately: Bool = false) {
+        let apply = { [weak self] in
+            guard let self else { return }
+            let overlay = self.switcherOverlayController?.view
+            guard let window = overlay?.window ?? self.keyWindow else { return }
+            let bounds = window.bounds
+            guard bounds.width > 0, bounds.height > 0 else { return }
+
+            if let overlay, overlay.frame != bounds { overlay.frame = bounds }
+            if self.switcherScreenSize != bounds.size { self.switcherScreenSize = bounds.size }
+        }
+        // Opening is safe to measure at once — nothing is animating — and must be,
+        // since the overlay is about to be built from it. A rotation is not: that
+        // sample is the one taken mid-turn. The system's rotation runs ~0.35s, so
+        // the first look is after it, and the second is insurance against a slower.
+        if immediately { apply() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: apply)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: apply)
+    }
+
     /// Persisted user preference for which multitask control to show when an app
     /// is opened: the switcher bar (false) or the floating button (true). The
     /// switcher overlay toggles this; it takes effect the next time an app opens.
@@ -636,6 +686,8 @@ class AppInfoProvider {
 
     @objc private func deviceOrientationDidChange() {
         DispatchQueue.main.async {
+            // Re-size the switcher's cards for the orientation they are now in.
+            self.refreshSwitcherScreenSize()
             if self.isVisible {
                 // Snap (not animate) so the bar lands on its new short edge as the
                 // system's own rotation animation completes, avoiding a compounded
@@ -1816,10 +1868,15 @@ class AppInfoProvider {
         let viewSize = captureRect.size
         guard viewSize.width > 0 && viewSize.height > 0 else { return }
 
-        // Cards are always portrait, so a landscape capture is turned a quarter turn to
-        // fill one rather than sitting as a band between black margins. Which way to
-        // turn depends on the edge the user rotated towards, so the content ends up
-        // the same way up as when they were looking at it.
+        // The quarter turn a landscape capture needs to stand upright in a PORTRAIT
+        // card, so it fills one rather than sitting as a band between black margins.
+        // Which way to turn depends on the edge the user rotated towards, so the
+        // content ends up the same way up as when they were looking at it.
+        //
+        // Recorded, not applied. Whether the card is portrait is not knowable here:
+        // on iPad the card takes the shape of the screen, so it is landscape whenever
+        // the device is, and the device can turn while the switcher is open. The card
+        // applies this itself, against the shape it actually has.
         var quarterTurn: CGFloat = 0
         if viewSize.width > viewSize.height {
             let interfaceOrientation = appView.window?.windowScene?.interfaceOrientation
@@ -1838,13 +1895,6 @@ class AppInfoProvider {
             }
         }
         appSnapshotRotations[appUUID] = quarterTurn
-
-        func uprightForPortraitCard(_ image: UIImage) -> UIImage {
-            // Re-tagging the CGImage costs nothing and never resamples.
-            guard quarterTurn != 0, let cgImage = image.cgImage else { return image }
-            return UIImage(cgImage: cgImage, scale: image.scale,
-                           orientation: quarterTurn < 0 ? .left : .right)
-        }
 
         // A frozen bitmap of the app exactly as it looks right now. `drawHierarchy`
         // renders through the render server, so unlike `layer.render(in:)` it can
@@ -1867,7 +1917,8 @@ class AppInfoProvider {
                     afterScreenUpdates: true)
             }
             if drawn {
-                appSnapshotImages[appUUID] = uprightForPortraitCard(image)
+                // Stored as captured; the card turns it when it draws it.
+                appSnapshotImages[appUUID] = image
                 appSnapshotSizes[appUUID] = viewSize
             } else {
                 appSnapshotImages.removeValue(forKey: appUUID)
@@ -1900,6 +1951,15 @@ class AppInfoProvider {
         }
     }
     
+    /// The turn a card should apply to a capture, given the shape the card has now.
+    /// Zero for a landscape card: the turn only ever existed to stand a landscape
+    /// capture up in a portrait one, and applying it to a card that is already
+    /// landscape lays the app on its side in a frame that matched it.
+    func cardSnapshotRotation(for appUUID: String, portraitCard: Bool) -> CGFloat {
+        guard portraitCard else { return 0 }
+        return appSnapshotRotations[appUUID] ?? 0
+    }
+
     /// Opens the switcher, first making sure the window is actually portrait.
     ///
     /// The overlay is portrait-only, but requesting the rotation and building the
@@ -1975,6 +2035,8 @@ class AppInfoProvider {
         // instead of occasionally rendering with a not-yet-ready zero inset — the
         // "randomly taller/shorter" toggle. Pairs with the same guard in updateDockFrame.
         keyWindow.layoutIfNeeded()
+        // Size the cards for the orientation the overlay is about to open in.
+        refreshSwitcherScreenSize(immediately: true)
 
         let overlayView = AnyView(
             AppSwitcherOverlay()
@@ -2672,14 +2734,14 @@ struct AppSwitcherOverlay: View {
     /// the trimmed snapshot's aspect rather than the screen's, which is shorter, so
     /// at the old fraction the card lost ~11% of its height.
     private var cardWidth: CGFloat {
-        UIScreen.main.bounds.width * 0.70
+        dockManager.switcherScreenSize.width * 0.70
     }
     /// Shaped like the snapshot it holds, not like the whole screen. Snapshots are
     /// captured with the safe-area periphery trimmed off, so they are shorter than
     /// the screen — sizing the card from the full screen aspect left the image
     /// slightly too tall for it, and filling the card then cropped the sides.
     private var cardHeight: CGFloat {
-        let screen = UIScreen.main.bounds
+        let screen = dockManager.switcherScreenSize
         let insets = dockManager.cachedSafeAreaInsets
         let contentHeight = max(screen.height - insets.top - insets.bottom, 1)
         return cardWidth * (contentHeight / screen.width)
@@ -2687,8 +2749,8 @@ struct AppSwitcherOverlay: View {
 
     // How far the cards slide left and the buttons slide down when the user taps
     // the background to return to the springboard.
-    private var exitCardOffset: CGFloat { UIScreen.main.bounds.width + cardWidth }
-    private var exitButtonOffset: CGFloat { UIScreen.main.bounds.height * 0.4 }
+    private var exitCardOffset: CGFloat { dockManager.switcherScreenSize.width + cardWidth }
+    private var exitButtonOffset: CGFloat { dockManager.switcherScreenSize.height * 0.4 }
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -2697,9 +2759,22 @@ struct AppSwitcherOverlay: View {
             // Falls back to a flat dark blur if no snapshot was captured.
             ZStack {
                 if let snapshot = dockManager.springboardSnapshot {
+                    // Pinned to the window's size, and clipped to it.
+                    //
+                    // `scaledToFill` sizes a view to COVER what it was offered, so it
+                    // reports back something larger in one axis — and this is a sibling
+                    // in the ZStack, so the ZStack grew to match and everything else
+                    // was centred against that instead of against the screen. A
+                    // springboard captured in landscape and drawn in portrait came out
+                    // 1698pt wide inside an 820pt window, which dragged the card row
+                    // 400pt off the left edge. The frame stops it having any say in the
+                    // layout; the clip keeps the overspill from drawing outside.
                     Image(uiImage: snapshot)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: dockManager.switcherScreenSize.width,
+                               height: dockManager.switcherScreenSize.height)
+                        .clipped()
                         .ignoresSafeArea()
                 }
                 // Blur + scrim fade out on exit so the sharp home is revealed
@@ -2761,6 +2836,15 @@ struct AppSwitcherOverlay: View {
                         }
                     }
                 }
+                // Rebuilt outright when the device turns, rather than nudged back into
+                // place. The card width and the padding either side of the row both
+                // change with the orientation, and the scroll keeps the offset the old
+                // ones left it at — an offset that now points into the middle of a card
+                // or past the end of the row, which is why it came up off-centre and
+                // would not scroll cleanly. Scrolling it back afterwards fights a
+                // position SwiftUI still believes in; changing the identity throws that
+                // state away, and the fresh view centres itself on appear.
+                .id(dockManager.switcherScreenSize)
                 .offset(x: exiting ? -exitCardOffset : 0)
                 
                 // Flexible gap so the cards sit up top and the bottom actions
@@ -2933,7 +3017,7 @@ struct AppSwitcherOverlay: View {
                 )
             }
         }
-        .padding(.horizontal, (UIScreen.main.bounds.width - cardWidth) / 2)
+        .padding(.horizontal, (dockManager.switcherScreenSize.width - cardWidth) / 2)
     }
 }
 
@@ -3019,7 +3103,12 @@ struct AppSwitcherCard: View {
     @State private var isVerticalDrag = false
     @State private var hasPassedThreshold = false
     @State private var closeAllOffset: CGFloat = 0
-    
+
+    /// Read off the size the card was given rather than from the device, so the
+    /// content can never disagree with the frame holding it. iPhone's card is
+    /// always the taller way round; iPad's follows the screen and turns with it.
+    private var isPortraitCard: Bool { cardHeight > cardWidth }
+
     private let dismissThreshold: CGFloat = -120
 
     var body: some View {
@@ -3068,20 +3157,36 @@ struct AppSwitcherCard: View {
             // Card with snapshot
             ZStack {
                 if let snapshotImage = dockManager.appSnapshotImages[app.appUUID] {
-                    // Frozen bitmap, filling the card. A landscape capture was already
-                    // turned upright, so both orientations arrive at roughly the card's
-                    // own aspect and fill crops only a sliver — where fitting would
-                    // leave black bars wherever the capture was trimmed.
+                    // Frozen bitmap, filling the card. Turned upright for a portrait
+                    // card and left alone for a landscape one, so either way it arrives
+                    // at roughly the card's own aspect and fill crops only a sliver —
+                    // where fitting would leave black bars wherever it was trimmed.
+                    //
+                    // Turned with a rotationEffect rather than by re-tagging the image's
+                    // orientation. Re-tagging swaps the image's intrinsic size, and the
+                    // row is laid out from that before any frame constrains it — so a
+                    // turned card widened the HStack and slid itself off the screen. A
+                    // rotationEffect draws the turn without the layout ever knowing:
+                    // the inner frame is the card's shape before the quarter turn, the
+                    // outer one is what the row sees, and it is the card's size either
+                    // way round.
+                    let turn = dockManager.cardSnapshotRotation(for: app.appUUID,
+                                                                portraitCard: isPortraitCard)
                     Image(uiImage: snapshotImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .frame(width: turn == 0 ? cardWidth : cardHeight,
+                               height: turn == 0 ? cardHeight : cardWidth)
+                        .clipped()
+                        .rotationEffect(.radians(Double(turn)))
                         .frame(width: cardWidth, height: cardHeight)
                         .clipped()
                 } else if let snapshotView = dockManager.appSnapshotViews[app.appUUID] {
                     SnapshotViewRepresentable(
                         snapshotView: snapshotView,
                         naturalSize: dockManager.appSnapshotSizes[app.appUUID] ?? .zero,
-                        rotation: dockManager.appSnapshotRotations[app.appUUID] ?? 0)
+                        rotation: dockManager.cardSnapshotRotation(for: app.appUUID,
+                                                                   portraitCard: isPortraitCard))
                         .frame(width: cardWidth, height: cardHeight)
                         .clipped()
                 } else {
