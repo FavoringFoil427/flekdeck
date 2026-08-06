@@ -282,7 +282,7 @@ struct LCSettingsView: View {
                         categoryRow("lc.flek.personalization".loc, "paintbrush.fill", .purple)
                     }
                     NavigationLink { launchBehaviorPage } label: {
-                        categoryRow("lc.flek.cat.launch".loc, "app.grid", .blue, iconSize: 22)
+                        categoryRow("lc.flek.cat.launch".loc, FlekSymbol.appGrid, .blue, iconSize: 22)
                     }
                     if #available(iOS 16.1, *) {
                         NavigationLink { multitaskPage } label: {

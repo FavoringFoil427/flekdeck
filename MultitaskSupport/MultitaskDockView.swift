@@ -202,15 +202,19 @@ class AppInfoProvider {
     ///
     /// Deliberately NOT sampled while the turn is in progress.
     ///
-    /// The window reports its new bounds the moment the orientation notification
-    /// arrives, but the views are still under the rotation's transition transform.
-    /// Re-laying the overlay out against that caught the scroll view mid-turn: it
-    /// measured a viewport of the previous orientation's size scaled by the aspect
-    /// change — 1698pt wide inside an 820pt window — and kept it, which dragged the
-    /// whole row off the left of the screen. Everything inside the row was correct;
-    /// the box around it was not. So this waits for the animation to finish, and
-    /// samples again after, in case the first look was still early.
-    func refreshSwitcherScreenSize(immediately: Bool = false) {
+    /// Taken as the turn begins and animated over it, so the overlay travels with the
+    /// rotation rather than waiting for it and then jumping.
+    ///
+    /// Measuring this early was once ruinous: it caught the scroll view mid-turn at a
+    /// viewport 1698pt wide inside an 820pt window. That was the backdrop, which
+    /// filled rather than fitted and dragged the whole stack out with it; now that it
+    /// is pinned to this very size, an early measurement has nothing left to distort.
+    /// The later samples remain as insurance for a window that is slow to settle —
+    /// they cost nothing when the size already matches.
+    ///
+    /// - Parameter animated: false when opening, where there is no turn to follow and
+    ///   the overlay is about to be built from the result.
+    func refreshSwitcherScreenSize(animated: Bool = true) {
         let apply = { [weak self] in
             guard let self else { return }
             let overlay = self.switcherOverlayController?.view
@@ -219,16 +223,25 @@ class AppInfoProvider {
             guard bounds.width > 0, bounds.height > 0 else { return }
 
             if let overlay, overlay.frame != bounds { overlay.frame = bounds }
-            if self.switcherScreenSize != bounds.size { self.switcherScreenSize = bounds.size }
+            guard self.switcherScreenSize != bounds.size else { return }
+
+            // Roughly the system's own rotation, so the cards resize and re-centre
+            // across the same beat the window turns on instead of after it.
+            if animated {
+                withAnimation(.easeInOut(duration: Self.rotationDuration)) {
+                    self.switcherScreenSize = bounds.size
+                }
+            } else {
+                self.switcherScreenSize = bounds.size
+            }
         }
-        // Opening is safe to measure at once — nothing is animating — and must be,
-        // since the overlay is about to be built from it. A rotation is not: that
-        // sample is the one taken mid-turn. The system's rotation runs ~0.35s, so
-        // the first look is after it, and the second is insurance against a slower.
-        if immediately { apply() }
+        apply()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: apply)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: apply)
     }
+
+    /// How long the system takes to turn the interface.
+    static let rotationDuration: TimeInterval = 0.35
 
     /// Persisted user preference for which multitask control to show when an app
     /// is opened: the switcher bar (false) or the floating button (true). The
@@ -1321,7 +1334,7 @@ class AppInfoProvider {
         button.addSubview(blurView)
         
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
-        let iconImage = UIImage(systemName: "iphone.app.switcher", withConfiguration: iconConfig)
+        let iconImage = UIImage(systemName: FlekSymbol.appSwitcher, withConfiguration: iconConfig)
         let iconView = UIImageView(image: iconImage)
         iconView.tintColor = .white
         iconView.contentMode = .center
@@ -2036,7 +2049,7 @@ class AppInfoProvider {
         // "randomly taller/shorter" toggle. Pairs with the same guard in updateDockFrame.
         keyWindow.layoutIfNeeded()
         // Size the cards for the orientation the overlay is about to open in.
-        refreshSwitcherScreenSize(immediately: true)
+        refreshSwitcherScreenSize(animated: false)
 
         let overlayView = AnyView(
             AppSwitcherOverlay()
@@ -2835,16 +2848,28 @@ struct AppSwitcherOverlay: View {
                             isPresented = true
                         }
                     }
+                    // Re-centred as the device turns, rather than rebuilt. Both the card
+                    // width and the padding either side of the row change with the
+                    // orientation, so the scroll is left holding an offset that belongs
+                    // to the old geometry. Discarding the row's identity to clear that
+                    // also discards any chance of animating it — a view with a new
+                    // identity has nothing to animate from, which is what made a
+                    // rotation look like a redraw. Keeping the identity and moving the
+                    // scroll lets the whole thing travel with the turn.
+                    //
+                    // Left to the next runloop so the row has been laid out at its new
+                    // width before it is centred; scrolling against the old one lands
+                    // between cards.
+                    .onChange(of: dockManager.switcherScreenSize) { _ in
+                        guard let target = dockManager.frontmostAppUUID
+                                ?? dockManager.apps.last?.appUUID else { return }
+                        DispatchQueue.main.async {
+                            withAnimation(.easeInOut(duration: MultitaskDockManager.rotationDuration)) {
+                                proxy.scrollTo(target, anchor: .center)
+                            }
+                        }
+                    }
                 }
-                // Rebuilt outright when the device turns, rather than nudged back into
-                // place. The card width and the padding either side of the row both
-                // change with the orientation, and the scroll keeps the offset the old
-                // ones left it at — an offset that now points into the middle of a card
-                // or past the end of the row, which is why it came up off-centre and
-                // would not scroll cleanly. Scrolling it back afterwards fights a
-                // position SwiftUI still believes in; changing the identity throws that
-                // state away, and the fresh view centres itself on appear.
-                .id(dockManager.switcherScreenSize)
                 .offset(x: exiting ? -exitCardOffset : 0)
                 
                 // Flexible gap so the cards sit up top and the bottom actions
@@ -3367,7 +3392,7 @@ struct MultitaskHomeDockPill: View {
         Button {
             MultitaskDockManager.shared.showAppSwitcher()
         } label: {
-            Image(systemName: "iphone.app.switcher")
+            Image(systemName: FlekSymbol.appSwitcher)
                 .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
                 .foregroundStyle(Color.primary.opacity(0.6))
                 .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
@@ -3400,41 +3425,37 @@ private extension View {
 private struct DockPillBackground: ViewModifier {
     let isCircle: Bool
 
-    func body(content: Content) -> some View {
+    // Returns AnyView instead of `some View`. With an opaque return type the
+    // inferred Body embeds the iOS 26-only type that `glassEffect` produces, and
+    // the runtime has to resolve that type to render the modifier at all — an
+    // `#available` check guards execution, not the type. On iOS 17.x the type is
+    // absent from the system SwiftUI, so the metadata lookup fails and the Swift
+    // runtime traps. Erasing pins Body to AnyView, which exists on every version
+    // we support; the glass call is then only reached inside the guarded branch.
+    func body(content: Content) -> AnyView {
         if #available(iOS 26.0, *) {
             if isCircle {
-                content.glassEffect(in: .circle)
-            } else {
-                content.glassEffect(in: .capsule)
+                return AnyView(content.glassEffect(in: .circle))
             }
-        } else {
-            if isCircle {
-                content.background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Circle().fill(Color.primary.opacity(0.15)))
-                        .overlay(Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
-                )
-            } else {
-                content.background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Capsule().fill(Color.primary.opacity(0.15)))
-                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
-                )
-            }
+            return AnyView(content.glassEffect(in: .capsule))
         }
+        // Shares FlekFrostedSurface with the springboard search button — the two
+        // sit side by side in the bottom bar and previously used different tints.
+        if isCircle {
+            return AnyView(content.background(FlekFrostedSurface(shape: Circle())))
+        }
+        return AnyView(content.background(FlekFrostedSurface(shape: Capsule())))
     }
 }
 
 // MARK: - Glass Capsule Background (native Liquid Glass on iOS 26+, fallback on older)
 struct GlassCapsuleBackground: ViewModifier {
-    func body(content: Content) -> some View {
+    /// Erased to AnyView — see `DockPillBackground.body` for why.
+    func body(content: Content) -> AnyView {
         if #available(iOS 26.0, *) {
-            content.glassEffect(in: .capsule)
-        } else {
-            content.background(Capsule().fill(Color.white.opacity(0.15)))
+            return AnyView(content.glassEffect(in: .capsule))
         }
+        return AnyView(content.background(Capsule().fill(Color.white.opacity(0.15))))
     }
 }
 

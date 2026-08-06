@@ -425,7 +425,7 @@ struct FlekInstallerView: View {
             Spacer()
         } else if repoSearch.sections.isEmpty && !repoSearch.isLoading {
             VStack(spacing: 12) {
-                Image(systemName: "app.grid")
+                Image(systemName: FlekSymbol.appGrid)
                     .font(.system(size: 56, weight: .thin))
                     .foregroundStyle(Color(.systemGray3))
                 Text("Nothing found")
@@ -724,20 +724,29 @@ private struct ManageButtonWidthKey: PreferenceKey {
 private extension View {
     /// iOS 17+: let content (e.g. pill shadows) draw outside the scroll view's
     /// bounds instead of being clipped. No-op below iOS 17 (shadow stays clipped).
-    @ViewBuilder
-    func scrollClipDisabledIfAvailable() -> some View {
-        if #available(iOS 17.0, *) { self.scrollClipDisabled() } else { self }
+    // Erased to AnyView: `scrollClipDisabled` is iOS 17+, and an opaque return
+    // type would bake its modifier type into this function's static type. The
+    // runtime resolves that type before the availability check ever runs, so on
+    // iOS 16 the lookup fails and traps.
+    func scrollClipDisabledIfAvailable() -> AnyView {
+        if #available(iOS 17.0, *) { return AnyView(self.scrollClipDisabled()) }
+        return AnyView(self)
     }
 
     /// The source pill surface: native Liquid Glass on iOS 26+, and a frosted
     /// white material capsule (matching the FlekSign design) on older versions.
-    @ViewBuilder
-    func repoPillGlass() -> some View {
+    // Erased to AnyView: an opaque return type would bake the iOS 26-only type
+    // `glassEffect` produces into this function's static type, which the runtime
+    // resolves ahead of the availability check and cannot find on iOS 17.x.
+    func repoPillGlass() -> AnyView {
         if #available(iOS 26, *) {
-            self
-                .clipShape(Capsule())
-                .glassEffect(.regular, in: Capsule())
-        } else {
+            return AnyView(
+                self
+                    .clipShape(Capsule())
+                    .glassEffect(.regular, in: Capsule())
+            )
+        }
+        return AnyView(
             self
                 .background(
                     Capsule()
@@ -745,25 +754,21 @@ private extension View {
                         .overlay(Capsule().fill(Color.white.opacity(0.5)))
                 )
                 .clipShape(Capsule())
-        }
+        )
     }
 
     /// The selected repo chip: a native Liquid Glass thumb on iOS 26+, and the
     /// FlekSign #EDEDED capsule on older versions. Unselected repos are clear.
-    @ViewBuilder
-    func repoChipSelection(_ selected: Bool) -> some View {
+    /// Erased to AnyView — see `repoPillGlass` for why.
+    func repoChipSelection(_ selected: Bool) -> AnyView {
         if #available(iOS 26, *) {
-            if selected {
-                // Subtle grey tint so the selected thumb reads against the glass pill.
-                self.glassEffect(.regular.tint(Color.gray.opacity(0.3)), in: Capsule())
-            } else {
-                self
-            }
-        } else {
-            self.background(
-                Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
-            )
+            guard selected else { return AnyView(self) }
+            // Subtle grey tint so the selected thumb reads against the glass pill.
+            return AnyView(self.glassEffect(.regular.tint(Color.gray.opacity(0.3)), in: Capsule()))
         }
+        return AnyView(self.background(
+            Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
+        ))
     }
 }
 

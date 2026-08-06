@@ -103,7 +103,7 @@ struct FlekSpringboardView<Menu: View>: View {
                                                     Button(role: .destructive) {
                                                         onCancelInstall(inst)
                                                     } label: {
-                                                        Label("lc.flek.cancelInstall".loc, systemImage: "arrow.down.circle.badge.xmark")
+                                                        Label("lc.flek.cancelInstall".loc, systemImage: FlekSymbol.cancelDownload)
                                                     }
                                                 }
                                         } else {
@@ -761,20 +761,22 @@ struct FlekPageIndicator: View {
 private struct GlassBackgroundModifier: ViewModifier {
     let isActive: Bool
 
-    func body(content: Content) -> some View {
-        if isActive {
-            if #available(iOS 26.0, *) {
-                content.glassEffect(.regular.interactive(false))
-            } else {
-                content
-                    .background(
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                    )
-            }
-        } else {
-            content
+    // Erased to AnyView: an opaque return type would bake the iOS 26-only type
+    // `glassEffect` produces into Body, and the runtime resolves Body before the
+    // availability check ever runs — which traps on iOS 17.x, where that type
+    // does not exist in the system SwiftUI.
+    func body(content: Content) -> AnyView {
+        guard isActive else { return AnyView(content) }
+        if #available(iOS 26.0, *) {
+            return AnyView(content.glassEffect(.regular.interactive(false)))
         }
+        return AnyView(
+            content
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                )
+        )
     }
 }
 

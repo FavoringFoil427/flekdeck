@@ -150,31 +150,37 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// beside a persistent search button. The search button keeps its identity
     /// across states, so it glides as the pill springs in/out — a morph rather
     /// than a cross-fade.
-    @ViewBuilder
-    private var homeBottomBar: some View {
+    // Erased to AnyView: `GlassEffectContainer` and `glassEffect` are iOS 26-only
+    // types, and an opaque return type would bake them into this property's static
+    // type. The runtime resolves that type before it ever runs the availability
+    // check, so on iOS 17.x the lookup fails and the Swift runtime traps.
+    private var homeBottomBar: AnyView {
         if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 10) {
-                HStack(spacing: 10) {
-                    if showMultitaskDock {
-                        MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
-                            .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
-                            .installerBarShadow()
+            return AnyView(
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 10) {
+                        if showMultitaskDock {
+                            MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
+                                .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
+                                .installerBarShadow()
+                        }
+                        Button {
+                            showSearch = true
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+                                .foregroundStyle(Color.primary.opacity(0.6))
+                                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
+                        }
+                        .buttonStyle(.plain)
+                        .glassEffect(in: .circle)
+                        .installerBarShadow()
                     }
-                    Button {
-                        showSearch = true
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
-                            .foregroundStyle(Color.primary.opacity(0.6))
-                            .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(in: .circle)
-                    .installerBarShadow()
                 }
-            }
-            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
-        } else {
+                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
+            )
+        }
+        return AnyView(
             HStack(spacing: 10) {
                 if #available(iOS 16.0, *), showMultitaskDock {
                     MultitaskHomeDockPill(darkModeIcon: darkModeIcon)
@@ -188,7 +194,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 .installerBarShadow()
             }
             .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
-        }
+        )
     }
     @Environment(\.colorScheme) private var colorScheme
     
@@ -650,8 +656,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         ))
     }
 
-    @ViewBuilder
-    private var doneButtonLabel: some View {
+    /// Erased to AnyView — see `homeBottomBar` for why.
+    private var doneButtonLabel: AnyView {
         let label = HStack(spacing: 6) {
             Image(systemName: "checkmark")
                 .font(.system(size: 14, weight: .semibold))
@@ -663,13 +669,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         .frame(height: FlekTheme.searchPillSize * 1.3)
 
         if #available(iOS 26.0, *) {
-            label.glassEffect(.regular.interactive(false))
-        } else {
+            return AnyView(label.glassEffect(.regular.interactive(false)))
+        }
+        return AnyView(
             label
                 .background(Capsule().fill(.ultraThinMaterial))
                 .overlay(Capsule().fill(Color.primary.opacity(0.15)))
                 .overlay(Capsule().strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
-        }
+        )
     }
 
     // MARK: - FlekLauncher springboard
@@ -1221,7 +1228,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         case .installing(let inst):
             let cancel = UIAction(
                 title: "lc.flek.cancelInstall".loc,
-                image: UIImage(systemName: "arrow.down.circle.badge.xmark"),
+                image: UIImage(systemName: FlekSymbol.cancelDownload),
                 attributes: .destructive
             ) { _ in
                 LCInstallQueue.shared.cancel(inst)
@@ -1358,58 +1365,48 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
 
+    /// The single/parallel launch-mode picker.
+    ///
+    /// Erased to AnyView: `ControlGroup` is iOS 16+ and `menuActionDismissBehavior`
+    /// is iOS 16.4+, so with an opaque return type both would land in this
+    /// function's static type. The runtime resolves that type before the
+    /// availability check runs, so a system without them traps rather than falling
+    /// back. The erasure is kept to this one menu item — the surrounding menu
+    /// content stays a plain ViewBuilder so SwiftUI can still see its items.
+    private func launchModeControls(_ app: LCAppModel) -> AnyView {
+        if #available(iOS 16.4, *) {
+            return AnyView(
+                ControlGroup { launchModeButtons(app) }
+                    .menuActionDismissBehavior(.disabled)
+            )
+        }
+        if #available(iOS 16.0, *) {
+            return AnyView(ControlGroup { launchModeButtons(app) })
+        }
+        return AnyView(Group { launchModeButtons(app) })
+    }
+
+    @ViewBuilder
+    private func launchModeButtons(_ app: LCAppModel) -> some View {
+        Button {
+            FlekLaunchModeStore.shared.set(.single, for: app)
+            launchModeVersion += 1
+        } label: {
+            Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
+        }
+        Button {
+            FlekLaunchModeStore.shared.set(.parallel, for: app)
+            launchModeVersion += 1
+        } label: {
+            Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
+        }
+    }
+
     @ViewBuilder
     private func installedContextMenu(_ app: LCAppModel) -> some View {
-        let currentMode = FlekLaunchModeStore.shared.mode(for: app)
-        let effectiveIsParallel = currentMode != nil ? (currentMode == .parallel) : app.shouldLaunchInMultitaskMode
-
         // Fixed grid symbols; the menu stays open on tap (launchModeVersion +
         // menuActionDismissBehavior) so multiple picks behave like the grid.
-        if #available(iOS 16.4, *) {
-            ControlGroup {
-                Button {
-                    FlekLaunchModeStore.shared.set(.single, for: app)
-                    launchModeVersion += 1
-                } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
-                }
-                Button {
-                    FlekLaunchModeStore.shared.set(.parallel, for: app)
-                    launchModeVersion += 1
-                } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
-                }
-            }
-            .menuActionDismissBehavior(.disabled)
-        } else if #available(iOS 16.0, *) {
-            ControlGroup {
-                Button {
-                    FlekLaunchModeStore.shared.set(.single, for: app)
-                    launchModeVersion += 1
-                } label: {
-                    Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
-                }
-                Button {
-                    FlekLaunchModeStore.shared.set(.parallel, for: app)
-                    launchModeVersion += 1
-                } label: {
-                    Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
-                }
-            }
-        } else {
-            Button {
-                FlekLaunchModeStore.shared.set(.single, for: app)
-                launchModeVersion += 1
-            } label: {
-                Label("lc.appBanner.runSingle".loc, systemImage: "app.dashed")
-            }
-            Button {
-                FlekLaunchModeStore.shared.set(.parallel, for: app)
-                launchModeVersion += 1
-            } label: {
-                Label("lc.appBanner.runParallel".loc, systemImage: "macwindow.on.rectangle")
-            }
-        }
+        launchModeControls(app)
 
         Menu {
             Button {

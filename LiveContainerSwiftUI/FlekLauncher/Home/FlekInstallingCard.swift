@@ -60,18 +60,27 @@ struct FlekInstallIcon: View {
             } else {
                 // Centered percentage during download
                 let fontSize: CGFloat = size > 60 ? 18 : 13
+                // Both branches erased to AnyView so the conditional's type is
+                // _ConditionalContent<AnyView, AnyView>. `contentTransition` is
+                // iOS 16+, and leaving it in the static type traps on iOS 15,
+                // where the runtime resolves that type before the availability
+                // check runs.
                 if #available(iOS 16.0, *) {
-                    Text("\(Int((state.fraction * 100).rounded()))%")
-                        .font(.system(size: fontSize, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .contentTransition(.numericText())
-                        .animation(.default, value: Int((state.fraction * 100).rounded()))
-                        .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
+                    AnyView(
+                        Text("\(Int((state.fraction * 100).rounded()))%")
+                            .font(.system(size: fontSize, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .contentTransition(.numericText())
+                            .animation(.default, value: Int((state.fraction * 100).rounded()))
+                            .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
+                    )
                 } else {
-                    Text("\(Int((state.fraction * 100).rounded()))%")
-                        .font(.system(size: fontSize, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
+                    AnyView(
+                        Text("\(Int((state.fraction * 100).rounded()))%")
+                            .font(.system(size: fontSize, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .frame(width: "100%".size(withAttributes: [.font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)]).width)
+                    )
                 }
             }
         }

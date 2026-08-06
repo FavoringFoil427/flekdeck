@@ -85,7 +85,7 @@ struct FlekSearchView: View {
         } else if results.isEmpty && repoSearch.sections.isEmpty && !repoSearch.isLoading {
             Spacer()
             VStack(spacing: 16) {
-                Image(systemName: "app.grid")
+                Image(systemName: FlekSymbol.appGrid)
                     .font(.system(size: 75, weight: .thin))
                     .foregroundStyle(Color.white.opacity(0.6))
                 Text("Nothing found")

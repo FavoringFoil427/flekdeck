@@ -747,13 +747,19 @@ private struct PercentageText: View {
     private static let fixedWidth = "100%".size(withAttributes: [.font: font]).width
 
     var body: some View {
+        // Both branches erased to AnyView so the conditional's type is
+        // _ConditionalContent<AnyView, AnyView>. `contentTransition` is iOS 16+,
+        // and leaving it in the static type traps on iOS 15, where the runtime
+        // resolves that type before the availability check runs.
         Group {
             if #available(iOS 16.0, *) {
-                Text("\(percent)%")
-                    .contentTransition(.numericText())
-                    .animation(.default, value: percent)
+                AnyView(
+                    Text("\(percent)%")
+                        .contentTransition(.numericText())
+                        .animation(.default, value: percent)
+                )
             } else {
-                Text("\(percent)%")
+                AnyView(Text("\(percent)%"))
             }
         }
         .font(.system(size: 18, weight: .bold).monospacedDigit())

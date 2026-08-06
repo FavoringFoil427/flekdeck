@@ -105,13 +105,30 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
         }
         
         if UIApplication.shared.supportsMultipleScenes, #available(iOS 16.1, *) {
-            WindowGroup(id: "appView", for: String.self) { $id in
-                if let id {
-                    MultitaskAppWindow(id: id)
-                }
-            }
-
+            MultitaskScene()
         }
     }
-    
+
+}
+
+/// The multi-window scene, isolated behind its own availability-annotated type.
+///
+/// `WindowGroup(id:for:)` produces `PresentedWindowContent`, which is iOS 16.0+.
+/// Inlined in `body` above, that type would land in the App's `Body` — and
+/// SwiftUI resolves `Body` at launch, before any `#available` check runs, so
+/// iOS 15 would trap on start rather than skipping the scene. Referencing
+/// `MultitaskScene` instead is safe on every version because its metadata lives
+/// in our own binary; its `Body` is only resolved if the scene is actually
+/// built, which the guard above prevents. There is no `AnyScene`, so this
+/// indirection is the Scene-level equivalent of the AnyView erasure used for
+/// version-gated views.
+@available(iOS 16.1, *)
+private struct MultitaskScene: Scene {
+    var body: some Scene {
+        WindowGroup(id: "appView", for: String.self) { $id in
+            if let id {
+                MultitaskAppWindow(id: id)
+            }
+        }
+    }
 }

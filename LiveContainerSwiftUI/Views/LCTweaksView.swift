@@ -79,7 +79,7 @@ struct LCTweakFolderView : View {
                         } else if tweakItem.isTweak {
                             Label(tweakItem.fileUrl.lastPathComponent, systemImage: "building.columns.fill")
                         } else {
-                            Label(tweakItem.fileUrl.lastPathComponent, systemImage: "document.fill")
+                            Label(tweakItem.fileUrl.lastPathComponent, systemImage: FlekSymbol.document)
                         }
                     }
                     .contextMenu {

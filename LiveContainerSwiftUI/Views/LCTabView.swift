@@ -498,18 +498,22 @@ private struct AccessVerificationFailedView: View {
 /// hard requirement for the two-swipe behaviour — do not re-add
 /// `.persistentSystemOverlays(.hidden)` here.
 private struct DeferBottomHomeGestureModifier: ViewModifier {
-    func body(content: Content) -> some View {
+    // Erased to AnyView: `defersSystemGestures` is iOS 16+, and an opaque return
+    // type would bake its modifier type into Body. The runtime resolves Body
+    // before the availability check ever runs, so iOS 15 would trap here.
+    func body(content: Content) -> AnyView {
         if #available(iOS 16.0, *) {
-            content
-                .defersSystemGestures(on: .bottom)
-                // SwiftUI's `.defersSystemGestures(on:)` frequently fails to
-                // propagate `preferredScreenEdgesDeferringSystemGestures` to the
-                // window's view controllers, so also install it directly on the
-                // hosting controller at runtime as a reliable backstop.
-                .background(BottomEdgeGestureDeferralInstaller())
-        } else {
-            content
+            return AnyView(
+                content
+                    .defersSystemGestures(on: .bottom)
+                    // SwiftUI's `.defersSystemGestures(on:)` frequently fails to
+                    // propagate `preferredScreenEdgesDeferringSystemGestures` to the
+                    // window's view controllers, so also install it directly on the
+                    // hosting controller at runtime as a reliable backstop.
+                    .background(BottomEdgeGestureDeferralInstaller())
+            )
         }
+        return AnyView(content)
     }
 }
 

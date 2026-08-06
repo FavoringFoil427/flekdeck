@@ -41,7 +41,7 @@ struct FlekPersonalizationView: View {
                             actionTile(title: "lc.flek.chooseFromCollection".loc, systemImage: "rectangle.grid.3x2.fill") {
                                 showCollection = true
                             }
-                            actionTile(title: "lc.flek.chooseFromPhotos".loc, systemImage: "photo.badge.plus") {
+                            actionTile(title: "lc.flek.chooseFromPhotos".loc, systemImage: FlekSymbol.addPhoto) {
                                 showPhotoPicker = true
                             }
                         }
@@ -200,7 +200,7 @@ private struct LayoutGlyph: View {
     var body: some View {
         let tint = selected ? Color.accentColor : Color.secondary
         ZStack {
-            Image(systemName: "iphone.gen3")
+            Image(systemName: FlekSymbol.device)
                 .font(.system(size: 80, weight: .thin))
                 .foregroundStyle(tint)
 
