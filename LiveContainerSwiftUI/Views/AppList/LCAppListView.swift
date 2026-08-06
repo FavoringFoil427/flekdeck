@@ -1250,9 +1250,50 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             keepOpen = []
         }
 
+        // `preferredElementSize = .medium` lays the two modes out as a compact
+        // palette, which has no checkmark column: `state == .on` draws nothing
+        // there. iOS 26 tints the selected element instead, so it reads correctly,
+        // but every earlier system left the menu with no sign of the active mode.
+        //
+        // Rather than give up the compact layout, carry the indicator in the image
+        // on those systems — the image is always drawn. `state` stays set either
+        // way, so `.singleSelection` still enforces the radio behaviour and iOS 26
+        // keeps using its own styling.
+        let usesCompactLayout: Bool
+        let stylesSelectionItself: Bool
+        if #available(iOS 26.0, *) {
+            usesCompactLayout = true
+            stylesSelectionItself = true
+        } else if #available(iOS 16.0, *) {
+            usesCompactLayout = true
+            stylesSelectionItself = false
+        } else {
+            // Full-width rows, where the checkmark renders on its own.
+            usesCompactLayout = false
+            stylesSelectionItself = true
+        }
+        let markInImage = usesCompactLayout && !stylesSelectionItself
+        let isSingle = !effectiveIsParallel
+
+        /// UIKit exposes no per-element background tint — `state` is the only
+        /// selection mechanism, and iOS 26's tinted element is its own styling
+        /// rather than something that can be asked for. The image is the one part
+        /// of a compact element we control, so colour the active mode's glyph
+        /// instead; `.alwaysOriginal` keeps that colour rather than letting the
+        /// menu re-template it to the label colour.
+        ///
+        /// Green rather than the accent: the accent is close enough to the menu's
+        /// own label colour to read as no change at all at palette icon size, so
+        /// the cue needs a hue that is obviously not the default.
+        func modeImage(_ name: String, selected: Bool) -> UIImage? {
+            let image = UIImage(systemName: name)
+            guard markInImage, selected else { return image }
+            return image?.withTintColor(.systemGreen, renderingMode: .alwaysOriginal)
+        }
+
         let runSingle = UIAction(
             title: "lc.appBanner.runSingle".loc,
-            image: UIImage(systemName: "app.dashed"),
+            image: modeImage("app.dashed", selected: isSingle),
             attributes: keepOpen,
             state: effectiveIsParallel ? .off : .on
         ) { _ in
@@ -1262,7 +1303,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         let runParallel = UIAction(
             title: "lc.appBanner.runParallel".loc,
-            image: UIImage(systemName: "macwindow.on.rectangle"),
+            image: modeImage("macwindow.on.rectangle", selected: !isSingle),
             attributes: keepOpen,
             state: effectiveIsParallel ? .on : .off
         ) { _ in
@@ -1271,7 +1312,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             LCSpringboardPageCell.refreshActiveCellBadge()
         }
         let launchGroup = UIMenu(title: "", options: [.displayInline, .singleSelection], children: [runSingle, runParallel])
-        if #available(iOS 16.0, *) {
+        if usesCompactLayout, #available(iOS 16.0, *) {
             launchGroup.preferredElementSize = .medium
         }
 
