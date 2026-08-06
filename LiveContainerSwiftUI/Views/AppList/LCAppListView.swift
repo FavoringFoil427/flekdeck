@@ -1902,6 +1902,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             // enable SDK version spoof by defalut
             finalNewApp.spoofSDKVersion = true
         }
+        // WhatsApp never delivers a local notification unless the fix under the
+        // app's Fixes section is on, so turn it on here instead of leaving the
+        // user to discover the toggle. Matching the bundle id loosely covers the
+        // whole family (net.whatsapp.WhatsApp, .WhatsAppSMB, re-signed clones).
+        // Deliberately applied on reinstall too — an app updated from an older
+        // install should end up with the fix on as well.
+        if finalNewApp.bundleIdentifier()?.localizedCaseInsensitiveContains("whatsapp") ?? false {
+            finalNewApp.fixLocalNotification = true
+        }
         finalNewApp.installationDate = Date.now
         // Detect (once) whether this is a game and cache it, so the launch-time
         // check is a cheap flag read instead of a per-tap bundle scan. Runs off
