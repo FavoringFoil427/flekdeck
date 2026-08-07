@@ -105,10 +105,12 @@ static void odrSetUpIfNeeded(void) {
     return YES;
 }
 
+// Answer the way the real request does — off the main thread, which an app may
+// well be blocking until the resources land. See lcGuestCallbackQueue().
 - (void)hook_beginAccessingResourcesWithCompletionHandler:(void(^)(NSError *error))completionHandler {
     if([self lc_isSatisfiedLocally]) {
         NSLog(@"[LC] ODR: serving tags %{public}s from the bundle, skipping ondemandd", self.tags.description.UTF8String);
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(lcGuestCallbackQueue(), ^{
             completionHandler(nil);
         });
         return;
@@ -118,7 +120,7 @@ static void odrSetUpIfNeeded(void) {
 
 - (void)hook_conditionallyBeginAccessingResourcesWithCompletionHandler:(void(^)(BOOL resourcesAvailable))completionHandler {
     if([self lc_isSatisfiedLocally]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(lcGuestCallbackQueue(), ^{
             completionHandler(YES);
         });
         return;

@@ -51,8 +51,12 @@ struct LCBlockLayout {
 };
 
 static NSMethodSignature* lcBlockSignature(id block) {
+    if(!block) return nil;
     struct LCBlockLayout* layout = (__bridge struct LCBlockLayout*)block;
     if(!(layout->flags & LCBlockHasSignature)) return nil;
+    // A freed block reads back as plausible flags over a null descriptor, and the
+    // cursor arithmetic below would then dereference a small constant address.
+    if(!layout->descriptor) return nil;
 
     // descriptor: { reserved, size }, then copy/dispose if present, then signature
     uint8_t* cursor = layout->descriptor;
@@ -130,10 +134,47 @@ static void lcFailOperation(id operation, NSError* error) {
 
 @implementation LCCloudKitStub
 
-+ (instancetype)stubForClass:(NSString *)className {
-    LCCloudKitStub* stub = [LCCloudKitStub new];
-    stub.lc_impersonatedClass = className;
-    return stub;
+// Real CloudKit vends one container per identifier and keeps it for the life of
+// the process, and each container owns its databases the same way. Apps lean on
+// that: an engine will store the database in a plain C++ field and never retain
+// it, which is correct against CloudKit and fatal against a stand-in that is
+// freshly made and autoreleased on every call — the field dangles at the next
+// pool drain, and the app dies the moment it messages it. Little Nightmares does
+// precisely this, and crashed in fetchRecordWithID:completionHandler: reaching
+// for a database it had cached at launch.
+//
+// So a stub is made once per key and held forever, matching both the lifetime
+// and the pointer identity of the object it stands in for.
++ (instancetype)stubForClass:(NSString *)className key:(NSString *)key identifier:(NSString *)identifier {
+    static NSMutableDictionary<NSString*, LCCloudKitStub*>* registry;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        registry = [NSMutableDictionary new];
+    });
+
+    @synchronized(registry) {
+        LCCloudKitStub* stub = registry[key];
+        if(!stub) {
+            stub = [LCCloudKitStub new];
+            stub.lc_impersonatedClass = className;
+            stub.lc_containerIdentifier = identifier;
+            registry[key] = stub;
+        }
+        return stub;
+    }
+}
+
++ (instancetype)containerStubForIdentifier:(NSString *)identifier {
+    return [self stubForClass:@"CKContainer"
+                          key:[NSString stringWithFormat:@"container:%@", identifier ?: @"(default)"]
+                   identifier:identifier];
+}
+
+- (id)lc_databaseNamed:(NSString *)name {
+    return [LCCloudKitStub stubForClass:@"CKDatabase"
+                                    key:[NSString stringWithFormat:@"database:%@:%@",
+                                         self.lc_containerIdentifier ?: @"(default)", name]
+                             identifier:self.lc_containerIdentifier];
 }
 
 - (Class)lc_realClass {
@@ -169,23 +210,34 @@ static void lcFailOperation(id operation, NSError* error) {
     return self.lc_containerIdentifier;
 }
 
-- (id)privateCloudDatabase { return [LCCloudKitStub stubForClass:@"CKDatabase"]; }
-- (id)publicCloudDatabase  { return [LCCloudKitStub stubForClass:@"CKDatabase"]; }
-- (id)sharedCloudDatabase  { return [LCCloudKitStub stubForClass:@"CKDatabase"]; }
-- (id)databaseWithDatabaseScope:(NSInteger)scope { return [LCCloudKitStub stubForClass:@"CKDatabase"]; }
+- (id)privateCloudDatabase { return [self lc_databaseNamed:@"private"]; }
+- (id)publicCloudDatabase  { return [self lc_databaseNamed:@"public"]; }
+- (id)sharedCloudDatabase  { return [self lc_databaseNamed:@"shared"]; }
+
+// CKDatabaseScope: 1 public, 2 private, 3 shared. A real container answers this
+// with the same objects its named accessors return, so do the same.
+- (id)databaseWithDatabaseScope:(NSInteger)scope {
+    switch(scope) {
+        case 1:  return [self publicCloudDatabase];
+        case 3:  return [self sharedCloudDatabase];
+        default: return [self privateCloudDatabase];
+    }
+}
 
 // The one the app is usually waiting on. No account is a state every CloudKit
-// app already handles, and it isn't an error, so report it without one.
+// app already handles, and it isn't an error, so report it without one. Real
+// CloudKit answers off the main thread and an app may be blocking that thread
+// until we do — see lcGuestCallbackQueue().
 - (void)accountStatusWithCompletionHandler:(void(^)(NSInteger status, NSError* error))completionHandler {
     if(!completionHandler) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    dispatch_async(lcGuestCallbackQueue(), ^{
         completionHandler(LCAccountStatusNoAccount, nil);
     });
 }
 
 - (void)addOperation:(id)operation {
     if(!operation) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    dispatch_async(lcGuestCallbackQueue(), ^{
         lcFailOperation(operation, lcNoAccountError());
     });
 }
@@ -207,12 +259,16 @@ static void lcFailOperation(id operation, NSError* error) {
         if(strcmp([signature getArgumentTypeAtIndex:i], "@?") != 0) continue;
         __unsafe_unretained id handler = nil;
         [invocation getArgument:&handler atIndex:i];
-        if(handler) [handlers addObject:handler];
+        // Copy, don't just retain. An argument block usually lives on the caller's
+        // stack, and we answer it from another queue after this frame has returned;
+        // retaining a stack block does nothing, so the pointer would be reading
+        // dead memory by the time it is called. Copying moves it to the heap.
+        if(handler) [handlers addObject:[handler copy]];
     }
 
     if(handlers.count) {
         NSError* error = lcNoAccountError();
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(lcGuestCallbackQueue(), ^{
             for(id handler in handlers) lcCallBlock(handler, error);
         });
     }
@@ -255,9 +311,7 @@ static void installCloudKitStub(void) {
     if(containerWithIdentifier) {
         method_setImplementation(containerWithIdentifier, imp_implementationWithBlock(^id(id self, NSString* identifier) {
             NSLog(@"[LC] CloudKit is unavailable in LiveContainer, standing in for container %s", identifier.UTF8String);
-            LCCloudKitStub* stub = [LCCloudKitStub stubForClass:@"CKContainer"];
-            stub.lc_containerIdentifier = identifier;
-            return stub;
+            return [LCCloudKitStub containerStubForIdentifier:identifier];
         }));
     }
 
@@ -265,7 +319,7 @@ static void installCloudKitStub(void) {
     if(defaultContainer) {
         method_setImplementation(defaultContainer, imp_implementationWithBlock(^id(id self) {
             NSLog(@"[LC] CloudKit is unavailable in LiveContainer, standing in for the default container");
-            return [LCCloudKitStub stubForClass:@"CKContainer"];
+            return [LCCloudKitStub containerStubForIdentifier:nil];
         }));
     }
 }
