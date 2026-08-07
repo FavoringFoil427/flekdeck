@@ -411,6 +411,24 @@ class AppInfoProvider {
         return barFlatRegion
     }
 
+    /// The part of the bar that is drawn *over* the app rather than carved out of
+    /// its frame: the concave corner band sitting above the flat strip (the bar's
+    /// full view is `barFlatRegion + barCornerRadiusActive` thick, and only
+    /// `barReservedThickness` of that is reserved). Guests are handed this as a
+    /// bottom safe-area inset so their own bottom-pinned controls clear the band —
+    /// backgrounds still extend underneath it, which is what makes the app look
+    /// nested in the bar.
+    @objc public var barOverlayThickness: CGFloat {
+        return barCornerRadiusActive
+    }
+
+    /// Which edge the bar currently covers: the right edge on a landscape iPhone,
+    /// the bottom everywhere else. Exposed so guest windows inset the same edge the
+    /// bar actually occupies instead of assuming the bottom.
+    @objc public var barOnRightEdge: Bool {
+        return isBarLandscape
+    }
+
     /// Reserves (or clears) space for the switcher bar on an internal page,
     /// on the axis where the bar actually lives — the bottom edge in portrait,
     /// the right edge in landscape. Reserving the bottom in landscape (where the

@@ -474,7 +474,23 @@ void UIKitFixesInit(void) {
     UIEdgeInsets safeAreaInsets = self.view.window.safeAreaInsets;
     if(self.navigationBar.hidden) {
         if(MultitaskDockManager.shared.barVisible) {
-            safeAreaInsets.bottom = 0; // App window doesn't extend to bottom; switcher bar handles it
+            // The bar's flat strip is carved out of the container frame in
+            // updateMaximizedFrameWithSettings, but its concave corner band is drawn
+            // *over* the app so the app appears nested in the bar. Report that band as
+            // safe area — without it the guest reads the strip as free space and pins
+            // its own bottom controls underneath the bar (a full-width button in an
+            // onboarding flow ends up completely hidden until the bar is collapsed).
+            // Backgrounds still extend under the band, so the nesting look is unchanged.
+            CGFloat overlay = MultitaskDockManager.shared.barOverlayThickness;
+            if(MultitaskDockManager.shared.barOnRightEdge) {
+                // Landscape iPhone: the bar hugs the right edge, and the rotated guest
+                // reads the host's right inset as its own bottom (see the orientation
+                // mapping below). The bottom keeps its existing behaviour.
+                safeAreaInsets.right = MAX(safeAreaInsets.right, overlay);
+                safeAreaInsets.bottom = 0;
+            } else {
+                safeAreaInsets.bottom = overlay;
+            }
         }
         settings.peripheryInsets = safeAreaInsets;
         safeAreaInsets = UIEdgeInsetsZero;
