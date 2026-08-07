@@ -220,6 +220,7 @@
 			membershipExceptions = (
 				"CloudKit+GuestHooks.m",
 				DocumentPicker.m,
+				"GameKit+GuestHooks.m",
 				Notification.m,
 				"ODR+GuestHooks.m",
 				TweakLoader.m,
