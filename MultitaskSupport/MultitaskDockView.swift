@@ -393,22 +393,37 @@ class AppInfoProvider {
         // return v > 0 ? CGFloat(v) : deviceScreenCornerRadius
     }
 
-    /// The exact on-screen thickness of the switcher bar strip on its short edge
-    /// (matches `updateDockFrame`). App windows reserve this so their content
-    /// sits flush against the bar with no background gap showing through.
+    /// The bar's real thickness on the edge it occupies, measured from the laid-out
+    /// hosting view instead of recomputed from the constants that sized it.
+    ///
+    /// Everything an app window needs in order to stay clear of the bar derives from
+    /// this one number, so the two can never disagree about where the bar begins.
+    /// Recomputing it was the bug: `barFlatRegion` reads the window's safe area live,
+    /// and when that read lands before the inset arrives (the case `updateDockFrame`
+    /// guards against for the bar itself) the app reserved a different strip than the
+    /// bar actually drew. Whether the difference showed depended on the device —
+    /// `barFlatRegion`'s `buttonRoom` floor absorbs it on screens with a large corner
+    /// radius and not on smaller ones — which is exactly the kind of per-device
+    /// discrepancy measuring avoids.
+    ///
+    /// Falls back to the computed strip until the bar has actually been laid out.
+    @objc public var barOccupiedThickness: CGFloat {
+        let computed = barFlatRegion + barCornerRadiusActive
+        guard isVisible, isSwitcherBarVisible,
+              let barView = hostingController?.view, barView.window != nil else {
+            return computed
+        }
+        // The view carries a -90° transform in landscape, so `frame` is its
+        // axis-aligned box in the window — the thickness is the short side either way.
+        let measured = isBarLandscape ? barView.frame.width : barView.frame.height
+        return measured > 0 ? measured : computed
+    }
+
+    /// The part of the bar carved out of an app window's frame: its solid strip, i.e.
+    /// everything below the concave corner band. The app sits flush on top of it with
+    /// no background gap showing through.
     @objc public var barReservedThickness: CGFloat {
-        // Reserve down to the bar's visible flat top so the app sits flush against
-        // it. The tall rounded design's concave corners rise `deviceScreenCornerRadius`
-        // above that flat top and overlay the app's bottom corners (the nesting
-        // look), so they must not be reserved. Deriving the flat top from the real
-        // corner radius keeps the app flush on every device — the old fixed base
-        // height only lined up on phones whose corner radius matched the assumed
-        // value and left a thin gap on the rest.
-        // Both designs and both orientations share the same flat-top line, so reserve
-        // down to it (the concave corners / square top sit above it and overlay
-        // nothing that needs reserving). Landscape uses the identical value now that
-        // its bar is the same shaped strip as portrait.
-        return barFlatRegion
+        return max(barOccupiedThickness - barOverlayThickness, 0)
     }
 
     /// The part of the bar that is drawn *over* the app rather than carved out of
@@ -419,7 +434,12 @@ class AppInfoProvider {
     /// backgrounds still extend underneath it, which is what makes the app look
     /// nested in the bar.
     @objc public var barOverlayThickness: CGFloat {
-        return barCornerRadiusActive
+        // Clamped to the measured strip so the split between "carved out of the frame"
+        // and "reported as safe area" can never exceed the bar itself: the two always
+        // sum to `barOccupiedThickness`, and a stale corner radius shifts where the
+        // split falls (how much of the app draws under the corners) rather than
+        // leaving a sliver of the app underneath the bar.
+        return min(barCornerRadiusActive, barOccupiedThickness)
     }
 
     /// Which edge the bar currently covers: the right edge on a landscape iPhone,
@@ -677,6 +697,11 @@ class AppInfoProvider {
             if self.isVisible && self.isSwitcherBarVisible {
                 self.updateDockFrame(animated: false)
             }
+            // Same reasoning as the sentinel: the bar may have just been re-laid out
+            // with a safe area it didn't have when a guest window last measured it.
+            if self.isVisible {
+                NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+            }
         }
     }
 
@@ -698,6 +723,13 @@ class AppInfoProvider {
                     let reserved = self.isVisible && self.isSwitcherBarVisible
                     for (_, controller) in self.internalPageControllers {
                         self.applyBarInset(to: controller, reserved: reserved)
+                    }
+                    // Guest windows size themselves around the bar as well, but until
+                    // now only a user-driven show/hide re-ran their layout — so a bar
+                    // that resized here (a late safe-area inset changes its thickness)
+                    // left them fitted to the old one. They already listen for this.
+                    if self.isVisible {
+                        NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
                     }
                 }
             }
