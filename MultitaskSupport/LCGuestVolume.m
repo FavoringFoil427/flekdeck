@@ -56,7 +56,13 @@
         }
     }
     if(self.volumeToken) {
-        notify_set_state(self.volumeToken.intValue, (uint64_t)lroundf(volume * 1000.0f));
+        uint32_t status = notify_set_state(self.volumeToken.intValue, (uint64_t)lroundf(volume * 1000.0f));
+        if(status != NOTIFY_STATUS_OK) {
+            // Worth saying out loud: without the state the guest still hears
+            // silence and full volume, so a broken payload looks like a slider
+            // that only works at its two ends.
+            NSLog(@"[LCAudioMute] host could not set volume state (%u)", status);
+        }
     }
     notify_post(volumeName.UTF8String);
 

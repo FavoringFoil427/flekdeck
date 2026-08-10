@@ -1058,6 +1058,16 @@ static void lcSetGain(float gain) {
         lcReapplyCategory();
     }
 
+    // A drag arrives as a hundred of these a second. Reporting each one means a
+    // hundred log lines, a hundred registry snapshots to count them, and a
+    // hundred acknowledgements for the host to log in turn — enough work to be
+    // felt on the thing being dragged. Only movement worth reading is reported.
+    static float lastReportedGain = -1.0f;
+    if(lastReportedGain >= 0.0f && wasMuted == lcIsMuted() && fabsf(gain - lastReportedGain) < 0.1f) {
+        return;
+    }
+    lastReportedGain = gain;
+
     NSLog(@"[LCAudioMute] gain=%.2f applied (hooks: audioUnit=%d audioQueue=%d session=%d avAudioPlayer=%d avPlayer=%d engine=%d playerNode=%d sampleBuffer=%d webView=%d; known: audioPlayers=%lu avPlayers=%lu mixers=%lu playerNodes=%lu renderers=%lu webViews=%lu)",
           gain, gAudioUnitHooksInstalled, gAudioQueueHooksInstalled, gSessionHooksInstalled,
           gAudioPlayerHooksInstalled, gPlayerHooksInstalled, gEngineHooksInstalled, gPlayerNodeHooksInstalled,

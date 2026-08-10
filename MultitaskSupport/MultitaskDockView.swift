@@ -3219,10 +3219,35 @@ final class VolumeSlideCoordinator: NSObject {
     private var startVolume: Float = 1
     private var startX: CGFloat = 0
     private var wasAtEnd = false
+    private var shownIconStep = -1
     private weak var lockedScrollView: UIScrollView?
 
     init(control: @escaping () -> LCGuestVolume?) {
         self.control = control
+    }
+
+    /// Swaps the speaker glyph, crossfading when the drawing actually differs.
+    /// A snapshot crossfade rather than iOS 17's symbol transitions: those are
+    /// applied to the image view, which a button will overwrite from its own
+    /// stored image on the next layout pass, and this has to look the same on
+    /// every version the app supports.
+    func applyIcon(volume: Float, to button: UIButton, animated: Bool) {
+        let step = MuteToggleButton.iconStep(forVolume: volume)
+        guard step != shownIconStep else { return }
+        let firstShow = shownIconStep < 0
+        shownIconStep = step
+        let image = MuteToggleButton.icon(forStep: step)
+
+        guard animated, !firstShow, !UIAccessibility.isReduceMotionEnabled else {
+            button.setImage(image, for: .normal)
+            return
+        }
+        // .allowUserInteraction matters: without it the drag under way stops
+        // being tracked for the length of the fade.
+        UIView.transition(with: button, duration: 0.18,
+                          options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]) {
+            button.setImage(image, for: .normal)
+        }
     }
 
     func attach(to button: UIButton) {
@@ -3245,6 +3270,10 @@ final class VolumeSlideCoordinator: NSObject {
             startX = gesture.location(in: button.window).x
             wasAtEnd = startVolume <= 0 || startVolume >= 1
             presentOverlay(from: button, volume: audio.volume)
+            // Unlock first: if a previous gesture ended without its .ended ever
+            // arriving, the switcher would be left unable to scroll, which is a
+            // far worse failure than a stray drag.
+            unlockScrollView()
             lockEnclosingScrollView(from: button)
         case .changed:
             guard let overlay = self.overlay else { return }
@@ -3255,7 +3284,7 @@ final class VolumeSlideCoordinator: NSObject {
             let volume = min(max(startVolume + Float(travel / VolumeSlideOverlay.trackWidth), 0), 1)
             audio.volume = volume
             overlay.setVolume(volume)
-            button.setImage(MuteToggleButton.icon(forVolume: volume), for: .normal)
+            applyIcon(volume: volume, to: button, animated: true)
 
             // A tap on arriving at either end, once per arrival — every native
             // slider does this, and travelling into a dead stop in silence is
@@ -3388,6 +3417,10 @@ final class VolumeSlideCoordinator: NSObject {
         lockedScrollView?.isScrollEnabled = true
         lockedScrollView = nil
     }
+
+    deinit {
+        lockedScrollView?.isScrollEnabled = true
+    }
 }
 
 /// Volume control for one guest, as a speaker button: tap to mute, or hold and
@@ -3412,16 +3445,35 @@ struct MuteToggleButton: UIViewRepresentable {
         self.cardWidth = cardWidth
     }
 
-    static func icon(forVolume volume: Float) -> UIImage? {
-        let name: String
+    /// How many waves the speaker is drawn with, silence included. Kept as a step
+    /// rather than a level because that is all the glyph can show — and knowing
+    /// when it has actually changed is what keeps the animation off the other
+    /// ninety-nine drag events that change nothing on screen.
+    static func iconStep(forVolume volume: Float) -> Int {
         switch volume {
-        case ..<0.01: name = "speaker.slash.fill"
-        case ..<0.34: name = "speaker.wave.1.fill"
-        case ..<0.67: name = "speaker.wave.2.fill"
-        default: name = "speaker.wave.3.fill"
+        case ..<0.01: return 0
+        case ..<0.34: return 1
+        case ..<0.67: return 2
+        default: return 3
         }
-        return UIImage(systemName: name,
-                       withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+    }
+
+    static func icon(forStep step: Int) -> UIImage? {
+        let configuration = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        if step == 0 {
+            return UIImage(systemName: "speaker.slash.fill", withConfiguration: configuration)
+        }
+        // One symbol at a variable value, not three different ones: the waves are
+        // the same drawing at every step, so going up or down changes only how
+        // many of them are lit — which is what makes a crossfade read as waves
+        // appearing rather than as two unrelated icons swapping.
+        return UIImage(systemName: "speaker.wave.3.fill",
+                       variableValue: Double(step) / 3.0,
+                       configuration: configuration)
+    }
+
+    static func icon(forVolume volume: Float) -> UIImage? {
+        icon(forStep: iconStep(forVolume: volume))
     }
 
     func makeCoordinator() -> VolumeSlideCoordinator {
@@ -3433,12 +3485,15 @@ struct MuteToggleButton: UIViewRepresentable {
         button.tintColor = UIColor.white.withAlphaComponent(0.9)
         button.overrideUserInterfaceStyle = CustomizeMenuButton.windowInterfaceStyle
         let control = self.control
+        let coordinator = context.coordinator
         button.addAction(UIAction { [weak button] _ in
             guard let audio = control() else { return }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             audio.toggleMute()
-            button?.setImage(Self.icon(forVolume: audio.volume), for: .normal)
-            button?.accessibilityLabel = (audio.muted ? "lc.multitask.unmute" : "lc.multitask.mute").loc
+            if let button {
+                coordinator.applyIcon(volume: audio.volume, to: button, animated: true)
+                button.accessibilityLabel = (audio.muted ? "lc.multitask.unmute" : "lc.multitask.mute").loc
+            }
         }, for: .touchUpInside)
         context.coordinator.attach(to: button)
         updateUIView(button, context: context)
@@ -3449,7 +3504,7 @@ struct MuteToggleButton: UIViewRepresentable {
         context.coordinator.attach(to: button)
         context.coordinator.cardWidth = cardWidth
         let volume = context.coordinator.control()?.volume ?? 1.0
-        button.setImage(Self.icon(forVolume: volume), for: .normal)
+        context.coordinator.applyIcon(volume: volume, to: button, animated: false)
         button.accessibilityLabel = (volume <= 0 ? "lc.multitask.unmute" : "lc.multitask.mute").loc
     }
 }
@@ -3625,13 +3680,11 @@ struct AppSwitcherCard: View {
 
                 Spacer(minLength: 8)
 
-                // Sits clear of the Customize overlay's trailing 44pt hit area,
-                // which is laid over this whole row and would otherwise swallow
-                // the taps meant for this button.
+                // Space held for the two trailing buttons, both of which are laid
+                // over this row rather than placed in it, so the name still
+                // truncates before it reaches them.
                 if !app.isInternalPage {
-                    MuteToggleButton(app: app, cardWidth: cardWidth)
-                        .frame(width: 32, height: 32)
-                        .padding(.trailing, 44)
+                    Color.clear.frame(width: 76, height: 32)
                 }
             }
             // Customize button, laid over the whole row rather than placed in it.
@@ -3644,6 +3697,19 @@ struct AppSwitcherCard: View {
             .overlay {
                 if !app.isInternalPage {
                     CustomizeMenuButton(app: app)
+                }
+            }
+            // Above the Customize button, not beneath it. That button is a
+            // row-wide view that narrows its own touch area with point(inside:),
+            // and SwiftUI does not necessarily consult that when it decides which
+            // view a touch belongs to — on iOS 17.4 it hands the whole row to the
+            // menu, so a mute button sitting under it never sees a tap. Being the
+            // topmost view at that point settles it at both layers.
+            .overlay(alignment: .trailing) {
+                if !app.isInternalPage {
+                    MuteToggleButton(app: app, cardWidth: cardWidth)
+                        .frame(width: 32, height: 32)
+                        .padding(.trailing, 44)
                 }
             }
             // Inset the row 20pt on each side so the name (left) and the customize
