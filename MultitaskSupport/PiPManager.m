@@ -45,6 +45,9 @@ static PiPManager* sharedInstance = nil;
 
 - (instancetype)init {
     NSError* error = nil;
+    // Deliberately not mixWithOthers: PiP has to keep running once LiveContainer
+    // is backgrounded, and a mixable session is secondary audio, which does not
+    // survive that transition.
     [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:&error];
     [[AVAudioSession sharedInstance] setActive:YES withOptions:1 error:&error];
     return self;

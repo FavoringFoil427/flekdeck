@@ -497,6 +497,11 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         NSFMGuestHooksInit();
         initDead10ccFix();
     }
+    // Per-window mute, and mixable audio sessions so two guests can be heard at
+    // once. Only a LiveProcess guest is ever in a multitask window.
+    if(isLiveProcess && !isSideStore) {
+        LCAudioMuteInit(dataUUID);
+    }
     // ignore setting handler from guest app
     litehook_rebind_symbol(LITEHOOK_REBIND_GLOBAL, NSSetUncaughtExceptionHandler, hook_do_nothing, nil);
     

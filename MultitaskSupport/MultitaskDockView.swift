@@ -3114,6 +3114,419 @@ final class WideAnchorMenuButton: UIButton {
     }
 }
 
+/// The bar that appears while the speaker button is held, and fills as the
+/// finger moves. Deliberately not a UISlider: nothing ever touches it directly,
+/// it only reports what the gesture on the button is doing. No glyph on it
+/// either — the button that raised it is already showing one.
+@available(iOS 16.0, *)
+final class VolumeSlideOverlay: UIView {
+    static let trackWidth: CGFloat = 168
+    private static let height: CGFloat = 36
+    private static let inset: CGFloat = 14
+    /// The track thickens once the drag is under way, the way Control Center's
+    /// sliders swell under a finger.
+    private static let restingTrackHeight: CGFloat = 8
+    private static let activeTrackHeight: CGFloat = 11
+
+    private let blurEffect = UIBlurEffect(style: .systemMaterialDark)
+    private let blurView: UIVisualEffectView
+    private let vibrancyView: UIVisualEffectView
+    private let trackBackground = UIView()
+    private let fill = UIView()
+
+    private var trackHeight = VolumeSlideOverlay.restingTrackHeight
+    private var volume: Float = 1
+
+    init() {
+        blurView = UIVisualEffectView(effect: blurEffect)
+        vibrancyView = UIVisualEffectView(effect: UIVibrancyEffect(blurEffect: blurEffect, style: .fill))
+        super.init(frame: CGRect(x: 0, y: 0, width: Self.trackWidth + Self.inset * 2, height: Self.height))
+
+        // Material rather than a flat colour: a solid grey capsule is the one
+        // thing that reads as not-iOS however well it is shaped. Same style the
+        // switcher's own floating button uses.
+        blurView.frame = bounds
+        blurView.layer.cornerRadius = Self.height / 2
+        blurView.layer.cornerCurve = .continuous
+        blurView.clipsToBounds = true
+        blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(blurView)
+
+        trackBackground.backgroundColor = UIColor.white.withAlphaComponent(0.22)
+        trackBackground.layer.cornerCurve = .continuous
+        blurView.contentView.addSubview(trackBackground)
+
+        // Vibrancy, so the fill sits inside the material and picks up what is
+        // behind it, rather than looking painted on top of it.
+        blurView.contentView.addSubview(vibrancyView)
+        fill.backgroundColor = .white
+        fill.layer.cornerCurve = .continuous
+        vibrancyView.contentView.addSubview(fill)
+
+        isAccessibilityElement = true
+        accessibilityLabel = "lc.multitask.volume".loc
+        applyLayout()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setVolume(_ volume: Float) {
+        self.volume = min(max(volume, 0), 1)
+        applyLayout()
+        accessibilityValue = "\(Int((CGFloat(self.volume) * 100).rounded()))%"
+    }
+
+    /// Swells the track. Called inside the entrance animation, so it arrives at
+    /// resting thickness and settles into the active one.
+    func setDragging(_ dragging: Bool) {
+        trackHeight = dragging ? Self.activeTrackHeight : Self.restingTrackHeight
+        applyLayout()
+    }
+
+    private func applyLayout() {
+        let trackRect = CGRect(x: Self.inset,
+                               y: (Self.height - trackHeight) / 2,
+                               width: Self.trackWidth,
+                               height: trackHeight)
+        trackBackground.frame = trackRect
+        trackBackground.layer.cornerRadius = trackHeight / 2
+        vibrancyView.frame = trackRect
+
+        // Never a sliver: below its own thickness the fill stops being a bar and
+        // starts looking like a rendering fault, so it bottoms out at a round
+        // nub — and disappears entirely only at true silence.
+        let width = volume <= 0 ? 0 : max(trackHeight, Self.trackWidth * CGFloat(volume))
+        fill.frame = CGRect(x: 0, y: 0, width: width, height: trackHeight)
+        fill.layer.cornerRadius = trackHeight / 2
+    }
+}
+
+/// Turns a press on the speaker button into a volume drag, in one gesture: hold
+/// to bring up the bar, keep moving to set the level, lift to leave it there.
+///
+/// A `UIMenu` carrying a slider would be less code, but it costs a second touch
+/// — the menu takes the press, and the slider cannot be reached until the finger
+/// has lifted and come back down. Owning the gesture is what makes hold-and-slide
+/// a single motion.
+@available(iOS 16.0, *)
+final class VolumeSlideCoordinator: NSObject {
+    let control: () -> LCGuestVolume?
+    /// Width of the card this button belongs to, used to find the card itself in
+    /// the view tree and centre the bar on it.
+    var cardWidth: CGFloat = 0
+    private weak var button: UIButton?
+    private var overlay: VolumeSlideOverlay?
+    private var startVolume: Float = 1
+    private var startX: CGFloat = 0
+    private var wasAtEnd = false
+    private weak var lockedScrollView: UIScrollView?
+
+    init(control: @escaping () -> LCGuestVolume?) {
+        self.control = control
+    }
+
+    func attach(to button: UIButton) {
+        guard self.button !== button else { return }
+        self.button = button
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
+        press.minimumPressDuration = 0.25
+        button.addGestureRecognizer(press)
+    }
+
+    @objc private func handlePress(_ gesture: UILongPressGestureRecognizer) {
+        guard let button = self.button, let audio = control() else { return }
+        switch gesture.state {
+        case .began:
+            // The finger is going to lift on this button, and that lift must not
+            // also read as a tap and toggle the mute the drag just set.
+            button.cancelTracking(with: nil)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            startVolume = audio.volume
+            startX = gesture.location(in: button.window).x
+            wasAtEnd = startVolume <= 0 || startVolume >= 1
+            presentOverlay(from: button, volume: audio.volume)
+            lockEnclosingScrollView(from: button)
+        case .changed:
+            guard let overlay = self.overlay else { return }
+            // Relative to where the press started, not to where the finger is:
+            // the finger comes down on the button rather than on the bar, so an
+            // absolute mapping would jump the level on the first pixel of travel.
+            let travel = gesture.location(in: button.window).x - startX
+            let volume = min(max(startVolume + Float(travel / VolumeSlideOverlay.trackWidth), 0), 1)
+            audio.volume = volume
+            overlay.setVolume(volume)
+            button.setImage(MuteToggleButton.icon(forVolume: volume), for: .normal)
+
+            // A tap on arriving at either end, once per arrival — every native
+            // slider does this, and travelling into a dead stop in silence is
+            // the part that feels wrong without it.
+            let atEnd = volume <= 0 || volume >= 1
+            if atEnd && !wasAtEnd {
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
+            }
+            wasAtEnd = atEnd
+        case .ended, .cancelled, .failed:
+            dismissOverlay()
+            unlockScrollView()
+        default:
+            break
+        }
+    }
+
+    private func presentOverlay(from button: UIButton, volume: Float) {
+        guard let window = button.window else { return }
+        // Reuse whatever is still fading out from the last press, so a quick
+        // second press does not stack a new bar on top of the old one.
+        let overlay = self.overlay ?? VolumeSlideOverlay()
+        overlay.layer.removeAllAnimations()
+        overlay.transform = .identity
+        overlay.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        overlay.setDragging(false)
+        overlay.setVolume(volume)
+
+        let anchor = button.convert(button.bounds, to: window)
+        // Centred on the card, not on the button: the button sits at the card's
+        // trailing edge, so hanging the bar off it would leave it lopsided over
+        // the card and pushed against the screen edge.
+        var origin = CGPoint(x: cardCenterX(from: button, in: window) - overlay.bounds.width / 2,
+                             y: anchor.minY - overlay.bounds.height - 10)
+        origin.x = min(max(origin.x, 12), window.bounds.width - overlay.bounds.width - 12)
+        // Below the button instead, if there is no room above it.
+        let above = origin.y >= window.safeAreaInsets.top + 8
+        if !above {
+            origin.y = anchor.maxY + 10
+        }
+        overlay.frame.origin = origin
+
+        // Grows out of the button that raised it rather than out of its own
+        // middle: anchored at the point nearest the button, on the edge facing it.
+        let anchorX = min(max((anchor.midX - overlay.frame.minX) / overlay.bounds.width, 0), 1)
+        setAnchorPoint(CGPoint(x: anchorX, y: above ? 1 : 0), for: overlay)
+
+        if overlay.superview == nil {
+            window.addSubview(overlay)
+        }
+
+        if UIAccessibility.isReduceMotionEnabled {
+            overlay.alpha = 0
+            overlay.setDragging(true)
+            UIView.animate(withDuration: 0.12) { overlay.alpha = 1 }
+        } else {
+            overlay.alpha = 0
+            overlay.transform = CGAffineTransform(scaleX: 0.86, y: 0.86)
+            UIView.animate(withDuration: 0.38, delay: 0, usingSpringWithDamping: 0.72, initialSpringVelocity: 0.4,
+                           options: [.allowUserInteraction, .beginFromCurrentState]) {
+                overlay.alpha = 1
+                overlay.transform = .identity
+                overlay.setDragging(true)
+            }
+        }
+        self.overlay = overlay
+    }
+
+    private func dismissOverlay() {
+        guard let overlay = self.overlay else { return }
+        // Held briefly before it goes, the way the system's own volume HUD
+        // lingers. Fading the instant the finger lifts reads as the bar being
+        // snatched away rather than finished with.
+        UIView.animate(withDuration: 0.25, delay: 0.5,
+                       options: [.curveEaseIn, .beginFromCurrentState]) {
+            overlay.alpha = 0
+            overlay.setDragging(false)
+        } completion: { finished in
+            // Not finished means a new press interrupted it and is now using it.
+            guard finished else { return }
+            overlay.removeFromSuperview()
+            if self.overlay === overlay {
+                self.overlay = nil
+            }
+        }
+    }
+
+    /// Moves the layer's anchor point without moving the view on screen.
+    private func setAnchorPoint(_ anchorPoint: CGPoint, for view: UIView) {
+        let newPoint = CGPoint(x: view.bounds.width * anchorPoint.x, y: view.bounds.height * anchorPoint.y)
+        let oldPoint = CGPoint(x: view.bounds.width * view.layer.anchorPoint.x, y: view.bounds.height * view.layer.anchorPoint.y)
+        var position = view.layer.position
+        position.x += newPoint.x - oldPoint.x
+        position.y += newPoint.y - oldPoint.y
+        view.layer.position = position
+        view.layer.anchorPoint = anchorPoint
+    }
+
+    /// The nearest ancestor at least as wide as the card is the card — the row
+    /// holding this button is inset within it, and everything below that is
+    /// narrower still. Falls back to the button when there is no card to find.
+    private func cardCenterX(from button: UIButton, in window: UIWindow) -> CGFloat {
+        if cardWidth > 0 {
+            var candidate: UIView? = button.superview
+            while let view = candidate {
+                if view.bounds.width >= cardWidth - 0.5 {
+                    return view.convert(view.bounds, to: window).midX
+                }
+                candidate = view.superview
+            }
+        }
+        return button.convert(button.bounds, to: window).midX
+    }
+
+    // The switcher scrolls horizontally, and so does this drag. Without this the
+    // cards slide away under the finger while the level is being set.
+    private func lockEnclosingScrollView(from view: UIView) {
+        var candidate: UIView? = view
+        while let current = candidate {
+            if let scrollView = current as? UIScrollView, scrollView.isScrollEnabled {
+                scrollView.isScrollEnabled = false
+                lockedScrollView = scrollView
+                return
+            }
+            candidate = current.superview
+        }
+    }
+
+    private func unlockScrollView() {
+        lockedScrollView?.isScrollEnabled = true
+        lockedScrollView = nil
+    }
+}
+
+/// Volume control for one guest, as a speaker button: tap to mute, or hold and
+/// slide to set the level without lifting a finger.
+///
+/// Its own control rather than a menu item because silencing a window is
+/// something you reach for while listening to another one, and a two-tap trip
+/// through a menu is a poor fit for that.
+@available(iOS 16.0, *)
+struct MuteToggleButton: UIViewRepresentable {
+    let control: () -> LCGuestVolume?
+    let cardWidth: CGFloat
+
+    init(app: DockAppModel, cardWidth: CGFloat) {
+        control = { (app.view?._viewDelegate() as? DecoratedAppSceneViewController)?.appSceneVC.audio }
+        self.cardWidth = cardWidth
+    }
+
+    /// For the Xcode preview, which has no running guest to reach through.
+    init(control: @escaping () -> LCGuestVolume?, cardWidth: CGFloat) {
+        self.control = control
+        self.cardWidth = cardWidth
+    }
+
+    static func icon(forVolume volume: Float) -> UIImage? {
+        let name: String
+        switch volume {
+        case ..<0.01: name = "speaker.slash.fill"
+        case ..<0.34: name = "speaker.wave.1.fill"
+        case ..<0.67: name = "speaker.wave.2.fill"
+        default: name = "speaker.wave.3.fill"
+        }
+        return UIImage(systemName: name,
+                       withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold))
+    }
+
+    func makeCoordinator() -> VolumeSlideCoordinator {
+        VolumeSlideCoordinator(control: control)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.tintColor = UIColor.white.withAlphaComponent(0.9)
+        button.overrideUserInterfaceStyle = CustomizeMenuButton.windowInterfaceStyle
+        let control = self.control
+        button.addAction(UIAction { [weak button] _ in
+            guard let audio = control() else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            audio.toggleMute()
+            button?.setImage(Self.icon(forVolume: audio.volume), for: .normal)
+            button?.accessibilityLabel = (audio.muted ? "lc.multitask.unmute" : "lc.multitask.mute").loc
+        }, for: .touchUpInside)
+        context.coordinator.attach(to: button)
+        updateUIView(button, context: context)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.attach(to: button)
+        context.coordinator.cardWidth = cardWidth
+        let volume = context.coordinator.control()?.volume ?? 1.0
+        button.setImage(Self.icon(forVolume: volume), for: .normal)
+        button.accessibilityLabel = (volume <= 0 ? "lc.multitask.unmute" : "lc.multitask.mute").loc
+    }
+}
+
+#if DEBUG
+/// Stand-in for a switcher card, so the button and its bar can be exercised in
+/// the canvas without a device or a running guest. The control it drives posts
+/// its notifications into the void — nothing is listening on "preview".
+@available(iOS 16.0, *)
+private struct VolumeSlidePreviewCard: View {
+    private let audio = LCGuestVolume(dataUUID: "preview")
+    private let cardWidth: CGFloat = 240
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 8) {
+                Text("Hold the speaker, then slide")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.bottom, 100)
+
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 32, height: 32)
+                    Text("Guest App")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    Spacer(minLength: 8)
+                    MuteToggleButton(control: { audio }, cardWidth: cardWidth)
+                        .frame(width: 32, height: 32)
+                        .padding(.trailing, 44)
+                }
+                .frame(width: cardWidth - 40)
+                .padding(.horizontal, 20)
+
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: cardWidth, height: 300)
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// Every level the bar can show, for judging the fill's shape at the extremes
+/// without having to drag to them.
+@available(iOS 16.0, *)
+private func volumeSlideLevelsPreview() -> UIView {
+    let container = UIView()
+    container.backgroundColor = UIColor(white: 0.08, alpha: 1)
+    var y: CGFloat = 24
+    for level in [Float(0), 0.02, 0.25, 0.5, 0.85, 1] {
+        let overlay = VolumeSlideOverlay()
+        overlay.setVolume(level)
+        overlay.setDragging(true)
+        overlay.frame.origin = CGPoint(x: 24, y: y)
+        container.addSubview(overlay)
+        y += overlay.bounds.height + 12
+    }
+    return container
+}
+
+// iOS 17 on the previews themselves — the macro is not available before it,
+// which also satisfies the 16+ availability of everything they show.
+@available(iOS 17.0, *)
+#Preview("Volume bar — card") {
+    VolumeSlidePreviewCard()
+}
+
+@available(iOS 17.0, *)
+#Preview("Volume bar — levels") {
+    volumeSlideLevelsPreview()
+}
+#endif
+
 @available(iOS 16.0, *)
 struct CustomizeMenuButton: UIViewRepresentable {
     let app: DockAppModel
@@ -3138,7 +3551,7 @@ struct CustomizeMenuButton: UIViewRepresentable {
 
     /// The appearance the app is actually running in, read from the window rather
     /// than the surrounding view tree, which the overlay has overridden.
-    private static var windowInterfaceStyle: UIUserInterfaceStyle {
+    static var windowInterfaceStyle: UIUserInterfaceStyle {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.keyWindow?.traitCollection.userInterfaceStyle ?? .unspecified
     }
@@ -3211,6 +3624,15 @@ struct AppSwitcherCard: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
+
+                // Sits clear of the Customize overlay's trailing 44pt hit area,
+                // which is laid over this whole row and would otherwise swallow
+                // the taps meant for this button.
+                if !app.isInternalPage {
+                    MuteToggleButton(app: app, cardWidth: cardWidth)
+                        .frame(width: 32, height: 32)
+                        .padding(.trailing, 44)
+                }
             }
             // Customize button, laid over the whole row rather than placed in it.
             // UIKit anchors a button's menu to that button's bounds, so a 32pt button

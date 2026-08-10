@@ -14,6 +14,7 @@ void DyldHooksInit(bool hideLiveContainer, bool hookDlopen, uint32_t spoofSDKVer
 void NSFMGuestHooksInit(void);
 void initDead10ccFix(void);
 void IDFVHookInit(NSUUID* uuid);
+void LCAudioMuteInit(NSString* dataUUID);
 
 @interface NSBundle(LiveContainer)
 - (instancetype)initWithPathForMainBundle:(NSString *)path;

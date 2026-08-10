@@ -6,6 +6,7 @@
 //
 #import "UIKitPrivate+MultitaskSupport.h"
 #import "FoundationPrivate.h"
+#import "LCGuestVolume.h"
 @import UIKit;
 @import Foundation;
 
@@ -29,6 +30,8 @@ API_AVAILABLE(ios(16.0))
 @property(nonatomic) id<AppSceneViewControllerDelegate> delegate;
 @property(nonatomic) BOOL isAppRunning;
 @property(nonatomic) CGFloat scaleRatio;
+/// Volume control for this window's guest.
+@property(nonatomic, readonly) LCGuestVolume *audio;
 @property(nonatomic) UIView* contentView;
 @property(nonatomic) _UIScenePresenter *presenter;
 @property(nonatomic) UIMutableApplicationSceneSettings *settings;

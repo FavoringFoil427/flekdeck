@@ -12,6 +12,7 @@
 #import "Localization.h"
 #import "LCSharedUtils.h"
 #import "utils.h"
+#import <notify.h>
 
 @interface AppSceneViewController()
 @property int resizeDebounceToken;
@@ -29,6 +30,9 @@
 @end
 
 @implementation AppSceneViewController
+
+// Readonly with a hand-written getter, so the backing store is not synthesized.
+@synthesize audio = _audio;
 
 
 - (instancetype)initWithBundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID delegate:(id<AppSceneViewControllerDelegate>)delegate {
@@ -304,7 +308,9 @@
         return;
     }
     _isAppTerminationCleanUpCalled = true;
-    
+
+    [_audio invalidate];
+
     // Sync staged data back from app group and clean up
     if (self.stagedToAppGroup) {
         NSURL *appGroupPath = [LCSharedUtils appGroupPath];
@@ -341,6 +347,15 @@
         [self.delegate appSceneVCAppDidExit:self];
         [MultitaskManager unregisterMultitaskContainerWithContainer:self.dataUUID];
     });
+}
+
+// Created on first use rather than at init: a window that is never touched
+// never registers a notification token, and most never are.
+- (LCGuestVolume *)audio {
+    if(!_audio) {
+        _audio = [[LCGuestVolume alloc] initWithDataUUID:self.dataUUID];
+    }
+    return _audio;
 }
 
 - (void)setBackgroundNotificationEnabled:(bool)enabled {

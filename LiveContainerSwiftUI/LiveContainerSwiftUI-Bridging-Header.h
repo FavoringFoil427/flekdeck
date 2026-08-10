@@ -11,6 +11,7 @@
 #include "Utilities/LCUtils.h"
 #include "Utilities/unarchive.h"
 #include "../MultitaskSupport/AppSceneViewController.h"
+#include "../MultitaskSupport/LCGuestVolume.h"
 #include "../MultitaskSupport/DecoratedAppSceneViewController.h"
 #include "../MultitaskSupport/LCStatusBarManager.h"
 #include "../MultitaskSupport/PiPManager.h"
