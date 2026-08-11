@@ -33,6 +33,7 @@ enum JITEnablerType : Int, CaseIterable, Identifiable {
 }
 
 struct LCSettingsView: View {
+    @State private var showDevPasscode = false
     @State var errorShow = false
     @State var errorInfo = ""
     @State var successShow = false
@@ -315,7 +316,18 @@ struct LCSettingsView: View {
                     Text(LCUtils.getVersionInfo())
                         .foregroundStyle(.gray)
                         .onTapGesture(count: 5) {
-                            sharedModel.developerMode = true
+                            // Ask for the passcode before flipping developer mode
+                            // on; skip it if it's already unlocked this session.
+                            if sharedModel.developerMode { return }
+                            showDevPasscode = true
+                        }
+                        .fullScreenCover(isPresented: $showDevPasscode) {
+                            SettingsPasscodeGate(onUnlock: {
+                                sharedModel.developerMode = true
+                                showDevPasscode = false
+                            }, onCancel: {
+                                showDevPasscode = false
+                            })
                         }
                     
                     HStack(spacing:0){

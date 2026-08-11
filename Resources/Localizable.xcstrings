@@ -30082,6 +30082,28 @@
           }
         }
       }
+    },
+    "lc.multitask.noGuest": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app running on this page"
+          }
+        }
+      }
+    },
+    "lc.settings.passcode.prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter Passcode"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

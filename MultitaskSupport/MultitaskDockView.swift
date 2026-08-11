@@ -2865,7 +2865,27 @@ struct AppSwitcherOverlay: View {
             // prevent. Easing out spends the opacity early and lets the last of it go
             // gently, so the glass comes up rather than snapping in.
             .animation(.easeOut(duration: 0.3), value: exiting)
-            
+            // Returning to the springboard lives HERE, on the backdrop, not on the
+            // ZStack as a whole. The backdrop is the bottom-most, full-bleed layer;
+            // every card, button and control sits above it. So whether a tap
+            // dismisses is decided by ordinary front-to-back hit testing — a tap
+            // reaches this gesture only when nothing on top of it caught it first.
+            // For these layers — plain SwiftUI views that each fully consume any
+            // touch inside their own bounds — front-to-back hit testing settles
+            // that the same way on every iOS version and screen size, with none of
+            // the ancestor/descendant arbitration that shifted between releases.
+            //
+            // Attached to the ancestor ZStack instead (as it was), the gesture
+            // competed with each control's own gesture through SwiftUI's
+            // ancestor/descendant arbitration, which resolves differently across
+            // releases: that is why tapping the mute or Customize button dismissed
+            // the switcher on 17.4 but not elsewhere. Nothing above needs to "win"
+            // a race any more; it simply has to be hit first, which it always is.
+            .contentShape(Rectangle())
+            .onTapGesture {
+                exitToSpringboard()
+            }
+
             VStack(spacing: 0) {
                 // Pin the content near the top with a small margin below the
                 // safe area (the overlay ignores the safe area, so add it back
@@ -2958,6 +2978,11 @@ struct AppSwitcherOverlay: View {
                 Spacer()
                     .frame(height: bottomChinReserve)
             }
+            // Dead while the switcher animates out. Without this a second tap
+            // during the ~0.3s exit could land on a card that is still sliding
+            // and visible, bringing that app forward while we are already on the
+            // way to the springboard.
+            .allowsHitTesting(!exiting)
 
             // Control preference toggle, styled as the switcher bar it hides: a
             // full-width black bar anchored flush to the very bottom edge with
@@ -3025,15 +3050,17 @@ struct AppSwitcherOverlay: View {
                     .ignoresSafeArea()
             }
             .offset(y: exiting ? exitButtonOffset : 0)
+            // Inert during the exit animation, like the cards above. This chin
+            // toggle is a separate ZStack sibling, so the cards' own
+            // allowsHitTesting guard doesn't reach it — without this, a second tap
+            // landing in the chin while the switcher slides away would silently
+            // flip the persisted "Hide Switcher Bar" preference.
+            .allowsHitTesting(!exiting)
         }
         .ignoresSafeArea()
-        // Tap anywhere that isn't a card or a button returns to the springboard.
-        // Cards and buttons consume their own taps, so only the empty area here
-        // (top, bottom, sides, gaps between cards) triggers this.
-        .contentShape(Rectangle())
-        .onTapGesture {
-            exitToSpringboard()
-        }
+        // Note: background-tap-to-dismiss is deliberately NOT here on the ZStack.
+        // It lives on the backdrop layer above, so it is governed by hit testing
+        // rather than by competing with descendant controls' gestures. See there.
     }
 
     /// Tapping the background returns to the springboard: cards slide off to the
@@ -3052,8 +3079,12 @@ struct AppSwitcherOverlay: View {
     private var cardScrollView: some View {
         if #available(iOS 17.0, *) {
             ScrollView(.horizontal, showsIndicators: false) {
-                cardHStack
+                cardRow
+                    // scrollTargetLayout sits directly on the HStack so it still
+                    // finds the cards as snap targets; the dismiss catcher layers
+                    // behind that, not between it and the stack.
                     .scrollTargetLayout()
+                    .background(dismissTapCatcher)
             }
             // `.never` lets a flick carry across multiple cards with momentum and
             // then settle aligned (like the iOS App Switcher). The default
@@ -3065,12 +3096,26 @@ struct AppSwitcherOverlay: View {
             .scrollClipDisabled()
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
-                cardHStack
+                cardRow
+                    .background(dismissTapCatcher)
             }
         }
     }
-    
-    private var cardHStack: some View {
+
+    /// Behind the cards and spanning the whole padded row — the side gutters and
+    /// the gaps between cards. A horizontal ScrollView claims its full width for
+    /// hit testing, so those regions never fall through to the backdrop's dismiss
+    /// gesture below the ScrollView; this catches them from inside the scroll
+    /// content instead. It sits BEHIND the cards, so a tap on a card still reaches
+    /// the card (front-most wins) and only a tap on genuinely empty row space
+    /// lands here — local, deterministic, no ancestor gesture in sight.
+    private var dismissTapCatcher: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture { exitToSpringboard() }
+    }
+
+    private var cardRow: some View {
         HStack(alignment: .top, spacing: cardSpacing) {
             ForEach(Array(dockManager.apps.enumerated()), id: \.element.appUUID) { pair in
                 AppSwitcherCard(
@@ -3211,9 +3256,6 @@ final class VolumeSlideOverlay: UIView {
 @available(iOS 16.0, *)
 final class VolumeSlideCoordinator: NSObject {
     let control: () -> LCGuestVolume?
-    /// Width of the card this button belongs to, used to find the card itself in
-    /// the view tree and centre the bar on it.
-    var cardWidth: CGFloat = 0
     private weak var button: UIButton?
     private var overlay: VolumeSlideOverlay?
     private var startVolume: Float = 1
@@ -3253,9 +3295,28 @@ final class VolumeSlideCoordinator: NSObject {
     func attach(to button: UIButton) {
         guard self.button !== button else { return }
         self.button = button
+
         let press = UILongPressGestureRecognizer(target: self, action: #selector(handlePress(_:)))
         press.minimumPressDuration = 0.25
         button.addGestureRecognizer(press)
+
+        // Quick tap toggles mute — and UIKit itself tells the two apart, rather
+        // than a separate SwiftUI tap gesture racing the long press. require(toFail:)
+        // holds the tap until the long press has failed, so a short press toggles
+        // and a press held long enough to raise the volume bar never also toggles
+        // on release. That was a real double-fire: a hesitant hold that never
+        // moved used to both show the bar and flip the mute.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        tap.require(toFail: press)
+        button.addGestureRecognizer(tap)
+    }
+
+    @objc private func handleTap() {
+        guard let button = self.button, let audio = control() else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        audio.toggleMute()
+        applyIcon(volume: audio.volume, to: button, animated: true)
+        button.accessibilityLabel = (audio.muted ? "lc.multitask.unmute" : "lc.multitask.mute").loc
     }
 
     @objc private func handlePress(_ gesture: UILongPressGestureRecognizer) {
@@ -3314,10 +3375,15 @@ final class VolumeSlideCoordinator: NSObject {
         overlay.setVolume(volume)
 
         let anchor = button.convert(button.bounds, to: window)
-        // Centred on the card, not on the button: the button sits at the card's
-        // trailing edge, so hanging the bar off it would leave it lopsided over
-        // the card and pushed against the screen edge.
-        var origin = CGPoint(x: cardCenterX(from: button, in: window) - overlay.bounds.width / 2,
+        // Centred on the screen, sitting just above the button. Screen-centred,
+        // not card-centred: the card's centre had to be guessed by walking the
+        // view tree or measured and threaded through, and either way it landed
+        // off often enough to be worth dropping. The window's centre needs
+        // nothing, is the same on every device and orientation, and — since the
+        // bar is a floating HUD, not part of the card — reads as belonging to the
+        // screen anyway. It still springs from the button (the growth anchor
+        // below uses the button's real position), so it does not feel detached.
+        var origin = CGPoint(x: window.bounds.midX - overlay.bounds.width / 2,
                              y: anchor.minY - overlay.bounds.height - 10)
         origin.x = min(max(origin.x, 12), window.bounds.width - overlay.bounds.width - 12)
         // Below the button instead, if there is no room above it.
@@ -3383,22 +3449,6 @@ final class VolumeSlideCoordinator: NSObject {
         view.layer.anchorPoint = anchorPoint
     }
 
-    /// The nearest ancestor at least as wide as the card is the card — the row
-    /// holding this button is inset within it, and everything below that is
-    /// narrower still. Falls back to the button when there is no card to find.
-    private func cardCenterX(from button: UIButton, in window: UIWindow) -> CGFloat {
-        if cardWidth > 0 {
-            var candidate: UIView? = button.superview
-            while let view = candidate {
-                if view.bounds.width >= cardWidth - 0.5 {
-                    return view.convert(view.bounds, to: window).midX
-                }
-                candidate = view.superview
-            }
-        }
-        return button.convert(button.bounds, to: window).midX
-    }
-
     // The switcher scrolls horizontally, and so does this drag. Without this the
     // cards slide away under the finger while the level is being set.
     private func lockEnclosingScrollView(from view: UIView) {
@@ -3432,17 +3482,38 @@ final class VolumeSlideCoordinator: NSObject {
 @available(iOS 16.0, *)
 struct MuteToggleButton: UIViewRepresentable {
     let control: () -> LCGuestVolume?
-    let cardWidth: CGFloat
 
-    init(app: DockAppModel, cardWidth: CGFloat) {
-        control = { (app.view?._viewDelegate() as? DecoratedAppSceneViewController)?.appSceneVC.audio }
-        self.cardWidth = cardWidth
+    /// Volume controls standing in for the internal pages, which have no guest
+    /// process behind them. They post to container ids nothing is listening on,
+    /// so the button, the bar and the glyph all behave while no audio anywhere
+    /// changes — which is the only way to try this UI on a simulator, where a
+    /// real guest cannot run at all.
+    private static var placeholderControls: [String: LCGuestVolume] = [:]
+
+    private static func placeholderControl(for appUUID: String) -> LCGuestVolume {
+        if let existing = placeholderControls[appUUID] { return existing }
+        let placeholder: LCGuestVolume = LCGuestVolume(dataUUID: "ui-placeholder-\(appUUID)")
+        placeholderControls[appUUID] = placeholder
+        return placeholder
+    }
+
+    static func control(for app: DockAppModel) -> LCGuestVolume? {
+        if let audio = (app.view?._viewDelegate() as? DecoratedAppSceneViewController)?.appSceneVC.audio {
+            return audio
+        }
+        // Only for the internal pages. A guest window whose controller is
+        // momentarily missing must come back nil rather than quietly send the
+        // user's changes to a placeholder.
+        return app.isInternalPage ? placeholderControl(for: app.appUUID) : nil
+    }
+
+    init(app: DockAppModel) {
+        control = { MuteToggleButton.control(for: app) }
     }
 
     /// For the Xcode preview, which has no running guest to reach through.
-    init(control: @escaping () -> LCGuestVolume?, cardWidth: CGFloat) {
+    init(control: @escaping () -> LCGuestVolume?) {
         self.control = control
-        self.cardWidth = cardWidth
     }
 
     /// How many waves the speaker is drawn with, silence included. Kept as a step
@@ -3484,17 +3555,11 @@ struct MuteToggleButton: UIViewRepresentable {
         let button = UIButton(type: .system)
         button.tintColor = UIColor.white.withAlphaComponent(0.9)
         button.overrideUserInterfaceStyle = CustomizeMenuButton.windowInterfaceStyle
-        let control = self.control
-        let coordinator = context.coordinator
-        button.addAction(UIAction { [weak button] _ in
-            guard let audio = control() else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            audio.toggleMute()
-            if let button {
-                coordinator.applyIcon(volume: audio.volume, to: button, animated: true)
-                button.accessibilityLabel = (audio.muted ? "lc.multitask.unmute" : "lc.multitask.mute").loc
-            }
-        }, for: .touchUpInside)
+        button.isUserInteractionEnabled = true
+        // Both gestures — quick-tap mute and press-and-slide volume — are the
+        // coordinator's, added here. Handling the tap in UIKit is safe now that
+        // background-dismiss is hit-test-ordered: the tap lands on this button and
+        // no ancestor gesture competes for it.
         context.coordinator.attach(to: button)
         updateUIView(button, context: context)
         return button
@@ -3502,9 +3567,8 @@ struct MuteToggleButton: UIViewRepresentable {
 
     func updateUIView(_ button: UIButton, context: Context) {
         context.coordinator.attach(to: button)
-        context.coordinator.cardWidth = cardWidth
         let volume = context.coordinator.control()?.volume ?? 1.0
-        context.coordinator.applyIcon(volume: volume, to: button, animated: false)
+        context.coordinator.applyIcon(volume: volume, to: button, animated: true)
         button.accessibilityLabel = (volume <= 0 ? "lc.multitask.unmute" : "lc.multitask.mute").loc
     }
 }
@@ -3535,7 +3599,7 @@ private struct VolumeSlidePreviewCard: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.white)
                     Spacer(minLength: 8)
-                    MuteToggleButton(control: { audio }, cardWidth: cardWidth)
+                    MuteToggleButton(control: { audio })
                         .frame(width: 32, height: 32)
                         .padding(.trailing, 44)
                 }
@@ -3621,7 +3685,12 @@ struct CustomizeMenuButton: UIViewRepresentable {
         button.menu = UIMenu(title: "", children: [
             UIDeferredMenuElement.uncached { completion in
                 guard let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController else {
-                    completion([])
+                    // Internal pages have no guest process, so every item in this
+                    // menu is about something that does not exist. The button is
+                    // still shown, and says as much when opened, rather than
+                    // presenting an empty menu that looks broken.
+                    completion([UIAction(title: "lc.multitask.noGuest".loc,
+                                         attributes: .disabled) { _ in }])
                     return
                 }
                 completion(vc.customizeMenu().children)
@@ -3651,6 +3720,23 @@ struct AppSwitcherCard: View {
     /// content can never disagree with the frame holding it. iPhone's card is
     /// always the taller way round; iPad's follows the screen and turns with it.
     private var isPortraitCard: Bool { cardHeight > cardWidth }
+
+    /// Whether this card shows the header's mute + Customize controls.
+    ///
+    /// A real guest window always does. The internal Settings / Installer pages
+    /// have no guest process behind them, so their controls are placeholders —
+    /// there only to preview this UI in the simulator, where a real multitask
+    /// guest can't run. On a device build they are compiled out, so users never
+    /// see a mute button that moves a level nothing hears or a Customize menu with
+    /// nothing to customise.
+    private var showsHeaderControls: Bool {
+        if !app.isInternalPage { return true }
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
 
     private let dismissThreshold: CGFloat = -120
 
@@ -3682,8 +3768,9 @@ struct AppSwitcherCard: View {
 
                 // Space held for the two trailing buttons, both of which are laid
                 // over this row rather than placed in it, so the name still
-                // truncates before it reaches them.
-                if !app.isInternalPage {
+                // truncates before it reaches them. Only when the controls are
+                // actually shown — otherwise the name gets the full width back.
+                if showsHeaderControls {
                     Color.clear.frame(width: 76, height: 32)
                 }
             }
@@ -3695,7 +3782,12 @@ struct AppSwitcherCard: View {
             // internal Settings / Installer pages have no guest process, so nothing
             // in the menu would apply to them.
             .overlay {
-                if !app.isInternalPage {
+                // Just the button. It hit-tests as an ordinary view, so a tap that
+                // lands on it opens its menu (showsMenuAsPrimaryAction) and never
+                // reaches the backdrop's dismiss gesture below — no defensive
+                // tap-swallowing needed now that dismissal is hit-test-ordered
+                // rather than an ancestor gesture racing this one.
+                if showsHeaderControls {
                     CustomizeMenuButton(app: app)
                 }
             }
@@ -3706,8 +3798,17 @@ struct AppSwitcherCard: View {
             // menu, so a mute button sitting under it never sees a tap. Being the
             // topmost view at that point settles it at both layers.
             .overlay(alignment: .trailing) {
-                if !app.isInternalPage {
-                    MuteToggleButton(app: app, cardWidth: cardWidth)
+                // Padding, not an offset: an offset moves what is drawn while the
+                // hosted button stays where it was laid out, which put this
+                // button's touch target 44pt to the right of its own icon — over
+                // the Customize button. Padding moves the view itself.
+                //
+                // The tap goes on before the padding so the touch target is the
+                // 32pt button and not the 76pt block: the padding has no gesture
+                // of its own, so taps in it fall through to the Customize button
+                // underneath, which is where they belong.
+                if showsHeaderControls {
+                    MuteToggleButton(app: app)
                         .frame(width: 32, height: 32)
                         .padding(.trailing, 44)
                 }
@@ -3775,6 +3876,17 @@ struct AppSwitcherCard: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.5), radius: 10, y: 5)
+            // Opening the app hangs off the card itself, not off the whole
+            // column. It used to include the header row, which is where both
+            // controls live: SwiftUI resolves its own gestures before it reaches
+            // a hosted UIKit button, so on iOS 17.4 a tap meant for the speaker
+            // opened the app instead. Only a press long enough to fail this
+            // gesture — the volume drag — ever got through.
+            .onTapGesture {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                dockManager.dismissAppSwitcher()
+                let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+            }
         }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
@@ -3850,11 +3962,6 @@ struct AppSwitcherCard: View {
                     hasPassedThreshold = false
                 }
         )
-        .onTapGesture {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            dockManager.dismissAppSwitcher()
-            let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
-        }
         .onChange(of: dockManager.isClosingAll) { closing in
             if closing {
                 withAnimation(.easeIn(duration: 0.3).delay(Double(cardIndex) * 0.05)) {
