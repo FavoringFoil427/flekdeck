@@ -110,10 +110,18 @@ struct FlekGameWarningView: View {
             if h > 0 { sheetHeight = h }
         }
         .apply { v in
-            if #available(iOS 16.4, *) {
+            // A clear presentation background leaves the sheet with no backdrop of
+            // its own, which only reads as intentional under Liquid Glass. Below
+            // iOS 26 that renders as bare text over the dimmed springboard, so
+            // those versions get a material instead.
+            if #available(iOS 26.0, *) {
                 v.presentationDetents([.height(sheetHeight)])
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.clear)
+            } else if #available(iOS 16.4, *) {
+                v.presentationDetents([.height(sheetHeight)])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.regularMaterial)
             } else if #available(iOS 16.0, *) {
                 v.presentationDetents([.height(sheetHeight)])
                     .presentationDragIndicator(.visible)

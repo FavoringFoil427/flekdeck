@@ -1066,7 +1066,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         case .installed(let app):
             FlekLaunchTracker.shared.markLaunched(app)
             let mode = FlekLaunchModeStore.shared.mode(for: app)
-            if mode == nil, isGame(app) {
+            // Below iOS 16 there is no parallel launch to offer: `launchHomeApp`
+            // resolves every mode to a single launch, so the prompt would only
+            // record a preference that can never be honoured.
+            if mode == nil, isGame(app), #available(iOS 16.0, *) {
                 gameWarningTarget = FlekGameWarningTarget(app: app)
             } else {
                 let parallel = mode != nil ? (mode == .parallel) : app.shouldLaunchInMultitaskMode
