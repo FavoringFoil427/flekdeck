@@ -16,8 +16,10 @@ struct FlekAppCard<Icon: View>: View {
     var showsSingleModeBadge: Bool = false
     /// Whether the card is wiggling in edit mode.
     var isEditing: Bool = false
-    /// Shows the delete (–) button in edit mode (hidden for default apps).
-    var canDelete: Bool = true
+    /// The corner control shown in edit mode: the minus that uninstalls, the
+    /// info mark for an app that cannot be removed from here, or nothing at all
+    /// for the built-in apps.
+    var editBadge: FlekEditBadge = .remove
     /// Height the card should occupy; the contents scale to fit it.
     var cardHeight: CGFloat = FlekTheme.cardHeight
     var onDelete: (() -> Void)? = nil
@@ -81,11 +83,11 @@ struct FlekAppCard<Icon: View>: View {
         .rotationEffect(.degrees(isGlassMode ? wiggleAngle : 0))
         .flekGlassCard(cornerRadius: FlekTheme.cardCorner * min(1, scale))
         .overlay(alignment: .topLeading) {
-            if isEditing && canDelete {
+            if isEditing && editBadge != .none {
                 Button {
                     onDelete?()
                 } label: {
-                    Image(systemName: "minus")
+                    Image(systemName: editBadge == .explain ? "info" : "minus")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(colorScheme == .dark ? .white : .black)
                         .frame(width: 24, height: 24)

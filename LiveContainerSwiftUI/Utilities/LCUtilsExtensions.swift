@@ -412,6 +412,35 @@ extension LCUtils {
         return false
     }
 
+    /// What a single move in a batch still has to do.
+    ///
+    /// Converting an app between private and shared is a batch of moves, and the
+    /// batch does not always start from a clean slate. An attempt that failed
+    /// partway leaves some items sitting at their destination already, and a
+    /// container folder is only created the first time the app runs, so it can be
+    /// on neither side. Both are "nothing to do for this item" rather than a
+    /// reason to refuse the whole conversion.
+    enum MoveStep {
+        /// The source is there and still has to be moved.
+        case pending
+        /// The source is gone but the destination holds it — an earlier run of
+        /// this same move already went through.
+        case alreadyDone
+        /// Neither side has it.
+        case missing
+    }
+
+    static func planMove(from source: URL, to destination: URL) -> MoveStep {
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: source.standardizedFileURL.path) {
+            return .pending
+        }
+        if fileManager.fileExists(atPath: destination.standardizedFileURL.path) {
+            return .alreadyDone
+        }
+        return .missing
+    }
+
     static func moveFilesAtomicallyAfterPreflight(_ moves: [(URL, URL)]) throws {
         let fileManager = FileManager.default
 
@@ -494,10 +523,21 @@ extension LCUtils {
 
         // MARK: - Execute only after all preflight checks pass
 
+        // Preflight cannot rule out a failure halfway through the batch, and a
+        // half-done batch is worse than one that never started: the app's bundle
+        // ends up on one side while its record still points at the other, which
+        // leaves it neither launchable, convertible, nor removable. So undo what
+        // went through before reporting the failure.
+        var completed: [(URL, URL)] = []
+
         for (source, destination) in normalizedMoves {
             do {
                 try fileManager.moveItem(at: source, to: destination)
+                completed.append((source, destination))
             } catch {
+                for (rolledBackSource, rolledBackDestination) in completed.reversed() {
+                    try? fileManager.moveItem(at: rolledBackDestination, to: rolledBackSource)
+                }
                 throw BatchMoveError.moveFailed(
                     source: source,
                     destination: destination,

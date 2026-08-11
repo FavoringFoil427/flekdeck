@@ -147,7 +147,23 @@ class LCAppModel: ObservableObject, Hashable {
     }
     
     @Published var supportedLanguages : [String]?
-    
+
+    /// Whether the bundle this entry points at is gone from disk.
+    ///
+    /// An entry can outlive its files. A replace-install removes the old bundle
+    /// before unpacking the new one, so a failure in between leaves the model
+    /// pointing at a folder that no longer exists, and a conversion between
+    /// private and shared that fails partway leaves it pointing at the side the
+    /// bundle just left. Such an entry is stale: nothing is shared with the other
+    /// LiveContainers on the device any more, so the rules that protect a shared
+    /// bundle do not apply to it and it should just be removable.
+    var isBundleMissing : Bool {
+        guard let bundlePath = appInfo.bundlePath(), !bundlePath.isEmpty else {
+            return true
+        }
+        return !FileManager.default.fileExists(atPath: bundlePath)
+    }
+
     var delegate : LCAppModelDelegate?
     
     init(appInfo : LCAppInfo, delegate: LCAppModelDelegate? = nil) {

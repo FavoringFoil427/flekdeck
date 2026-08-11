@@ -594,8 +594,17 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Edit mode
 
-    func setDeleteButtonVisible(_ visible: Bool, animated: Bool = true) {
+    func setDeleteButtonVisible(_ visible: Bool, animated: Bool = true, badge: FlekEditBadge = .remove) {
         if visible {
+            // Same control, different glyph: an app that cannot be uninstalled
+            // from here shows an info mark rather than a minus, so the corner is
+            // never just empty. Both route to the same handler, which decides
+            // between uninstalling and explaining.
+            let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
+            deleteButton.setImage(
+                UIImage(systemName: badge == .explain ? "info" : "minus", withConfiguration: config),
+                for: .normal
+            )
             deleteButton.isHidden = false
             if animated {
                 UIView.animate(withDuration: 0.25) {

@@ -1215,7 +1215,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     func presentSharedAppNotRemovableHint() {
         let alert = UIAlertController(
             title: "Shared App",
-            message: "This app is stored in the shared folder, so every LiveContainer on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
+            message: "This app is stored in the shared folder, so every FlekLauncher on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         var top = UIApplication.shared.connectedScenes
@@ -1389,7 +1389,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         var children: [UIMenuElement] = [launchGroup, addToHomeScreen, lockToggle, settings, moveCards]
 
-        if !app.uiIsShared {
+        // Shared apps have no Uninstall — the copy is the app group's, not ours.
+        // A shared entry whose bundle already vanished does, since removing it
+        // takes nothing away from the other LiveContainers.
+        if !app.uiIsShared || app.isBundleMissing {
             let uninstall = UIAction(
                 title: "lc.appBanner.uninstall".loc,
                 image: UIImage(systemName: "trash"),
@@ -1521,7 +1524,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }
 
-        if !app.uiIsShared {
+        // Same rule as the UIKit menu above: shared apps are the app group's to
+        // keep, but a stale entry pointing at a missing bundle is ours to drop.
+        if !app.uiIsShared || app.isBundleMissing {
             Button(role: .destructive) {
                 Task { await requestUninstall(app) }
             } label: {
@@ -1593,7 +1598,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         // hides Uninstall for the same reason, and edit mode shows an info badge
         // rather than a minus. This also guards the destructive path itself: the
         // badge is the only way in, but nothing else stopped the deletion.
-        if app.uiIsShared {
+        //
+        // Unless the bundle is already gone. Then there is no shared copy left to
+        // take away from anyone, just a row pointing at nothing, and blocking the
+        // deletion would leave it stuck on the home screen forever.
+        let isStale = app.isBundleMissing
+        if app.uiIsShared && !isStale {
             presentSharedAppNotRemovableHint()
             return
         }
@@ -1607,13 +1617,21 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
 
             let fm = FileManager()
-            try fm.removeItem(atPath: app.appInfo.bundlePath()!)
+            if let bundlePath = app.appInfo.bundlePath(), !isStale {
+                try fm.removeItem(atPath: bundlePath)
+            }
             removeApp(app: app)
             if doRemoveFolder {
                 for container in containers {
                     let dataUUID = container.folderName
-                    let dataFolderPath = LCPath.dataPath.appendingPathComponent(dataUUID)
-                    try? fm.removeItem(at: dataFolderPath)
+                    // A folder the user pointed at external storage lives outside
+                    // LiveContainer and is not ours to delete; its keychain items
+                    // still are. Otherwise containerURL resolves to the app group
+                    // for a shared app and to our own Documents for a private one,
+                    // so a stale shared entry cleans up the folder it actually has.
+                    if container.storageBookMark == nil {
+                        try? fm.removeItem(at: container.containerURL)
+                    }
                     LCUtils.removeAppKeychain(dataUUID: dataUUID)
                     DispatchQueue.main.async {
                         self.appDataFolderNames.removeAll { $0 == dataUUID }
@@ -1857,6 +1875,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         var appRelativePath = "\(newAppInfo.bundleIdentifier()!.sanitizeNonACSII()).app"
         var outputFolder = LCPath.bundlePath.appendingPathComponent(appRelativePath)
         var appToReplace : LCAppModel? = nil
+        // Where the bundle being replaced is parked while its replacement moves in.
+        var replacedBundleBackup : URL? = nil
         // Folder exist! show alert for user to choose which bundle to replace
         var sameBundleIdApp = sharedModel.apps.filter { app in
             return app.appInfo.bundleIdentifier()! == newAppInfo.bundleIdentifier()
@@ -1880,7 +1900,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         
         if fm.fileExists(atPath: outputFolder.path) || sameBundleIdApp.count > 0 {
-            appRelativePath = "\(newAppInfo.bundleIdentifier()!)_\(Int(CFAbsoluteTimeGetCurrent())).app"
+            // Sanitised like the first-install name above: this becomes the app's
+            // relativeBundlePath, which is interpolated straight into
+            // livecontainer://livecontainer-launch?bundle-name=… URLs, so a
+            // non-ASCII bundle id here would produce a launch URL that no longer
+            // parses — breaking Add to Home Screen and the relaunch handoff.
+            appRelativePath = "\(newAppInfo.bundleIdentifier()!.sanitizeNonACSII())_\(Int(CFAbsoluteTimeGetCurrent())).app"
             
             self.installOptions = [AppReplaceOption(isReplace: false, nameOfFolderToInstall: appRelativePath)]
             
@@ -1900,12 +1925,37 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
             appRelativePath = installOptionChosen.nameOfFolderToInstall
             appToReplace = installOptionChosen.appToReplace
-            if installOptionChosen.isReplace {
-                try fm.removeItem(at: outputFolder)
+            // Nothing to move aside when the entry being replaced has already lost
+            // its folder — reinstalling over such a leftover is how the user gets
+            // rid of it, so it must not fail the way removing a missing folder did.
+            if installOptionChosen.isReplace, fm.fileExists(atPath: outputFolder.path) {
+                // Move the app being replaced aside rather than deleting it, and
+                // only drop it once its replacement is in place. Deleting first
+                // leaves nothing behind if the move then fails or the process is
+                // killed in between: the list keeps an entry pointing at a folder
+                // that no longer exists, which can be neither launched, converted
+                // between private and shared, nor — for a shared app — removed.
+                // LCPath.replacingSuffix names the copy so that an interrupted
+                // install is put back on the next launch.
+                replacedBundleBackup = outputFolder
+                    .deletingLastPathComponent()
+                    .appendingPathComponent(outputFolder.lastPathComponent + LCPath.replacingSuffix)
+                try? fm.removeItem(at: replacedBundleBackup!)
+                try fm.moveItem(at: outputFolder, to: replacedBundleBackup!)
             }
         }
         // Move it!
-        try fm.moveItem(at: appFolderPath, to: outputFolder)
+        do {
+            try fm.moveItem(at: appFolderPath, to: outputFolder)
+        } catch {
+            if let replacedBundleBackup {
+                try? fm.moveItem(at: replacedBundleBackup, to: outputFolder)
+            }
+            throw error
+        }
+        if let replacedBundleBackup {
+            try? fm.removeItem(at: replacedBundleBackup)
+        }
         let finalNewApp = LCAppInfo(bundlePath: outputFolder.path)
         finalNewApp?.relativeBundlePath = appRelativePath
         
@@ -2111,7 +2161,39 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             sharedModel.hiddenApps.removeAll { now in
                 return app == now
             }
-            
+
+            // Withdraw the app's URL schemes. Only the ones no remaining visible
+            // app declares: two installs of the same guest claim the same schemes,
+            // and this list is rebuilt from exactly those apps at launch. Without
+            // this, LiveContainer keeps claiming the removed app's schemes for the
+            // rest of the session — and a secondary instance, which never rebuilds
+            // the list, keeps claiming them for good.
+            if let schemes = app.appInfo.urlSchemes() as? [String], !schemes.isEmpty {
+                let stillClaimed = Set(sharedModel.apps.flatMap { $0.appInfo.urlSchemes() as? [String] ?? [] })
+                let toWithdraw = schemes.filter { !stillClaimed.contains($0) }
+                if !toWithdraw.isEmpty {
+                    UserDefaults.lcShared().mutableArrayValue(forKey: "LCGuestURLSchemes")
+                        .removeObjects(in: toWithdraw)
+                }
+            }
+
+            // The launcher's own records are keyed by the app's folder name and
+            // live in the app group, so nothing about uninstalling the app — or
+            // even reinstalling LiveContainer — clears them on its own. Left
+            // behind, the next install of the same app silently adopts the old
+            // app's launch mode and never shows as new.
+            FlekLaunchModeStore.shared.forget(app)
+            FlekLaunchTracker.shared.forget(app)
+
+            let itemId = FlekHomeItem.installed(app).id
+            var storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekLauncherKeys.homeScreenOrder) ?? []
+            if storedOrder.contains(itemId) {
+                storedOrder.removeAll { $0 == itemId }
+                LCUtils.appGroupUserDefault.set(storedOrder, forKey: FlekLauncherKeys.homeScreenOrder)
+            }
+            if let uniqueId = sharedAppSortManager.getUniqueIdentifier(for: app) {
+                sharedAppSortManager.customSortOrder.removeAll { $0 == uniqueId }
+            }
         }
     }
     

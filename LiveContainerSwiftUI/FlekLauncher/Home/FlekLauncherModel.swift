@@ -51,6 +51,17 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
     }
 }
 
+/// The control edit mode draws in an item's corner.
+enum FlekEditBadge {
+    /// No control — the item is not an app the user manages.
+    case none
+    /// The usual minus, which uninstalls.
+    case remove
+    /// Stands in for the minus on an app that cannot be removed from the home
+    /// screen; tapping it says why and where to go instead.
+    case explain
+}
+
 /// One tile on the springboard: a built-in app, an installed guest app, the
 /// app currently being installed, or an empty grid slot (placeholder).
 enum FlekHomeItem: Identifiable, DragulaItem {
@@ -90,9 +101,24 @@ enum FlekHomeItem: Identifiable, DragulaItem {
     /// here would take it away from all of them. The app's own menu hides
     /// Uninstall for the same reason — without this, edit mode was the one place
     /// that still offered (and performed) the deletion.
+    ///
+    /// A shared app whose bundle has already vanished is the exception: there is
+    /// no shared copy left to protect, only a stale row, and refusing to delete
+    /// it would strand it on the home screen with no way out.
     var canDelete: Bool {
-        if case .installed(let app) = self { return !app.uiIsShared }
+        if case .installed(let app) = self { return !app.uiIsShared || app.isBundleMissing }
         return false
+    }
+
+    /// What edit mode puts in the corner of this item.
+    ///
+    /// An installed app that cannot be deleted still gets a control, just one
+    /// that explains itself instead of removing anything. Leaving the corner
+    /// empty is what made a shared app a dead end: no minus, and no way to find
+    /// out why or what to do instead.
+    var editBadge: FlekEditBadge {
+        guard case .installed = self else { return .none }
+        return canDelete ? .remove : .explain
     }
 
     func getItemProvider() -> NSItemProvider {
@@ -156,6 +182,14 @@ final class FlekLaunchModeStore {
     func showsSingleBadge(for app: LCAppModel) -> Bool {
         mode(for: app) == .single
     }
+
+    /// Drops the app's stored mode when it is uninstalled. The key is the folder
+    /// name, so a later install of the same app would otherwise silently adopt
+    /// the choice made for the copy that is being removed.
+    func forget(_ app: LCAppModel) {
+        guard let id = app.appInfo.relativeBundlePath, cache.removeValue(forKey: id) != nil else { return }
+        persist()
+    }
 }
 
 /// Tracks which guest apps have been launched at least once, so freshly
@@ -187,5 +221,12 @@ final class FlekLaunchTracker {
         if cache.insert(key).inserted {
             persist()
         }
+    }
+
+    /// Forgets an uninstalled app, so a later install of the same one is new
+    /// again rather than inheriting the launched state of the copy it replaced.
+    func forget(_ app: LCAppModel) {
+        guard let key = app.appInfo.relativeBundlePath, cache.remove(key) != nil else { return }
+        persist()
     }
 }

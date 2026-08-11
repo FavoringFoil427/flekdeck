@@ -38,6 +38,34 @@ struct LCPath {
     public static let lcGroupAppGroupPath = lcGroupDocPath.appendingPathComponent("Data/AppGroup")
     public static let lcGroupTweakPath = lcGroupDocPath.appendingPathComponent("Tweaks")
     
+    /// Appended to the folder of an app that is being replaced, for as long as
+    /// its replacement is being moved into place. See `recoverInterruptedReplaces`.
+    public static let replacingSuffix = ".replacing"
+
+    /// Puts back an app whose replacement never arrived.
+    ///
+    /// Installing over an existing app parks the old bundle under
+    /// `<name>.app.replacing` and drops it once the new bundle is in place. If
+    /// the process is killed in between, the app is left under that name — where
+    /// nothing looks for it, since the app list only reads folders ending in
+    /// `.app`. Restore it unless the replacement did land after all, in which
+    /// case the leftover is just the old copy and can go.
+    ///
+    /// Called for both the private and the shared Applications folder at launch,
+    /// which is the only moment nothing else is touching them.
+    public static func recoverInterruptedReplaces(in applicationsPath: URL, contents: [String]) {
+        let fm = FileManager()
+        for folderName in contents where folderName.hasSuffix(replacingSuffix) {
+            let backup = applicationsPath.appendingPathComponent(folderName)
+            let original = applicationsPath.appendingPathComponent(String(folderName.dropLast(replacingSuffix.count)))
+            if fm.fileExists(atPath: original.path) {
+                try? fm.removeItem(at: backup)
+            } else {
+                try? fm.moveItem(at: backup, to: original)
+            }
+        }
+    }
+
     public static func ensureAppGroupPaths() throws {
         let fm = FileManager()
         if !fm.fileExists(atPath: LCPath.lcGroupBundlePath.path) {

@@ -585,6 +585,47 @@ struct LCAppSettingsView: View {
         }
     }
 
+    /// Shown when neither side of a conversion has the app's bundle.
+    private var missingBundleMessage: String {
+        "This app's files are no longer on disk, so there is nothing to convert.\n\nThis usually follows an install that was interrupted after the previous copy had been removed. Press and hold the app on the home screen and choose Uninstall to clear the leftover entry, then install it again."
+    }
+
+    /// Whether the bundle still has to be moved, has already been moved by an
+    /// earlier attempt, or is gone entirely.
+    ///
+    /// This is `LCUtils.planMove` plus one guard specific to the bundle: another
+    /// installed app may already own the folder we would move into, and adopting
+    /// its bundle would leave two entries sharing a single copy, where removing
+    /// either one takes the app away from both. That is not a half-finished
+    /// conversion of ours, so it counts as missing.
+    private func bundleMoveStep(from source: URL, to destination: URL) -> LCUtils.MoveStep {
+        let step = LCUtils.planMove(from: source, to: destination)
+        if case .alreadyDone = step, bundleIsClaimedByAnotherApp(destination) {
+            return .missing
+        }
+        return step
+    }
+
+    private func bundleIsClaimedByAnotherApp(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return (sharedModel.apps + sharedModel.hiddenApps).contains { other in
+            guard other !== model, let otherPath = other.appInfo.bundlePath() else {
+                return false
+            }
+            return URL(fileURLWithPath: otherPath).standardizedFileURL.path == path
+        }
+    }
+
+    /// Adds a move to the batch only if there is anything left to move. Data and
+    /// tweak folders can legitimately be absent — a container folder is created
+    /// on the app's first run — and a folder already sitting at the destination
+    /// was moved by an earlier attempt. Neither should stop the conversion.
+    private func appendIfPending(_ moves: inout [(URL, URL)], _ source: URL, _ destination: URL) {
+        if case .pending = LCUtils.planMove(from: source, to: destination) {
+            moves.append((source, destination))
+        }
+    }
+
     func moveToAppGroup() async {
         for container in appInfo.containers {
             if let runningLC = LCSharedUtils.getContainerUsingLCScheme(withFolderName: container.folderName) {
@@ -602,29 +643,39 @@ struct LCAppSettingsView: View {
             try LCPath.ensureAppGroupPaths()
 
             var moves: [(URL, URL)] = [];
-            moves.append((
-                URL(fileURLWithPath: appInfo.bundlePath()),
-                LCPath.lcGroupBundlePath.appendingPathComponent(appInfo.relativeBundlePath)
-            ))
+            let bundleSource = URL(fileURLWithPath: appInfo.bundlePath())
+            let bundleDestination = LCPath.lcGroupBundlePath.appendingPathComponent(appInfo.relativeBundlePath)
+            switch bundleMoveStep(from: bundleSource, to: bundleDestination) {
+            case .pending:
+                moves.append((bundleSource, bundleDestination))
+            case .alreadyDone:
+                break
+            case .missing:
+                errorInfo = missingBundleMessage
+                errorShow = true
+                return
+            }
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
                 }
-                
-                moves.append((
+
+                appendIfPending(
+                    &moves,
                     LCPath.dataPath.appendingPathComponent(container.folderName),
                     LCPath.lcGroupDataPath.appendingPathComponent(container.folderName)
-                ))
+                )
             }
             if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                moves.append((
+                appendIfPending(
+                    &moves,
                     LCPath.tweakPath.appendingPathComponent(tweakFolder),
                     LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder)
-                ))
+                )
             }
-            
+
             try LCUtils.moveFilesAtomicallyAfterPreflight(moves)
-            
+
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
@@ -666,36 +717,56 @@ struct LCAppSettingsView: View {
         
         do {
             var moves: [(URL, URL)] = [];
-            moves.append((
-                URL(fileURLWithPath: appInfo.bundlePath()),
-                LCPath.bundlePath.appendingPathComponent(appInfo.relativeBundlePath)
-            ))
+            let bundleSource = URL(fileURLWithPath: appInfo.bundlePath())
+            let bundleDestination = LCPath.bundlePath.appendingPathComponent(appInfo.relativeBundlePath)
+            switch bundleMoveStep(from: bundleSource, to: bundleDestination) {
+            case .pending:
+                moves.append((bundleSource, bundleDestination))
+            case .alreadyDone:
+                break
+            case .missing:
+                errorInfo = missingBundleMessage
+                errorShow = true
+                return
+            }
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
                 }
-                moves.append((
+                appendIfPending(
+                    &moves,
                     LCPath.lcGroupDataPath.appendingPathComponent(container.folderName),
                     LCPath.dataPath.appendingPathComponent(container.folderName)
-                ))
+                )
             }
             if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                moves.append((
+                appendIfPending(
+                    &moves,
                     LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder),
                     LCPath.tweakPath.appendingPathComponent(tweakFolder)
-                ))
+                )
             }
-            
+
             try LCUtils.moveFilesAtomicallyAfterPreflight(moves)
-            
+
+            let fm = FileManager.default
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
                 }
-                appDataFolders.append(container.folderName)
+                // A container folder is created on the app's first run, so one
+                // that was never used has nothing on either side and does not
+                // belong in the list of folders sitting in our Documents.
+                let folder = LCPath.dataPath.appendingPathComponent(container.folderName)
+                if fm.fileExists(atPath: folder.path), !appDataFolders.contains(container.folderName) {
+                    appDataFolders.append(container.folderName)
+                }
             }
-            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                tweakFolders.append(tweakFolder)
+            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0,
+               fm.fileExists(atPath: LCPath.tweakPath.appendingPathComponent(tweakFolder).path) {
+                if !tweakFolders.contains(tweakFolder) {
+                    tweakFolders.append(tweakFolder)
+                }
                 model.uiTweakFolder = tweakFolder
             }
             

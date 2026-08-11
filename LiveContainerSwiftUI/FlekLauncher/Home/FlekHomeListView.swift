@@ -113,7 +113,7 @@ struct FlekHomeListView<Menu: View>: View {
             isNew: newDot(for: item),
             showsSingleBadge: singleBadge(for: item),
             isEditing: isEditing,
-            canDelete: canDelete(item),
+            editBadge: item.editBadge,
             onRun: { onTap(item) },
             onDelete: { onDelete(item) },
             icon: { iconView(for: item) }
@@ -166,7 +166,7 @@ struct FlekHomeListView<Menu: View>: View {
             isNew: newDot(for: item),
             showsSingleBadge: singleBadge(for: item),
             isEditing: true,
-            canDelete: canDelete(item),
+            editBadge: item.editBadge,
             onRun: {},
             onDelete: { onDelete(item) },
             icon: { iconView(for: item) }
@@ -222,10 +222,6 @@ struct FlekHomeListView<Menu: View>: View {
         return false
     }
 
-    private func canDelete(_ item: FlekHomeItem) -> Bool {
-        if case .installed = item { return true }
-        return false
-    }
 }
 
 /// Static (non-blurring) frosted surface for list rows. Replaces `.ultraThinMaterial`,
@@ -253,19 +249,19 @@ struct FlekAppRow<Icon: View>: View {
     var isNew: Bool = false
     var showsSingleBadge: Bool = false
     var isEditing: Bool = false
-    var canDelete: Bool = true
+    var editBadge: FlekEditBadge = .remove
     var onRun: () -> Void
     var onDelete: () -> Void
     @ViewBuilder var icon: () -> Icon
 
     var body: some View {
         HStack(spacing: 16) {
-            if isEditing && canDelete {
+            if isEditing && editBadge != .none {
                 Button(action: onDelete) {
-                    Image(systemName: "minus.circle.fill")
+                    Image(systemName: editBadge == .explain ? "info.circle.fill" : "minus.circle.fill")
                         .font(.system(size: 22))
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .red)
+                        .foregroundStyle(.white, editBadge == .explain ? Color.secondary : Color.red)
                 }
                 .buttonStyle(.plain)
                 .transition(.move(edge: .leading).combined(with: .opacity))

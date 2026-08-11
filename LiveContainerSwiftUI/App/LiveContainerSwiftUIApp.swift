@@ -27,7 +27,13 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
         do {
             // load apps
             try fm.createDirectory(at: LCPath.bundlePath, withIntermediateDirectories: true)
-            let appDirs = try fm.contentsOfDirectory(atPath: LCPath.bundlePath.path)
+            var appDirs = try fm.contentsOfDirectory(atPath: LCPath.bundlePath.path)
+            // Launch is the one moment nothing else is in these folders, so it is
+            // where an install that died mid-replace gets its app back.
+            if appDirs.contains(where: { $0.hasSuffix(LCPath.replacingSuffix) }) {
+                LCPath.recoverInterruptedReplaces(in: LCPath.bundlePath, contents: appDirs)
+                appDirs = try fm.contentsOfDirectory(atPath: LCPath.bundlePath.path)
+            }
             for appDir in appDirs {
                 if !appDir.hasSuffix(".app") {
                     continue
@@ -44,7 +50,11 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
             }
             if LCPath.lcGroupDocPath != LCPath.docPath {
                 try fm.createDirectory(at: LCPath.lcGroupBundlePath, withIntermediateDirectories: true)
-                let appDirsShared = try fm.contentsOfDirectory(atPath: LCPath.lcGroupBundlePath.path)
+                var appDirsShared = try fm.contentsOfDirectory(atPath: LCPath.lcGroupBundlePath.path)
+                if appDirsShared.contains(where: { $0.hasSuffix(LCPath.replacingSuffix) }) {
+                    LCPath.recoverInterruptedReplaces(in: LCPath.lcGroupBundlePath, contents: appDirsShared)
+                    appDirsShared = try fm.contentsOfDirectory(atPath: LCPath.lcGroupBundlePath.path)
+                }
                 for appDir in appDirsShared {
                     if !appDir.hasSuffix(".app") {
                         continue

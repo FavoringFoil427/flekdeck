@@ -332,14 +332,14 @@ struct FlekSpringboardView<Menu: View>: View {
                 .overlay {
                     DraggableView(
                         preview: {
-                            // Pass canDelete: false so the delete button is never
+                            // Pass editBadge: .none so the corner control is never
                             // part of the DraggableView's snapshot.
                             FlekAppCard(
                                 title: title(for: item),
                                 isNew: newDot(for: item),
                                 showsSingleModeBadge: singleBadge(for: item),
                                 isEditing: true,
-                                canDelete: false,
+                                editBadge: .none,
                                 cardHeight: cardHeight,
                                 icon: { iconView(for: item) }
                             )
@@ -361,11 +361,11 @@ struct FlekSpringboardView<Menu: View>: View {
                 // Delete button rendered outside DraggableView so it never
                 // appears in the drag snapshot.
                 .overlay(alignment: .topLeading) {
-                    if canDelete(item) && draggedItem == nil {
+                    if item.editBadge != .none && draggedItem == nil {
                         Button {
                             onDelete(item)
                         } label: {
-                            Image(systemName: "minus")
+                            Image(systemName: item.editBadge == .explain ? "info" : "minus")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.black)
                                 .frame(width: 24, height: 24)
@@ -396,7 +396,7 @@ struct FlekSpringboardView<Menu: View>: View {
             isNew: newDot(for: item),
             showsSingleModeBadge: singleBadge(for: item),
             isEditing: true,
-            canDelete: canDelete(item),
+            editBadge: item.editBadge,
             cardHeight: cardHeight,
             onDelete: { onDelete(item) },
             icon: { iconView(for: item) }
@@ -432,7 +432,7 @@ struct FlekSpringboardView<Menu: View>: View {
                 isNew: newDot(for: item),
                 showsSingleModeBadge: singleBadge(for: item),
                 isEditing: false,
-                canDelete: canDelete(item),
+                editBadge: item.editBadge,
                 cardHeight: cardHeight,
                 onDelete: { onDelete(item) },
                 icon: { iconView(for: item) }
@@ -483,10 +483,6 @@ struct FlekSpringboardView<Menu: View>: View {
         return false
     }
 
-    private func canDelete(_ item: FlekHomeItem) -> Bool {
-        if case .installed = item { return true }
-        return false
-    }
 
     /// Pads a page with placeholder items to fill it to the given size.
     private func padPage(_ page: [FlekHomeItem], toSize size: Int) -> [FlekHomeItem] {

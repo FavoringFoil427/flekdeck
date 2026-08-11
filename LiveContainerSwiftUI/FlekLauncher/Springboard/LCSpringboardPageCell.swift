@@ -250,9 +250,9 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         for cell in collectionView.visibleCells {
             guard let iconCell = cell as? LCSpringboardIconCell, !iconCell.isPlaceholderCell else { continue }
             let idx = collectionView.indexPath(for: iconCell)?.item ?? 0
-            let deletable = idx < items.count && items[idx].canDelete
+            let badge = idx < items.count ? items[idx].editBadge : .none
             iconCell.startJiggle()
-            iconCell.setDeleteButtonVisible(deletable, animated: true)
+            iconCell.setDeleteButtonVisible(badge != .none, animated: true, badge: badge)
         }
     }
 
@@ -345,7 +345,7 @@ extension LCSpringboardPageCell: UICollectionViewDataSource {
         // Edit mode state
         if isEditing && !cell.isPlaceholderCell {
             cell.startJiggle()
-            cell.setDeleteButtonVisible(item.canDelete, animated: false)
+            cell.setDeleteButtonVisible(item.editBadge != .none, animated: false, badge: item.editBadge)
         } else {
             cell.stopJiggle()
             cell.setDeleteButtonVisible(false, animated: false)
