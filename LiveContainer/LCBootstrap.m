@@ -497,6 +497,8 @@ static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContaine
         NSFMGuestHooksInit();
         initDead10ccFix();
     }
+    // No-op outside LiveProcess, and once the appex carries the key itself.
+    LCHostIdentityInit();
     // Per-window mute, and mixable audio sessions so two guests can be heard at
     // once. Only a LiveProcess guest is ever in a multitask window.
     if(isLiveProcess && !isSideStore) {
