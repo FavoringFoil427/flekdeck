@@ -315,6 +315,7 @@ struct LCSettingsView: View {
                 VStack{
                     Text(LCUtils.getVersionInfo())
                         .foregroundStyle(.gray)
+                        .contentShape(Rectangle())
                         .onTapGesture(count: 5) {
                             // Ask for the passcode before flipping developer mode
                             // on; skip it if it's already unlocked this session.
@@ -333,7 +334,12 @@ struct LCSettingsView: View {
                     HStack(spacing:0){
                         Text("Build: ")
                             .foregroundStyle(.gray)
-                        Link("FlekSt0re", destination: URL(string: "https://flekstore.com")!)
+                        // A Link here would take over the whole Form row and swallow
+                        // the version tap above it, so open the URL by hand instead.
+                        Text("FlekSt0re")
+                            .foregroundStyle(.blue)
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: openFlekstore)
                     }
                     
                 }
@@ -849,6 +855,10 @@ struct LCSettingsView: View {
     
     func openFleksign() {
         UIApplication.shared.open(URL(string: "https://fleksign.com")!)
+    }
+
+    func openFlekstore() {
+        UIApplication.shared.open(URL(string: "https://flekstore.com")!)
     }
 
     func openGitHub() {

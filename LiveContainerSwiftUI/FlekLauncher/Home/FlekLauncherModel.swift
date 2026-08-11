@@ -84,8 +84,14 @@ enum FlekHomeItem: Identifiable, DragulaItem {
     }
 
     /// Whether this item can be deleted in edit mode.
+    ///
+    /// Shared apps are excluded: their bundle lives in the app group, where every
+    /// LiveContainer instance on the device uses the same copy, so removing it
+    /// here would take it away from all of them. The app's own menu hides
+    /// Uninstall for the same reason — without this, edit mode was the one place
+    /// that still offered (and performed) the deletion.
     var canDelete: Bool {
-        if case .installed = self { return true }
+        if case .installed(let app) = self { return !app.uiIsShared }
         return false
     }
 

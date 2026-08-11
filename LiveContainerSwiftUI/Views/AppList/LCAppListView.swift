@@ -1205,6 +1205,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         top?.present(alert, animated: true)
     }
 
+    /// Explains why a shared app has no delete button in edit mode, and how to
+    /// make it removable. Presented from the info badge that stands in for the
+    /// minus on those apps.
+    func presentSharedAppNotRemovableHint() {
+        let alert = UIAlertController(
+            title: "Shared App",
+            message: "This app is stored in the shared folder, so every LiveContainer on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        var top = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        top?.present(alert, animated: true)
+    }
+
     // MARK: - Home context menu
 
     @ViewBuilder
@@ -1567,6 +1584,15 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     func requestUninstall(_ app: LCAppModel) async {
+        // A shared app's bundle is in the app group, where every LiveContainer
+        // instance sees it, so it is not removable from here — the app's own menu
+        // hides Uninstall for the same reason, and edit mode shows an info badge
+        // rather than a minus. This also guards the destructive path itself: the
+        // badge is the only way in, but nothing else stopped the deletion.
+        if app.uiIsShared {
+            presentSharedAppNotRemovableHint()
+            return
+        }
         do {
             if let r = await homeUninstallAlert.open(), !r { return }
 

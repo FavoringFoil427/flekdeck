@@ -166,7 +166,7 @@
 		174140D52D9C176700F3F928 /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk/usr/lib/libarchive.tbd; sourceTree = DEVELOPER_DIR; };
 		17554B712DA16988004C6D90 /* OpenSSL.xcframework */ = {isa = PBXFileReference; expectedSignature = "AppleDeveloperProgram:67RAULRX93:Marcin Krzyzanowski"; lastKnownFileType = wrapper.xcframework; name = OpenSSL.xcframework; path = OpenSSL/Frameworks/OpenSSL.xcframework; sourceTree = "<group>"; };
 		17CAE6172F230449008B1977 /* LaunchAppExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = LaunchAppExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		17DCE99D2C7067EC00731D42 /* LiveContainer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiveContainer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		17DCE99D2C7067EC00731D42 /* FlekLauncher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlekLauncher.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LaunchAppExtensionHelper.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E11884B82EF7A15F009C6FA6 /* dyld_bypass_validation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dyld_bypass_validation.h; sourceTree = "<group>"; };
 		E12928C92DCA38380065E12D /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
@@ -492,7 +492,7 @@
 		17DCE99E2C7067EC00731D42 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				17DCE99D2C7067EC00731D42 /* LiveContainer.app */,
+				17DCE99D2C7067EC00731D42 /* FlekLauncher.app */,
 				17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */,
 				1741403A2D9C0D0000F3F928 /* TweakLoader.dylib */,
 				174140542D9C0D6D00F3F928 /* ZSign.dylib */,
@@ -714,7 +714,7 @@
 			);
 			name = LiveContainer;
 			productName = jump;
-			productReference = 17DCE99D2C7067EC00731D42 /* LiveContainer.app */;
+			productReference = 17DCE99D2C7067EC00731D42 /* FlekLauncher.app */;
 			productType = "com.apple.product-type.application";
 		};
 		17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */ = {
@@ -873,6 +873,9 @@
 				hi,
 				ca,
 				zh_TW,
+				"zh-Hans",
+				"zh-Hant",
+				"pt-BR",
 			);
 			mainGroup = 17DCE9942C7067EC00731D42;
 			packageReferences = (
