@@ -237,7 +237,17 @@
     NSString *path = NSTemporaryDirectory();
     [NSFileManager.defaultManager createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *tmpLibPath = [path stringByAppendingPathComponent:@"TestJITLess.dylib"];
-    [NSFileManager.defaultManager copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/TestJITLess.dylib"] toPath:tmpLibPath error:nil];
+    // Clear any leftover from a run that was killed before its cleanup, otherwise
+    // the copy below fails and we end up testing that stale file instead.
+    [NSFileManager.defaultManager removeItemAtPath:tmpLibPath error:nil];
+    NSError *copyError = nil;
+    if (![NSFileManager.defaultManager copyItemAtPath:[NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/TestJITLess.dylib"] toPath:tmpLibPath error:&copyError]) {
+        // Match the completion contract below - this handler drives SwiftUI state.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completionHandler(NO, copyError);
+        });
+        return;
+    }
 
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
     __block bool signSuccess = false;
@@ -257,10 +267,20 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         if(!signSuccess) {
             completionHandler(NO, signError);
-        } else if (checkCodeSignature([tmpLibPath UTF8String])) {
-            completionHandler(YES, signError);
         } else {
-            completionHandler(NO, [NSError errorWithDomain:NSBundle.mainBundle.bundleIdentifier code:2 userInfo:@{NSLocalizedDescriptionKey: @"lc.signer.latestCertificateInvalidErr"}]);
+            NSString *signatureError = nil;
+            if (checkCodeSignatureWithError([tmpLibPath UTF8String], &signatureError)) {
+                completionHandler(YES, signError);
+            } else {
+                // This view appends localizedDescription verbatim, so localize the
+                // key here and carry the kernel's own explanation with it - the
+                // whole point of this page is to say what actually went wrong.
+                NSLog(@"[LC] JIT-Less test signature check failed: %@", signatureError);
+                NSString *description = [NSString stringWithFormat:@"%@\n\n%@",
+                                         NSLocalizedString(@"lc.signer.latestCertificateInvalidErr", nil),
+                                         signatureError ?: @"Unknown code signature failure."];
+                completionHandler(NO, [NSError errorWithDomain:NSBundle.mainBundle.bundleIdentifier code:2 userInfo:@{NSLocalizedDescriptionKey: description}]);
+            }
         }
         [NSFileManager.defaultManager removeItemAtPath:tmpLibPath error:nil];
     });

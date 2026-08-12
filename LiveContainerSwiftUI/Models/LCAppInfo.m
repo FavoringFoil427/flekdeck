@@ -397,19 +397,43 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
     // Sign app if JIT-less is set up
         NSURL *appPathURL = [NSURL fileURLWithPath:appPath];
             void (^signCompletionHandler)(BOOL success, NSError *error)  = ^(BOOL success, NSError *_Nullable error) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SigningInProgress"];
-                    if(!success) {
+                if(!success) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SigningInProgress"];
                         completetionHandler(NO, error.localizedDescription);
-                    } else {
-                        bool signatureValid = checkCodeSignature(executablePath.UTF8String);
+                    });
+                    return;
+                }
+                // Verification can copy the executable, which for a large app is far
+                // too slow to run on the main thread. This block is not guaranteed to
+                // arrive on a background queue, so move there explicitly.
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    NSString* signatureError = nil;
+                    bool signatureValid = checkCodeSignatureWithError(executablePath.UTF8String, &signatureError);
+                    if(!signatureValid) {
+                        // Usually the kernel serving a signature blob it cached
+                        // against the old inode rather than anything wrong with
+                        // what zsign just wrote. Force a fresh inode and ask
+                        // again before we refuse to launch a working app.
+                        NSLog(@"[LC] post-sign signature check failed for %@: %@ - refreshing inode and retrying", executablePath, signatureError);
+                        NSError* refreshError = nil;
+                        if(LCRefreshFileInode(executablePath, &refreshError)) {
+                            signatureValid = checkCodeSignatureWithError(executablePath.UTF8String, &signatureError);
+                        } else {
+                            NSLog(@"[LC] failed to refresh %@: %@", executablePath, refreshError);
+                        }
+                        if(!signatureValid) {
+                            NSLog(@"[LC] signature still invalid after refresh for %@: %@", executablePath, signatureError);
+                        }
+                    }
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SigningInProgress"];
                         if(signatureValid) {
                             completetionHandler(YES, [error localizedDescription]);
                         } else {
                             completetionHandler(NO, @"lc.signer.latestCertificateInvalidErr");
                         }
-                    }
-                    
+                    });
                 });
             };
             
