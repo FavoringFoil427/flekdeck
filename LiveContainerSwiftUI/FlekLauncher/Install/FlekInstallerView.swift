@@ -47,6 +47,8 @@ struct FlekInstallerView: View {
     /// Measured width of the manage-sources button, used to end the carousel
     /// exactly at the button's leading edge (so repos can't scroll under it).
     @State private var manageButtonWidth: CGFloat = 0
+    /// Measured height of the install tray, so the app list can scroll clear of it.
+    @State private var trayHeight: CGFloat = 0
 
     /// The bottom bar/blur only need to make room when the switcher bar actually
     /// sits along the bottom edge — i.e. portrait. In landscape the bar is on the
@@ -120,11 +122,16 @@ struct FlekInstallerView: View {
                 Spacer(minLength: 0)
             }
             .overlay(alignment: .bottom) {
-                bottomBar
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, bottomBarInset)
+                VStack(spacing: 10) {
+                    installTray
+                    bottomBar
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, bottomBarInset)
+                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: installQueue.manualItems.count)
             }
         }
+        .onPreferenceChange(InstallTrayHeightKey.self) { trayHeight = $0 }
         .onReceive(NotificationCenter.default.publisher(for: .multitaskBarVisibilityChanged)) { _ in
             // Animate the bottom bar / blur shift in sync with the switcher bar's
             // slide (same easing + duration) instead of snapping.
@@ -188,7 +195,12 @@ struct FlekInstallerView: View {
         }
         .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa], multiple: false, callback: { urls in
             if let u = urls.first {
-                LCInstallQueue.shared.enqueue(url: u.absoluteString, name: nil, iconURL: nil)
+                LCInstallQueue.shared.enqueue(
+                    url: u.absoluteString,
+                    name: Self.importName(from: u.absoluteString),
+                    iconURL: nil,
+                    isManual: true
+                )
             }
         }, onDismiss: { choosingIPA = false })
         .textFieldAlert(
@@ -199,7 +211,12 @@ struct FlekInstallerView: View {
             action: { newText in
                 importUrlHelper.close(result: newText)
                 if let t = newText, !t.isEmpty {
-                    LCInstallQueue.shared.enqueue(url: t, name: nil, iconURL: nil)
+                    LCInstallQueue.shared.enqueue(
+                        url: t,
+                        name: Self.importName(from: t),
+                        iconURL: nil,
+                        isManual: true
+                    )
                 }
             },
             actionCancel: { _ in importUrlHelper.close(result: nil) }
@@ -222,6 +239,10 @@ struct FlekInstallerView: View {
     /// Height reserved at the top so the first list row starts just below the
     /// floating bars, which overlay the scrolling list instead of pushing it down.
     private var barsTopInset: CGFloat { barsBottomInset + 10 }
+
+    /// Room at the bottom of the list for the floating bottom bar, plus the
+    /// install tray when it's up, so the last row can still be scrolled clear.
+    private var listBottomInset: CGFloat { 80 + (trayHeight > 0 ? trayHeight + 10 : 0) }
 
     /// Progressive blur from the very top edge of the screen (through the safe
     /// area) down to the bottom of the category bar — strongest at the top,
@@ -413,7 +434,7 @@ struct FlekInstallerView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, barsTopInset)
-                .padding(.bottom, 80)
+                .padding(.bottom, listBottomInset)
             }
             .refreshable { await viewModel.resetAndFetchApps() }
         }
@@ -471,8 +492,35 @@ struct FlekInstallerView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, barsTopInset)
-                .padding(.bottom, 80)
+                .padding(.bottom, listBottomInset)
             }
+        }
+    }
+
+    // MARK: Install tray
+
+    /// Progress for installs started from Import IPA / Install from URL.
+    ///
+    /// A catalog install shows its progress on its own row, but a hand-picked
+    /// IPA or URL has no row here — the only feedback used to be the card on the
+    /// home screen, which the user can't see while the installer is open.
+    @ViewBuilder
+    private var installTray: some View {
+        let manual = installQueue.manualItems
+        if !manual.isEmpty {
+            FlekInstallTray(items: manual, accent: Self.flekBlue) { item in
+                if case .failed = item.phase {
+                    installQueue.dismissFailed(item)
+                } else {
+                    installQueue.cancel(item)
+                }
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: InstallTrayHeightKey.self, value: geo.size.height)
+                }
+            )
+            .onDisappear { trayHeight = 0 }
         }
     }
 
@@ -694,6 +742,17 @@ struct FlekInstallerView: View {
         }
     }
 
+    /// A readable title for a hand-started install, taken from the file or URL
+    /// the user picked, so the tray (and the home-screen card) name the app
+    /// instead of showing a bare "Installing…".
+    static func importName(from urlString: String) -> String? {
+        guard let url = URL(string: urlString) else { return nil }
+        let base = url.deletingPathExtension().lastPathComponent
+        guard !base.isEmpty, base != "/" else { return url.host }
+        // A file URL's components come back decoded already; a typed URL's don't.
+        return url.isFileURL ? base : (base.removingPercentEncoding ?? base)
+    }
+
     // MARK: Repo helpers
 
     static func isFlekstore(_ repo: AppRepository) -> Bool {
@@ -715,6 +774,14 @@ struct FlekInstallerView: View {
 
 /// Reports the manage-sources button's measured width up to the carousel.
 private struct ManageButtonWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Reports the install tray's measured height so the list can inset for it.
+private struct InstallTrayHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())

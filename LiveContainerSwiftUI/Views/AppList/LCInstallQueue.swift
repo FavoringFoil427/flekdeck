@@ -30,6 +30,11 @@ final class InstallItem: Identifiable, Equatable {
     let url: String
     let name: String?
     let iconURL: String?
+    /// True when the user started this install by hand (Import IPA / Install from
+    /// URL) instead of tapping an app in a catalog. Those installs have no row of
+    /// their own in the installer list to show progress on, so the installer
+    /// surfaces them in its own tray.
+    let isManual: Bool
 
     var phase: InstallPhase = .queued
     /// Download progress 0…1
@@ -43,10 +48,11 @@ final class InstallItem: Identifiable, Equatable {
     var progressCancellable: AnyCancellable?
     var downloadingCancellable: AnyCancellable?
 
-    init(url: String, name: String?, iconURL: String?) {
+    init(url: String, name: String?, iconURL: String?, isManual: Bool = false) {
         self.url = url
         self.name = name
         self.iconURL = iconURL
+        self.isManual = isManual
     }
 
     /// Snapshot for rendering in the UI (cards, rows, cells).
@@ -144,11 +150,18 @@ final class LCInstallQueue: ObservableObject {
         }
     }
 
+    /// Hand-started installs (Import IPA / Install from URL), including ones that
+    /// just finished or failed — those linger in `items` for a few seconds so the
+    /// UI can show the final state before they disappear.
+    var manualItems: [InstallItem] {
+        items.filter { $0.isManual }
+    }
+
     // MARK: Public API
 
-    func enqueue(url: String, name: String?, iconURL: String?) {
+    func enqueue(url: String, name: String?, iconURL: String?, isManual: Bool = false) {
         guard !items.contains(where: { $0.url == url && isActive($0) }) else { return }
-        let item = InstallItem(url: url, name: name, iconURL: iconURL)
+        let item = InstallItem(url: url, name: name, iconURL: iconURL, isManual: isManual)
         items.append(item)
         startNextDownloads()
         updateIdleTimer()
