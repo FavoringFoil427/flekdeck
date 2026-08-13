@@ -35,6 +35,9 @@ API_AVAILABLE(ios(16.0))
 @property(nonatomic) UIView* contentView;
 @property(nonatomic) _UIScenePresenter *presenter;
 @property(nonatomic) UIMutableApplicationSceneSettings *settings;
+/// Whether the teardown has already run, so a caller closing this window can
+/// tell a guest that exited on its own from one that never got to start.
+@property(nonatomic, readonly) bool isAppTerminationCleanUpCalled;
 - (instancetype)initWithBundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID delegate:(id<AppSceneViewControllerDelegate>)delegate;
 - (void)setBackgroundNotificationEnabled:(bool)enabled;
 - (void)updateFrameWithSettingsBlock:(void (^)(UIMutableApplicationSceneSettings *settings))block;

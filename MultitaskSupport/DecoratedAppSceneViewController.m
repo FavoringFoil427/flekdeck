@@ -254,9 +254,15 @@ void UIKitFixesInit(void) {
 
 - (void)closeWindow {
     _isAppTerminationRequested = true;
-    if([_appSceneVC isAppRunning]) {
+    if([_appSceneVC isAppRunning] || !_appSceneVC.isAppTerminationCleanUpCalled) {
+        // -terminate covers both a running guest and one that never started —
+        // the second happens when the window is closed while the app's files are
+        // still being staged, and going through the teardown is what releases
+        // them. Either way the teardown calls us back to close the window.
         [_appSceneVC terminate];
     } else {
+        // The app already exited on its own and the teardown has run, so nothing
+        // will call back; close the window directly.
         [self appSceneVCAppDidExit:self.appSceneVC];
     }
 }
