@@ -182,9 +182,18 @@ struct FlekAppAdvancedSheet: View {
         .padding(.vertical, 12)
     }
 
+    /// Anything that differs from what the app would install as. The name is
+    /// seeded with the app's own, so a non-empty `overrides` is not by itself
+    /// a customisation — clearing the name is.
+    private var hasCustomisation: Bool {
+        overrides.iconFileURL != nil
+            || overrides.bundleID != nil
+            || overrides.displayName != app.app_name
+    }
+
     @ViewBuilder
     private var resetButton: some View {
-        if !overrides.isEmpty {
+        if hasCustomisation {
             Button {
                 reset()
             } label: {
@@ -238,10 +247,12 @@ struct FlekAppAdvancedSheet: View {
         iconImage = UIImage(data: data)
     }
 
+    /// Back to what the app would install as: its own name in the field, no
+    /// custom icon, and the bundle ID left to the IPA.
     private func reset() {
         overrides.cleanUpStagedIcon()
-        overrides = FlekInstallOverrides()
-        name = ""
+        overrides = FlekInstallOverrides(displayName: app.app_name)
+        name = app.app_name
         bundleID = ""
         iconImage = nil
     }

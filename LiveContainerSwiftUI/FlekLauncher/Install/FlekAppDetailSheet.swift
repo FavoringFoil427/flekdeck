@@ -127,7 +127,22 @@ struct FlekAppDetailSheet: View {
     @State private var showPremium = false
     @State private var showAdvanced = false
     /// Icon / name / bundle ID chosen via the gear, handed to the queue on install.
+    ///
+    /// The name is seeded with the app's own, so the gear's field holds real
+    /// text the user can edit or clear rather than an empty box. Seeded here
+    /// rather than in the gear sheet so that clearing it *stays* cleared when
+    /// that sheet is reopened.
     @State private var overrides = FlekInstallOverrides()
+    @State private var didSeedOverrides = false
+
+    /// Whether anything actually differs from what the app would install as.
+    /// Clearing the name counts — that asks for the IPA's own name instead of
+    /// the listing's, which is a deliberate change too.
+    private var hasCustomisation: Bool {
+        overrides.iconFileURL != nil
+            || overrides.bundleID != nil
+            || overrides.displayName != app.app_name
+    }
     /// Brief "Installed" confirmation after a successful install, mirroring the
     /// row's checkmark. It is deliberately not sticky: the queue only remembers
     /// what was installed *this session*, so a permanent "Installed" here would
@@ -192,6 +207,10 @@ struct FlekAppDetailSheet: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .task {
+            if !didSeedOverrides {
+                didSeedOverrides = true
+                overrides.displayName = app.app_name
+            }
             guard isFlekstore else {
                 model.useListingDescription(app.app_short_description)
                 return
@@ -337,7 +356,7 @@ struct FlekAppDetailSheet: View {
                 .frame(width: 38, height: 38)
                 .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
                 .overlay(alignment: .topTrailing) {
-                    if !overrides.isEmpty {
+                    if hasCustomisation {
                         Circle()
                             .fill(accent)
                             .frame(width: 9, height: 9)
