@@ -270,7 +270,7 @@ class FlekstoreAppsListViewModel: ObservableObject {
 
         } catch {
             if generation == loadGeneration {
-                errorMessage = "Failed to load apps"
+                errorMessage = "lc.flek.loadFailed".loc
             }
         }
 

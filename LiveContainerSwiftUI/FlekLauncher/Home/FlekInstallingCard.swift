@@ -24,13 +24,15 @@ struct FlekInstallIcon: View {
             Group {
                 if let urlStr = state.iconURL, let url = URL(string: urlStr) {
                     KFImage(url)
-                        .placeholder { Color(white: 0.85) }
+                        // Not pulsing: the ring and percentage drawn over this
+                        // are already moving.
+                        .placeholder { FlekImagePlaceholder(pulses: false) }
                         .cacheOriginalImage()
                         .fade(duration: 0.15)
                         .resizable()
                         .scaledToFill()
                 } else {
-                    Color(white: 0.85)
+                    FlekImagePlaceholder(pulses: false)
                 }
             }
             .overlay(Color.black.opacity(0.5))

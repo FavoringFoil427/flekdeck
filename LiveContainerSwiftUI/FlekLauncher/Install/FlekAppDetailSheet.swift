@@ -98,7 +98,10 @@ final class FlekAppDetailModel: ObservableObject {
 
     private static func imageSize(url: URL) async -> CGSize? {
         await withCheckedContinuation { continuation in
-            KingfisherManager.shared.retrieveImage(with: url) { result in
+            // Memory only, to match how the gallery and the viewer load these —
+            // otherwise measuring the first shot would be the one thing that
+            // writes a screenshot to disk.
+            KingfisherManager.shared.retrieveImage(with: url, options: [.cacheMemoryOnly]) { result in
                 continuation.resume(returning: (try? result.get())?.image.size)
             }
         }
@@ -219,7 +222,8 @@ struct FlekAppDetailSheet: View {
             await model.loadGalleryAspect(photos: model.detail?.photos ?? [])
         }
         .fullScreenCover(item: $viewer) { target in
-            FlekScreenshotViewer(photos: target.photos, index: target.index)
+            FlekScreenshotViewer(photos: target.photos, index: target.index,
+                                 aspect: model.galleryAspect ?? FlekAppDetailModel.fallbackAspect)
         }
         .onChange(of: isCompleted) { completed in
             guard completed else { return }
@@ -510,11 +514,16 @@ struct FlekAppDetailSheet: View {
                             } label: {
                                 KFImage(URL(string: photo))
                                     .placeholder {
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .fill(Color(.secondarySystemGroupedBackground))
+                                        FlekImagePlaceholder(cornerRadius: 14)
                                             .frame(width: height * aspect)
                                     }
-                                    .cacheOriginalImage()
+                                    // Never written to disk. Screenshots are far
+                                    // larger than icons and Kingfisher's disk
+                                    // cache has no size limit, so browsing app
+                                    // pages would grow it without bound for
+                                    // images that are only worth keeping while
+                                    // the page is open.
+                                    .cacheMemoryOnly()
                                     .cancelOnDisappear(true)
                                     .fade(duration: 0.15)
                                     .resizable()
@@ -615,7 +624,7 @@ struct FlekAppDetailSheet: View {
             Button {
                 Task { await model.retry(appID: app.app_id) }
             } label: {
-                Text("lc.flek.detail.retry".loc)
+                Text("lc.flek.retry".loc)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(accent)
                     .padding(.horizontal, 20)

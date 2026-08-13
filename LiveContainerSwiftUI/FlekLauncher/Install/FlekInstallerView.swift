@@ -474,14 +474,14 @@ struct FlekInstallerView: View {
         } else if searchActive {
             searchContent
         } else if viewModel.apps.isEmpty && viewModel.isLoading {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            skeletonList
+                .transition(.opacity)
         } else if let error = viewModel.errorMessage, viewModel.apps.isEmpty {
-            VStack(spacing: 12) {
-                Text(error).foregroundColor(.red).multilineTextAlignment(.center)
-                Button("Retry") { Task { await viewModel.resetAndFetchApps() } }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding()
+            loadFailed(error)
+                // Recedes as the placeholders come up under it, rather than the
+                // two simply swapping.
+                .transition(reduceMotion ? .opacity
+                            : .opacity.combined(with: .scale(scale: 0.94)))
         } else {
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -508,7 +508,10 @@ struct FlekInstallerView: View {
                         }
                     }
                     if viewModel.isLoading && !viewModel.apps.isEmpty {
-                        ProgressView().padding()
+                        // Next page on its way — show what is coming, in place.
+                        ForEach(0 ..< 2, id: \.self) { index in
+                            FlekInstallerSkeletonRow(seed: index)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -527,6 +530,57 @@ struct FlekInstallerView: View {
             .refreshable { await refreshCatalog() }
         }
     }
+
+    /// Shown when the first page couldn't be fetched. Built to the same shape as
+    /// the "nothing found" state — a bare line of red text next to a full list of
+    /// placeholders had nothing to transition between.
+    private func loadFailed(_ message: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48, weight: .thin))
+                .foregroundStyle(Color(.systemGray3))
+
+            Text(message)
+                .font(.system(size: 17))
+                .foregroundStyle(Color(.secondaryLabel))
+                .multilineTextAlignment(.center)
+
+            Button {
+                Task { await viewModel.resetAndFetchApps() }
+            } label: {
+                Text("lc.flek.retry".loc)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Self.flekBlue)
+                    .padding(.horizontal, 24)
+                    .frame(height: 42)
+                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Placeholder rows filling the list while the first page loads. Laid out
+    /// with the list's own insets and spacing, so the real rows crossfade in
+    /// where the placeholders already were.
+    private var skeletonList: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                ForEach(0 ..< Self.skeletonRowCount, id: \.self) { index in
+                    FlekInstallerSkeletonRow(seed: index)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, barsTopInset)
+            .padding(.bottom, listBottomInset)
+        }
+        .scrollDisabledIfAvailable()
+    }
+
+    /// Enough to fill a phone screen and hint at more below it.
+    private static let skeletonRowCount = 8
 
     /// Pull-to-refresh for the catalog.
     ///
@@ -558,8 +612,7 @@ struct FlekInstallerView: View {
                 // Only reached with no results to show yet. Once there are
                 // results they stay put while the next query loads, so the list
                 // never blanks out under the user mid-typing.
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                skeletonList
             case .empty:
                 VStack(spacing: 12) {
                     Image(systemName: FlekSymbol.appGrid)
@@ -597,9 +650,16 @@ struct FlekInstallerView: View {
                         .rowEntrance(index: base, batchStamp: repoSearch.sectionsStamp)
 
                         if repoSection.apps.isEmpty && repoSection.isLoading {
-                            HStack { Spacer(); ProgressView(); Spacer() }
-                                .frame(height: 66)
-                                .rowEntrance(index: base + 1, batchStamp: repoSearch.sectionsStamp)
+                            // FlekSt0re's slot, held while its server search runs.
+                            // Rows rather than a spinner, so the sections below
+                            // are pushed down once, now, instead of again when
+                            // the results land.
+                            VStack(spacing: 8) {
+                                ForEach(0 ..< 3, id: \.self) { index in
+                                    FlekInstallerSkeletonRow(seed: index)
+                                }
+                            }
+                            .rowEntrance(index: base + 1, batchStamp: repoSearch.sectionsStamp)
                         } else {
                             ForEach(Array(repoSection.apps.enumerated()), id: \.element.id) { index, app in
                                 FlekInstallerRow(
@@ -1015,6 +1075,13 @@ private extension View {
         return AnyView(self)
     }
 
+    /// iOS 16+: keep a placeholder list from scrolling — there is nothing under
+    /// it to reach. Erased to AnyView for the same reason as the helpers around it.
+    func scrollDisabledIfAvailable() -> AnyView {
+        if #available(iOS 16.0, *) { return AnyView(self.scrollDisabled(true)) }
+        return AnyView(self)
+    }
+
     /// iOS 17+: let content (e.g. pill shadows) draw outside the scroll view's
     /// bounds instead of being clipped. No-op below iOS 17 (shadow stays clipped).
     // Erased to AnyView: `scrollClipDisabled` is iOS 17+, and an opaque return
@@ -1197,6 +1264,67 @@ private struct FlekRowPressStyle: ButtonStyle {
     }
 }
 
+/// A placeholder in the shape of `FlekInstallerRow`, shown while a list is
+/// loading.
+///
+/// It carries the row's real geometry — 74pt icon, the same paddings, the same
+/// 24pt card — so the list is already the right shape before any data arrives
+/// and the content crossfades into place instead of the page jumping. A bare
+/// centred spinner reserves nothing, so every row lands as a layout change.
+struct FlekInstallerSkeletonRow: View {
+    /// Varies the bar widths, so a column of these doesn't read as a repeating
+    /// pattern the way identical rows would.
+    let seed: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim = false
+
+    private static let nameWidths: [CGFloat] = [140, 116, 168, 128]
+    private static let versionWidths: [CGFloat] = [64, 52, 78, 58]
+    private static let detailWidths: [CGFloat] = [196, 168, 220, 182]
+
+    /// Shared with every image placeholder, so a half-loaded list doesn't show
+    /// two different greys side by side.
+    private var fill: Color { FlekPlaceholderStyle.fill }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(fill)
+                .frame(width: 74, height: 74)
+
+            VStack(alignment: .leading, spacing: 8) {
+                bar(width: Self.nameWidths[seed % Self.nameWidths.count], height: 14)
+                bar(width: Self.versionWidths[seed % Self.versionWidths.count], height: 10)
+                bar(width: Self.detailWidths[seed % Self.detailWidths.count], height: 9)
+            }
+
+            Spacer(minLength: 8)
+
+            Circle()
+                .fill(fill)
+                .frame(width: 30, height: 30)
+        }
+        .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(Color(.secondarySystemGroupedBackground)))
+        .opacity(dim ? FlekPlaceholderStyle.dimmedOpacity : 1)
+        .onAppear {
+            guard let animation = FlekPlaceholderStyle.pulse(reduceMotion: reduceMotion) else { return }
+            withAnimation(animation) { dim = true }
+        }
+        // Nothing here is real content, so keep it away from VoiceOver and taps.
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private func bar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+            .fill(fill)
+            .frame(width: width, height: height)
+    }
+}
+
 /// Animated checkmark shown briefly after a successful install.
 struct FlekRowCheckmark: View {
     let accent: Color
@@ -1247,7 +1375,7 @@ struct FlekRemoteIcon: View {
     var body: some View {
         KFImage(URL(string: url))
             .placeholder {
-                RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Color(.systemGray5))
+                FlekImagePlaceholder(cornerRadius: corner)
             }
             // Decode/downsample to the display size instead of full resolution, and
             // cancel in-flight loads when the row scrolls away — keeps long result

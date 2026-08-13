@@ -13,6 +13,9 @@ struct FlekScreenshotViewer: View {
     let photos: [String]
     /// Which shot was tapped.
     @State var index: Int
+    /// Shape of the gallery this opened from, so a shot still loading is held by
+    /// a block of roughly the right size rather than a spinner in empty space.
+    var aspect: CGFloat = FlekAppDetailModel.fallbackAspect
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,8 +40,18 @@ struct FlekScreenshotViewer: View {
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.offset) { position, photo in
                     KFImage(URL(string: photo))
-                        .placeholder { ProgressView().tint(.white) }
-                        .cacheOriginalImage()
+                        .placeholder {
+                            GeometryReader { geo in
+                                let width = min(geo.size.width, geo.size.height * aspect)
+                                FlekImagePlaceholder(cornerRadius: 10)
+                                    .frame(width: width, height: width / aspect)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+                        // Memory only, as in the gallery this opens from — so
+                        // the shot tapped is already there, and nothing about
+                        // it is left on disk afterwards.
+                        .cacheMemoryOnly()
                         .fade(duration: 0.15)
                         .resizable()
                         .scaledToFit()

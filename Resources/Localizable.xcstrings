@@ -30226,17 +30226,6 @@
         }
       }
     },
-    "lc.flek.detail.retry": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try Again"
-          }
-        }
-      }
-    },
     "lc.flek.advanced.title": {
       "extractionState": "manual",
       "localizations": {
@@ -30354,6 +30343,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pick a .png, .jpg or .jpeg file."
+          }
+        }
+      }
+    },
+    "lc.flek.retry": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        }
+      }
+    },
+    "lc.flek.loadFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load apps"
           }
         }
       }

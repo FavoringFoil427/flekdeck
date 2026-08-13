@@ -152,7 +152,7 @@ struct FlekSearchView: View {
             HStack(spacing: 6) {
                 if let iconUrl, let url = URL(string: iconUrl) {
                     KFImage(url)
-                        .placeholder { Color.clear }
+                        .placeholder { FlekImagePlaceholder(cornerRadius: 4) }
                         .setProcessor(DownsamplingImageProcessor(size: CGSize(width: 18, height: 18)))
                         .scaleFactor(UIScreen.main.scale)
                         .cacheOriginalImage()
