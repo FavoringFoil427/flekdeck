@@ -16,6 +16,17 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
     @StateObject private var flekstoreSharedModel = FlekstoreSharedModel()
     
     init() {
+        // The identifier guest apps check against lives in this app's Info.plist,
+        // but a guest launched in parallel runs inside LiveProcess.appex and reads
+        // the bundle of *that* process, which never carries it. Publish it to the
+        // app group here so the extension is handed the value rather than having to
+        // find this bundle on disk — a search that lands on the wrong app entirely
+        // when the extension in use belongs to another LiveContainer install.
+        if let hostEncryptedUdid = Bundle.main.infoDictionary?["encryptedUdid"] as? String,
+           !hostEncryptedUdid.isEmpty {
+            LCUtils.appGroupUserDefault.set(hostEncryptedUdid, forKey: "LCHostEncryptedUdid")
+        }
+
         let fm = FileManager()
         var tempAppDataFolderNames : [String] = []
         var tempTweakFolderNames : [String] = []
