@@ -1854,12 +1854,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             throw "lc.appList.bundleNotFondError".loc
         }
         
+        // Name and icon chosen on the app's page, applied before LCAppInfo reads
+        // the bundle — it parses Info.plist once at init, so a later edit to the
+        // display name would go unnoticed.
+        item.overrides?.applyNameAndIcon(toBundleAt: appFolderPath)
+
         guard let newAppInfo = LCAppInfo(bundlePath: appFolderPath.path) else {
             throw "lc.appList.infoPlistCannotReadError".loc
         }
 
-        // Show bundle ID customization if enabled in settings
-        if LCUtils.appGroupUserDefault.bool(forKey: "LCCustomBundleIdEnabled") {
+        // A bundle ID chosen on the app's page. Goes through LCAppInfo rather
+        // than the plist directly, so the original is recorded the way
+        // LiveContainer expects.
+        if let chosenBundleId = item.overrides?.bundleID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !chosenBundleId.isEmpty {
+            newAppInfo.overrideBundleIdentifier(chosenBundleId)
+        } else if LCUtils.appGroupUserDefault.bool(forKey: "LCCustomBundleIdEnabled") {
+            // Show bundle ID customization if enabled in settings
             guard let chosenBundleId = await bundleIdInput.open(
                 initVal: newAppInfo.bundleIdentifier()!
             ) else {

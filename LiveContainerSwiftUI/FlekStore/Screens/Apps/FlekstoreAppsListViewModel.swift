@@ -7,10 +7,34 @@
 
 // FlekstoreAppsListViewModel.swift
 import SwiftUI
+import QuartzCore
 
 @MainActor
 class FlekstoreAppsListViewModel: ObservableObject {
-    @Published var apps: [FSAppModel] = []
+    @Published var apps: [FSAppModel] = [] {
+        didSet {
+            appsStamp = CACurrentMediaTime()
+            // A page append leaves the rows already on screen alone, so only the
+            // new tail is a fresh arrival. Anything else (reset, repo/category
+            // switch, refresh) is a new batch starting at the first row.
+            appsBatchStart = Self.isAppend(oldValue, apps) ? oldValue.count : 0
+        }
+    }
+
+    /// When `apps` last changed, and where the newest batch starts in it.
+    ///
+    /// The installer's list uses these to run its row-entrance animation for
+    /// freshly arrived rows only — rows the lazy stack rebuilds while the user
+    /// scrolls just appear, the way a system list behaves.
+    private(set) var appsStamp: TimeInterval = 0
+    private(set) var appsBatchStart: Int = 0
+
+    /// Cheap O(1) check for "the new list is the old one plus a page".
+    private static func isAppend(_ old: [FSAppModel], _ new: [FSAppModel]) -> Bool {
+        guard !old.isEmpty, new.count > old.count else { return false }
+        return new[0].id == old[0].id && new[old.count - 1].id == old[old.count - 1].id
+    }
+
     @Published var isLoading = false
     @Published var errorMessage: String? = nil
     @AppStorage("isAdult") private var isAdult: Bool = false
@@ -158,6 +182,25 @@ class FlekstoreAppsListViewModel: ObservableObject {
     // Fetch next page (pagination entry point)
     func fetchApps() async {
         await fetchApps(generation: loadGeneration)
+    }
+
+    /// Pull-to-refresh: reload the first page *in place*.
+    ///
+    /// `resetAndFetchApps` empties the list before the request goes out, which
+    /// collapses the whole list under the refresh spinner and snaps the scroll
+    /// offset back to the top. Here the visible rows stay put and are swapped for
+    /// the fresh ones when they land, so unchanged rows never move.
+    func refreshCurrentRepository() async {
+        guard !apps.isEmpty else {
+            await resetAndFetchApps()
+            return
+        }
+        // Supersede any in-flight page load, and drop its `isLoading` claim with
+        // it — that load will be discarded on return and would otherwise leave
+        // pagination blocked forever.
+        loadGeneration &+= 1
+        isLoading = false
+        await silentRefresh(expecting: repository)
     }
 
     private func fetchApps(generation: Int) async {

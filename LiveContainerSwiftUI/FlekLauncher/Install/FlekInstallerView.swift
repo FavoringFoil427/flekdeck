@@ -18,6 +18,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import Kingfisher
+import QuartzCore
 
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
@@ -33,10 +34,12 @@ struct FlekInstallerView: View {
     @State private var selectedRepoID: UUID?
     @State private var showSources = false
     @State private var showPremium = false
+    /// The app whose page is open, if any.
+    @State private var detailTarget: DetailTarget?
     @State private var searchActive = false
-    @State private var searchDebounceTask: Task<Void, Never>?
     @State private var importURLInput = false
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var importUrlHelper = InputHelper()
     @State private var choosingIPA = false
     @State private var switcherBarVisible = true
@@ -71,6 +74,16 @@ struct FlekInstallerView: View {
         return sinkable > 0 ? -min(18, sinkable) : 10
     }
 
+    /// An app whose page the user opened, tagged with the source it came from.
+    /// A custom repo's `app_id` is only its index in that repo's catalog, so the
+    /// flag has to travel with it — it must never be spent on FlekSt0re's
+    /// detail endpoint, which would return an unrelated app.
+    struct DetailTarget: Identifiable {
+        let app: FSAppModel
+        let isFlekstore: Bool
+        var id: String { "\(isFlekstore)|\(app.app_id)|\(app.install_url)" }
+    }
+
     /// Repo selected during this app session. A static resets on process
     /// relaunch, so the installer defaults back to FlekSt0re after an app
     /// restart while still remembering the choice within a session.
@@ -95,6 +108,11 @@ struct FlekInstallerView: View {
             // which float on top with transparent backgrounds.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Every swap between the mutually exclusive states below
+                // (catalog / search / spinner / error) crossfades instead of
+                // cutting. Keyed on the state itself so nothing else in the list
+                // — row inserts, pagination — gets dragged into the animation.
+                .animation(Self.crossfade, value: contentState)
 
             // Top-edge blur: sits above the list but below the bars so the
             // content fades out as it scrolls up under the pill/category bar.
@@ -117,7 +135,12 @@ struct FlekInstallerView: View {
                     }
                 }
                 .opacity(searchActive ? 0 : 1)
+                // Lift and shrink a touch on the way out so the bars read as
+                // receding behind the search field rather than blinking off.
+                .scaleEffect(searchActive && !reduceMotion ? 0.96 : 1, anchor: .top)
+                .offset(y: searchActive && !reduceMotion ? -10 : 0)
                 .allowsHitTesting(!searchActive)
+                .animation(searchMotion, value: searchActive)
 
                 Spacer(minLength: 0)
             }
@@ -193,6 +216,17 @@ struct FlekInstallerView: View {
         .sheet(isPresented: $showPremium) {
             PremiumRequiredView()
         }
+        .sheet(item: $detailTarget) { target in
+            FlekAppDetailSheet(
+                app: target.app,
+                isFlekstore: target.isFlekstore,
+                requiresPremium: requiresPremium(fromFlekstore: target.isFlekstore),
+                accent: Self.flekBlue,
+                onInstall: { overrides in
+                    enqueueInstall(target.app, fromFlekstore: target.isFlekstore, overrides: overrides)
+                }
+            )
+        }
         .betterFileImporter(isPresented: $choosingIPA, types: [.ipa, .tipa], multiple: false, callback: { urls in
             if let u = urls.first {
                 LCInstallQueue.shared.enqueue(
@@ -221,6 +255,43 @@ struct FlekInstallerView: View {
             },
             actionCancel: { _ in importUrlHelper.close(result: nil) }
         )
+    }
+
+    // MARK: Motion
+
+    /// Crossfade used whenever one full-screen state replaces another. Short and
+    /// linear-ish: the eye reads it as the content settling, not as a move.
+    private static let crossfade: Animation = .easeInOut(duration: 0.25)
+
+    /// The search open/close choreography — bars receding, field expanding, icon
+    /// morphing — all run on this one curve so they read as a single gesture.
+    /// Reduce Motion gets the same timing without the travel.
+    private var searchMotion: Animation {
+        reduceMotion ? .easeInOut(duration: 0.22) : .spring(response: 0.38, dampingFraction: 0.86)
+    }
+
+    /// Which of the mutually exclusive full-screen states is showing. Mirrors the
+    /// branches of `content` exactly, and is what the crossfade is keyed on.
+    private enum ContentState: Equatable { case blocked, search, loading, error, list }
+
+    private var contentState: ContentState {
+        if viewModel.isBanned { return .blocked }
+        if searchActive { return .search }
+        if viewModel.apps.isEmpty && viewModel.isLoading { return .loading }
+        if viewModel.errorMessage != nil && viewModel.apps.isEmpty { return .error }
+        return .list
+    }
+
+    /// The stages a search passes through. Kept explicit so the gap between a
+    /// keystroke and its results is `.loading` rather than `.empty` — deriving
+    /// "nothing found" from an empty result set alone flashes that message every
+    /// time the user types another character.
+    private enum SearchState: Equatable { case idle, loading, empty, results }
+
+    private var searchState: SearchState {
+        if viewModel.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .idle }
+        if !repoSearch.sections.isEmpty { return .results }
+        return repoSearch.isLoading ? .loading : .empty
     }
 
     /// Distance from the top safe-area edge down to the bottom of the floating
@@ -264,6 +335,9 @@ struct FlekInstallerView: View {
                 .ignoresSafeArea(edges: .top)
         }
         .allowsHitTesting(false)
+        // Shrink the blur band in step with the bars it was covering, instead of
+        // snapping to the shorter search-mode band.
+        .animation(Self.crossfade, value: searchActive)
     }
 
     // MARK: Source carousel
@@ -411,7 +485,7 @@ struct FlekInstallerView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(viewModel.visibleApps) { app in
+                    ForEach(Array(viewModel.visibleApps.enumerated()), id: \.element.id) { index, app in
                         FlekInstallerRow(
                             app: app,
                             accent: Self.flekBlue,
@@ -420,8 +494,13 @@ struct FlekInstallerView: View {
                             onInstall: { install(app) },
                             onCancel: {
                                 LCInstallQueue.shared.cancel(url: app.install_url)
+                            },
+                            onOpen: {
+                                detailTarget = DetailTarget(app: app,
+                                                            isFlekstore: viewModel.repository == .flekstore)
                             }
                         )
+                        .rowEntrance(index: index - viewModel.appsBatchStart, batchStamp: viewModel.appsStamp)
                         .onAppear {
                             if app.id == viewModel.visibleApps.last?.id {
                                 Task { await viewModel.fetchApps() }
@@ -433,68 +512,134 @@ struct FlekInstallerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, barsTopInset)
                 .padding(.bottom, listBottomInset)
             }
-            .refreshable { await viewModel.resetAndFetchApps() }
+            // Inset the scroll view rather than padding its content, so the
+            // pull-to-refresh spinner is dragged down into the gap *below* the
+            // floating bars. Padding leaves it pinned to the screen edge, hidden
+            // behind the pill and its blur, and the pull looks like it did nothing.
+            // Non-interactive so a drag starting up here still scrolls the list.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear
+                    .frame(height: barsTopInset)
+                    .allowsHitTesting(false)
+            }
+            .refreshable { await refreshCatalog() }
         }
     }
 
+    /// Pull-to-refresh for the catalog.
+    ///
+    /// The rows stay on screen for the whole request — see
+    /// `refreshCurrentRepository` — and the control is held open for a beat so a
+    /// cached or fast response doesn't snap it shut mid-gesture, which reads as a
+    /// glitch rather than as a refresh.
+    @MainActor
+    private func refreshCatalog() async {
+        let started = CACurrentMediaTime()
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        await viewModel.refreshCurrentRepository()
+        let elapsed = CACurrentMediaTime() - started
+        if elapsed < Self.minRefreshDuration {
+            try? await Task.sleep(nanoseconds: UInt64((Self.minRefreshDuration - elapsed) * 1_000_000_000))
+        }
+    }
+
+    /// How long the refresh control stays open at minimum.
+    private static let minRefreshDuration: TimeInterval = 0.55
+
     @ViewBuilder
     private var searchContent: some View {
-        if viewModel.searchQuery.isEmpty {
-            Spacer()
-        } else if repoSearch.sections.isEmpty && !repoSearch.isLoading {
-            VStack(spacing: 12) {
-                Image(systemName: FlekSymbol.appGrid)
-                    .font(.system(size: 56, weight: .thin))
-                    .foregroundStyle(Color(.systemGray3))
-                Text("Nothing found")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color(.label))
+        Group {
+            switch searchState {
+            case .idle:
+                Color.clear
+            case .loading:
+                // Only reached with no results to show yet. Once there are
+                // results they stay put while the next query loads, so the list
+                // never blanks out under the user mid-typing.
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .empty:
+                VStack(spacing: 12) {
+                    Image(systemName: FlekSymbol.appGrid)
+                        .font(.system(size: 56, weight: .thin))
+                        .foregroundStyle(Color(.systemGray3))
+                    Text("Nothing found")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color(.label))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94)))
+            case .results:
+                searchResults
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    ForEach(repoSearch.sections) { repoSection in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 6) {
-                                FlekRemoteIcon(url: repoSection.iconUrl, size: 20, corner: 4)
-                                Text(repoSection.name)
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                            }
-                            .padding(.horizontal, 4)
+        }
+        .animation(Self.crossfade, value: searchState)
+    }
 
-                            if repoSection.apps.isEmpty && repoSection.isLoading {
-                                HStack { Spacer(); ProgressView(); Spacer() }
-                                    .frame(height: 66)
-                            } else {
-                                ForEach(repoSection.apps) { app in
-                                    FlekInstallerRow(
-                                        app: app,
-                                        accent: Self.flekBlue,
-                                        installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
-                                        isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
-                                        onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
-                                        onCancel: {
-                                            LCInstallQueue.shared.cancel(url: app.install_url)
-                                        }
-                                    )
-                                }
+    private var searchResults: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                ForEach(Array(repoSearch.sections.enumerated()), id: \.element.id) { sectionIndex, repoSection in
+                    // Position of this section's header in the flattened list of
+                    // rendered rows, so the entrance stagger keeps running down
+                    // the whole list instead of restarting at every header.
+                    let base = rowEntranceBase(before: sectionIndex)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            FlekRemoteIcon(url: repoSection.iconUrl, size: 20, corner: 4)
+                            Text(repoSection.name)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.horizontal, 4)
+                        .rowEntrance(index: base, batchStamp: repoSearch.sectionsStamp)
+
+                        if repoSection.apps.isEmpty && repoSection.isLoading {
+                            HStack { Spacer(); ProgressView(); Spacer() }
+                                .frame(height: 66)
+                                .rowEntrance(index: base + 1, batchStamp: repoSearch.sectionsStamp)
+                        } else {
+                            ForEach(Array(repoSection.apps.enumerated()), id: \.element.id) { index, app in
+                                FlekInstallerRow(
+                                    app: app,
+                                    accent: Self.flekBlue,
+                                    installState: LCInstallQueue.shared.item(for: app.install_url)?.installState,
+                                    isCompleted: LCInstallQueue.shared.completedURLs.contains(app.install_url),
+                                    onInstall: { installSearchResult(app, fromFlekstore: repoSection.isFlekstore) },
+                                    onCancel: {
+                                        LCInstallQueue.shared.cancel(url: app.install_url)
+                                    },
+                                    onOpen: {
+                                        detailTarget = DetailTarget(app: app,
+                                                                    isFlekstore: repoSection.isFlekstore)
+                                    }
+                                )
+                                .rowEntrance(index: base + 1 + index, batchStamp: repoSearch.sectionsStamp)
                             }
                         }
                     }
-                    if repoSearch.isLoading && repoSearch.sections.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding()
-                    }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, barsTopInset)
-                .padding(.bottom, listBottomInset)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, barsTopInset)
+            .padding(.bottom, listBottomInset)
+            // FlekSt0re's results arrive after the cached repos', filling in the
+            // placeholder slot held for them at the top. Animating on the batch
+            // counter lets the sections below slide down to make room instead of
+            // jumping under the user's eye (or thumb).
+            .animation(reduceMotion ? Self.crossfade : .spring(response: 0.42, dampingFraction: 0.9),
+                       value: repoSearch.batch)
         }
+        // Scrolling the results puts the keyboard away, as it does anywhere else
+        // in iOS that a list sits under a search field.
+        .scrollDismissesKeyboardIfAvailable()
+    }
+
+    /// Number of rendered rows (headers included) ahead of `sectionIndex`.
+    private func rowEntranceBase(before sectionIndex: Int) -> Int {
+        repoSearch.sections.prefix(sectionIndex).reduce(0) { $0 + 1 + max($1.apps.count, 1) }
     }
 
     // MARK: Install tray
@@ -526,18 +671,35 @@ struct FlekInstallerView: View {
 
     // MARK: Bottom bar
 
+    /// The trailing circle is *one* button in both states — only its icon and
+    /// role change — so opening search reads as that control turning into the
+    /// close button, with the field expanding out of it. Swapping two whole bars
+    /// (the previous structure) made the circle disappear and reappear a few
+    /// points away, which is the jump the eye picks up.
     private var bottomBar: some View {
-        Group {
-            if searchActive {
-                searchBar
-            } else {
-                defaultBottomBar
+        HStack(spacing: 10) {
+            ZStack(alignment: .leading) {
+                if searchActive {
+                    searchField
+                        .transition(reduceMotion ? .opacity
+                                    : .opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+                } else {
+                    importMenu
+                        .transition(reduceMotion ? .opacity
+                                    : .opacity.combined(with: .scale(scale: 0.92, anchor: .leading)))
+                }
             }
+            // Pinned height: the import capsule (48) and the search field (50)
+            // differ, and letting the row resize itself would nudge everything
+            // above it at the end of the transition.
+            .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50, alignment: .leading)
+
+            searchToggleButton
         }
-        .animation(.easeInOut(duration: 0.25), value: searchActive)
+        .animation(searchMotion, value: searchActive)
     }
 
-    private var defaultBottomBar: some View {
+    private var importMenu: some View {
         HStack(spacing: 12) {
             Menu {
                 Button {
@@ -560,145 +722,151 @@ struct FlekInstallerView: View {
                 .foregroundStyle(Color(.label))
                 .padding(.horizontal, 16)
                 .frame(height: 48)
-                .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
-                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
-                )
+                .background(capsuleChrome)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
+        }
+    }
 
-            Button {
-                withAnimation { searchActive = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { searchFocused = true }
-            } label: {
+    /// Magnifying glass ↔ close. The two glyphs crossfade through a quarter turn
+    /// and a scale, which is how iOS morphs a control's icon when its meaning
+    /// changes; the circle underneath never moves.
+    private var searchToggleButton: some View {
+        Button {
+            if searchActive { closeSearch() } else { openSearch() }
+        } label: {
+            ZStack {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 50, height: 50)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
-                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
-                    )
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var searchBar: some View {
-        HStack(spacing: 10) {
-            // Search pill
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color(.systemGray))
-
-                TextField("lc.flek.search".loc, text: $viewModel.searchQuery)
-                    .font(.system(size: 17))
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .focused($searchFocused)
-                    .onChange(of: viewModel.searchQuery) { q in
-                        searchDebounceTask?.cancel()
-                        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if trimmed.isEmpty {
-                            repoSearch.cancelSearch()
-                            return
-                        }
-                        searchDebounceTask = Task {
-                            try? await Task.sleep(nanoseconds: 350_000_000)
-                            guard !Task.isCancelled else { return }
-                            repoSearch.search(trimmed)
-                        }
-                    }
-
-                if !viewModel.searchQuery.isEmpty {
-                    Button {
-                        viewModel.searchQuery = ""
-                        Task { await viewModel.resetAndFetchApps() }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 19))
-                            .foregroundStyle(Color(.systemGray))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
-            )
-
-            // Close button — separate circle to the right
-            Button {
-                withAnimation {
-                    searchFocused = false
-                    searchActive = false
-                    viewModel.searchQuery = ""
-                    Task { await viewModel.resetAndFetchApps() }
-                }
-            } label: {
+                    .opacity(searchActive ? 0 : 1)
+                    .scaleEffect(searchActive && !reduceMotion ? 0.55 : 1)
+                    .rotationEffect(.degrees(searchActive && !reduceMotion ? -90 : 0))
                 Image(systemName: "xmark")
-                    .font(.system(size: 24, weight: .regular))
-                    .foregroundStyle(.primary.opacity(0.7))
-                    .frame(width: 48, height: 48)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
-                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
-                    )
+                    .font(.system(size: 20, weight: .medium))
+                    .opacity(searchActive ? 1 : 0)
+                    .scaleEffect(!searchActive && !reduceMotion ? 0.55 : 1)
+                    .rotationEffect(.degrees(!searchActive && !reduceMotion ? 90 : 0))
             }
-            .buttonStyle(.plain)
+            .foregroundStyle(.primary.opacity(0.7))
+            .frame(width: 50, height: 50)
+            .background(circleChrome)
+            .contentShape(Circle())
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
+        .buttonStyle(.plain)
+        .accessibilityLabel(searchActive ? "lc.common.close".loc : "lc.flek.search".loc)
     }
 
+    /// Shared frosted-capsule surface for the bottom controls.
+    private var capsuleChrome: some View {
+        Capsule()
+            .fill(.ultraThinMaterial)
+            .overlay(Capsule().fill(Color(.systemBackground).opacity(0.5)))
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+    }
 
+    private var circleChrome: some View {
+        Circle()
+            .fill(.ultraThinMaterial)
+            .overlay(Circle().fill(Color(.systemBackground).opacity(0.5)))
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.08), radius: 16, y: 4)
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)  // tighter contact shadow for contrast over the blur
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20))
+                .foregroundStyle(Color(.systemGray))
+
+            TextField("lc.flek.search".loc, text: $viewModel.searchQuery)
+                .font(.system(size: 17))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .focused($searchFocused)
+                // Debouncing lives in the search model so it can report "busy"
+                // from the first keystroke — see `queryChanged`.
+                .onChange(of: viewModel.searchQuery) { repoSearch.queryChanged($0) }
+                .onSubmit { repoSearch.searchNow(viewModel.searchQuery) }
+
+            if !viewModel.searchQuery.isEmpty {
+                Button {
+                    // Clearing the text is enough: the catalog list underneath was
+                    // never re-fetched for the query, so there is nothing to
+                    // restore. Keep the keyboard up — the user is still searching.
+                    viewModel.searchQuery = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 19))
+                        .foregroundStyle(Color(.systemGray))
+                }
+                .buttonStyle(.plain)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: viewModel.searchQuery.isEmpty)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity)
+        .frame(height: 50)
+        .background(capsuleChrome)
+    }
 
     // MARK: Actions
 
+    private func openSearch() {
+        searchActive = true
+        // The field only exists once `searchActive` flips, so focus has to wait
+        // for it to be installed in the hierarchy. Landing partway through the
+        // expansion means the keyboard rises with the field, not after it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { searchFocused = true }
+    }
+
+    private func closeSearch() {
+        searchFocused = false
+        repoSearch.cancelSearch()
+        searchActive = false
+        viewModel.searchQuery = ""
+    }
+
     private func install(_ app: FSAppModel) {
-        if viewModel.repository != .flekstore && !viewModel.hasSubscription {
+        guard !requiresPremium(fromFlekstore: viewModel.repository == .flekstore) else {
             showPremium = true
             return
         }
-        LCInstallQueue.shared.enqueue(
-            url: app.install_url,
-            name: app.app_name,
-            iconURL: app.app_icon
-        )
-        if viewModel.repository == .flekstore {
-            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
-        }
+        enqueueInstall(app, fromFlekstore: viewModel.repository == .flekstore)
     }
 
     private func installSearchResult(_ app: FSAppModel, fromFlekstore: Bool) {
-        if !fromFlekstore && !viewModel.hasSubscription {
+        guard !requiresPremium(fromFlekstore: fromFlekstore) else {
             showPremium = true
             return
         }
+        enqueueInstall(app, fromFlekstore: fromFlekstore)
+    }
+
+    /// Sources other than FlekSt0re are behind the subscription.
+    private func requiresPremium(fromFlekstore: Bool) -> Bool {
+        !fromFlekstore && !viewModel.hasSubscription
+    }
+
+    /// Queues the download + install and counts the FlekSt0re download.
+    ///
+    /// The premium gate belongs to the caller: the rows check it here and show
+    /// the paywall from this view, while the detail sheet has to show its own —
+    /// this view is already presenting that sheet and cannot stack a second one
+    /// on top of it.
+    private func enqueueInstall(_ app: FSAppModel, fromFlekstore: Bool,
+                                overrides: FlekInstallOverrides? = nil) {
         LCInstallQueue.shared.enqueue(
             url: app.install_url,
-            name: app.app_name,
-            iconURL: app.app_icon
+            name: overrides?.displayName ?? app.app_name,
+            iconURL: app.app_icon,
+            overrides: overrides
         )
         if fromFlekstore {
             FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
@@ -706,8 +874,7 @@ struct FlekInstallerView: View {
     }
 
     private func switchTo(_ repo: AppRepository) async {
-        searchActive = false
-        searchFocused = false
+        if searchActive { closeSearch() }
         let source = Self.source(for: repo)
         Self.sessionSelectedRepoURL = repo.sourceURL
         // Custom repos are pre-fetched to disk; show that cache instantly and
@@ -788,7 +955,66 @@ private struct InstallTrayHeightKey: PreferenceKey {
     }
 }
 
+/// How a result row arrives: a short fade with a small rise, staggered a few
+/// rows deep so a batch of results reads as settling into place rather than
+/// appearing all at once.
+///
+/// Only rows belonging to a freshly published batch animate. A lazy stack also
+/// builds rows as the user scrolls, and animating *those* is the tell of a
+/// hand-rolled list — system lists never re-animate a row you scroll back to.
+/// `batchStamp` is taken when the data is published, so a row can tell which
+/// case it is in by how old its batch is when it first appears.
+private struct FlekRowEntrance: ViewModifier {
+    let index: Int
+    let batchStamp: TimeInterval
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    /// Rows arriving within this long of their batch are treated as part of it.
+    private static let batchWindow: TimeInterval = 0.4
+    /// Per-row stagger, and the depth at which it stops growing — past a handful
+    /// of rows the delay would outlast the animation and read as a slow wipe.
+    private static let stagger: TimeInterval = 0.035
+    private static let maxStaggeredRows = 7
+
+    func body(content: Content) -> some View {
+        content
+            // Transform-only (no layout effect), so a row animating in never
+            // shifts the rows around it.
+            .opacity(shown ? 1 : 0)
+            .scaleEffect(shown ? 1 : 0.97, anchor: .top)
+            .offset(y: shown ? 0 : 8)
+            .onAppear {
+                guard !reduceMotion,
+                      CACurrentMediaTime() - batchStamp < Self.batchWindow else {
+                    shown = true
+                    return
+                }
+                let step = Double(min(max(index, 0), Self.maxStaggeredRows))
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)
+                    .delay(step * Self.stagger)) {
+                    shown = true
+                }
+            }
+    }
+}
+
 private extension View {
+    func rowEntrance(index: Int, batchStamp: TimeInterval) -> some View {
+        modifier(FlekRowEntrance(index: index, batchStamp: batchStamp))
+    }
+
+    /// iOS 16+: put the keyboard away as soon as the results are scrolled.
+    // Erased to AnyView for the same reason as `scrollClipDisabledIfAvailable`
+    // below: an opaque return type would bake an iOS 16-only modifier type into
+    // this function's static type, which the runtime resolves on iOS 15 before
+    // the availability check runs.
+    func scrollDismissesKeyboardIfAvailable() -> AnyView {
+        if #available(iOS 16.0, *) { return AnyView(self.scrollDismissesKeyboard(.immediately)) }
+        return AnyView(self)
+    }
+
     /// iOS 17+: let content (e.g. pill shadows) draw outside the scroll view's
     /// bounds instead of being clipped. No-op below iOS 17 (shadow stays clipped).
     // Erased to AnyView: `scrollClipDisabled` is iOS 17+, and an opaque return
@@ -842,6 +1068,11 @@ private extension View {
 /// App row in the installer: icon, name, version·bundle, description, download.
 /// While installing, the app icon shows a dimmed overlay with progress (same as
 /// the springboard). A checkmark overlay appears on the icon when done.
+///
+/// The row surface opens the app's page; the trailing control installs. It is
+/// laid out as a button *plus* an overlay rather than nesting the install button
+/// inside the row button — nested SwiftUI buttons fight over the tap, and the
+/// outer one usually wins.
 struct FlekInstallerRow: View {
     let app: FSAppModel
     let accent: Color
@@ -849,17 +1080,62 @@ struct FlekInstallerRow: View {
     var isCompleted: Bool = false
     var onInstall: () -> Void
     var onCancel: () -> Void = {}
+    /// Opens the detail sheet. Rows with no page to show leave this unset and
+    /// stay inert, rather than offering a tap that goes nowhere.
+    var onOpen: (() -> Void)? = nil
 
     @State private var showCheckmark = false
 
+    /// Which trailing control the row is showing. Used as the animation key so
+    /// install → cancel → done reads as one control changing, not three views
+    /// cutting in and out.
+    private enum TrailingControl: Equatable { case install, cancel, done }
+
+    private var trailingControl: TrailingControl {
+        if installState != nil { return .cancel }
+        return showCheckmark ? .done : .install
+    }
+
+    private var controlTransition: AnyTransition {
+        .opacity.combined(with: .scale(scale: 0.7))
+    }
+
     var body: some View {
+        Group {
+            if let onOpen {
+                Button(action: onOpen) { rowContent }
+                    .buttonStyle(FlekRowPressStyle())
+            } else {
+                rowContent
+            }
+        }
+        .overlay(alignment: .trailing) { trailingSlot.padding(.trailing, 14) }
+        .onChange(of: isCompleted) { completed in
+            guard completed else { return }
+            // The swap itself is animated by `trailingControl` below.
+            showCheckmark = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                showCheckmark = false
+            }
+        }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 8) {
             // Icon — shows progress overlay when installing
-            if let installState {
-                FlekInstallIcon(state: installState, size: 74, corner: 17)
-            } else {
-                FlekRemoteIcon(url: app.app_icon, size: 74, corner: 17)
+            ZStack {
+                if let installState {
+                    FlekInstallIcon(state: installState, size: 74, corner: 17)
+                        .transition(.opacity)
+                } else {
+                    FlekRemoteIcon(url: app.app_icon, size: 74, corner: 17)
+                        .transition(.opacity)
+                }
             }
+            .frame(width: 74, height: 74)
+            // Same artwork underneath either way, so the progress overlay should
+            // dissolve on and off rather than cut.
+            .animation(.easeInOut(duration: 0.2), value: installState == nil)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(app.app_name).font(.system(size: 18, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
@@ -868,37 +1144,56 @@ struct FlekInstallerRow: View {
                     Text(app.app_short_description).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
+            .multilineTextAlignment(.leading)
+
+            // Room for the trailing control, which is overlaid on top.
             Spacer(minLength: 8)
-            if installState != nil {
+            Color.clear.frame(width: 32, height: 32)
+        }
+        .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    private var trailingSlot: some View {
+        ZStack {
+            switch trailingControl {
+            case .cancel:
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 26))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-            } else if showCheckmark {
+                .transition(controlTransition)
+            case .done:
                 FlekRowCheckmark(accent: accent)
-            } else {
+                    .transition(controlTransition)
+            case .install:
                 Button(action: onInstall) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 30))
                         .foregroundStyle(accent)
                 }
                 .buttonStyle(.plain)
+                .transition(controlTransition)
             }
         }
-        .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
-        .onChange(of: isCompleted) { completed in
-            if completed {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                    showCheckmark = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation { showCheckmark = false }
-                }
-            }
-        }
+        // Fixed slot: the three controls aren't the same size, and letting
+        // the row re-measure would shuffle the text beside it on every swap.
+        .frame(width: 32, height: 32)
+        .animation(.spring(response: 0.34, dampingFraction: 0.72), value: trailingControl)
+    }
+}
+
+/// Row press feedback: the same brief dim-and-settle a list row gives, kept
+/// subtle because the row is a large target.
+private struct FlekRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 

@@ -1,0 +1,621 @@
+//
+//  FlekAppDetailSheet.swift
+//  LiveContainerSwiftUI
+//
+//  The app page behind an installer row: icon, developer, install button, the
+//  app's setup warning, stat chips (version / size / updated / downloads),
+//  screenshots and the full description.
+//
+//  The header is drawn from the `FSAppModel` the row already holds, so it is on
+//  screen the instant the sheet opens; everything below it comes from
+//  `GET /app/{app_id}` and fades in when it lands. That endpoint is FlekSt0re's
+//  own — a custom repo's `app_id` is only its index in that repo's catalog, so
+//  for those the sheet stays with what the repo listing gave us.
+//
+
+import SwiftUI
+import Kingfisher
+
+// MARK: - Loader
+
+@MainActor
+final class FlekAppDetailModel: ObservableObject {
+    @Published private(set) var detail: FSAppDetail?
+    @Published private(set) var isLoading = false
+    @Published private(set) var failed = false
+    /// The description, parsed once on arrival. Re-parsing it in `body` would
+    /// run a regex over several KB of markup on every redraw.
+    @Published private(set) var descriptionBlocks: [FSDescriptionBlock] = []
+
+    private var loadedID: Int?
+
+    func load(appID: Int) async {
+        // The sheet's `task` re-runs on re-entry; don't re-fetch what we have.
+        guard loadedID != appID else { return }
+        isLoading = true
+        failed = false
+        defer { isLoading = false }
+
+        guard let url = URL(string: "https://nestapi.flekstore.com/app/\(appID)") else {
+            failed = true
+            return
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(FSAppDetail.self, from: data)
+            guard !Task.isCancelled else { return }
+            detail = decoded
+            descriptionBlocks = FSDescriptionParser.blocks(from: decoded.description ?? "")
+            loadedID = appID
+        } catch {
+            guard !Task.isCancelled else { return }
+            failed = true
+        }
+    }
+
+    func retry(appID: Int) async {
+        loadedID = nil
+        await load(appID: appID)
+    }
+
+    /// Custom repos have no detail page, so their listing description is used
+    /// instead. It goes through the same parser, which leaves plain text alone
+    /// but still copes with a repo that puts markup in the field.
+    func useListingDescription(_ text: String) {
+        guard descriptionBlocks.isEmpty else { return }
+        descriptionBlocks = FSDescriptionParser.blocks(from: text)
+    }
+
+    /// Aspect (w/h) the screenshot row is laid out at, resolved from the first
+    /// shot *before* the row is shown. Nil while it is still being worked out.
+    @Published private(set) var galleryAspect: CGFloat?
+
+    /// Assumed when the first screenshot can't be measured — a portrait phone.
+    static let fallbackAspect: CGFloat = 0.46
+
+    /// Measures the first screenshot so the row can be laid out at its final
+    /// height immediately.
+    ///
+    /// The row can't just adopt each image's aspect as it decodes: with five
+    /// shots that resizes the gallery up to five times, and again later when a
+    /// shot the user scrolls to finally loads. Settling it once, off-screen,
+    /// makes it a single layout instead of a staircase — and because the probe
+    /// warms Kingfisher's cache, the first shot paints the moment it appears.
+    func loadGalleryAspect(photos: [String]) async {
+        guard galleryAspect == nil else { return }
+        guard let first = photos.first, let url = URL(string: first) else {
+            galleryAspect = Self.fallbackAspect
+            return
+        }
+        let size = await Self.imageSize(url: url)
+        guard !Task.isCancelled else { return }
+        if let size, size.width > 0, size.height > 0 {
+            galleryAspect = size.width / size.height
+        } else {
+            galleryAspect = Self.fallbackAspect
+        }
+    }
+
+    private static func imageSize(url: URL) async -> CGSize? {
+        await withCheckedContinuation { continuation in
+            KingfisherManager.shared.retrieveImage(with: url) { result in
+                continuation.resume(returning: (try? result.get())?.image.size)
+            }
+        }
+    }
+}
+
+// MARK: - Sheet
+
+struct FlekAppDetailSheet: View {
+    let app: FSAppModel
+    /// Only FlekSt0re apps have a detail page to fetch — see the file header.
+    let isFlekstore: Bool
+    /// True when this source is behind the subscription. The paywall is
+    /// presented from here rather than from the installer: that view is already
+    /// presenting *this* sheet and can't put up a second one on top of it.
+    let requiresPremium: Bool
+    let accent: Color
+    /// Queues the install, with any pre-install changes chosen via the gear.
+    /// The premium gate is applied before this is called.
+    var onInstall: (FlekInstallOverrides?) -> Void
+
+    @StateObject private var model = FlekAppDetailModel()
+    @ObservedObject private var installQueue = LCInstallQueue.shared
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showPremium = false
+    @State private var showAdvanced = false
+    /// Icon / name / bundle ID chosen via the gear, handed to the queue on install.
+    @State private var overrides = FlekInstallOverrides()
+    /// Brief "Installed" confirmation after a successful install, mirroring the
+    /// row's checkmark. It is deliberately not sticky: the queue only remembers
+    /// what was installed *this session*, so a permanent "Installed" here would
+    /// claim something the app can't actually know about an app installed
+    /// yesterday, and would leave a green button that silently re-installs.
+    @State private var showDone = false
+    /// The screenshot gallery opened full screen, if any.
+    @State private var viewer: ViewerTarget?
+
+    /// Which shot was tapped, and the set to page through from there.
+    private struct ViewerTarget: Identifiable {
+        let photos: [String]
+        let index: Int
+        var id: Int { index }
+    }
+
+    /// Sets the height of the whole header — the name/developer/button column is
+    /// pinned to it. 130 is what a two-line app name needs to still fit beside
+    /// it; at 116 the button was pushed ~6pt below the icon whenever the name
+    /// wrapped.
+    private static let iconSize: CGFloat = 130
+    /// Tallest the screenshot row is allowed to get. Portrait shots reach it;
+    /// landscape ones are limited by width instead.
+    private static let maxScreenshotHeight: CGFloat = 380
+    private static let hPadding: CGFloat = 20
+    /// Height of the pinned dismiss strip the content scrolls beneath.
+    private static let headerStripHeight: CGFloat = 44
+
+    private var detail: FSAppDetail? { model.detail }
+
+    private var installItem: InstallItem? { installQueue.item(for: app.install_url) }
+    private var isCompleted: Bool { installQueue.completedURLs.contains(app.install_url) }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                Color(.systemGroupedBackground).ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        header
+                        if let warning = detail?.warningText {
+                            warningCard(warning)
+                                .transition(.opacity)
+                        }
+                        statChips
+                        screenshots(containerWidth: geo.size.width)
+                        description
+                        if model.failed {
+                            loadFailed
+                        }
+                    }
+                    .padding(.top, Self.headerStripHeight + 4)
+                    .padding(.bottom, 40)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2)
+                                            : .spring(response: 0.4, dampingFraction: 0.9),
+                               value: detail?.id)
+                }
+
+                dismissStrip
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .task {
+            guard isFlekstore else {
+                model.useListingDescription(app.app_short_description)
+                return
+            }
+            await model.load(appID: app.app_id)
+            await model.loadGalleryAspect(photos: model.detail?.photos ?? [])
+        }
+        .fullScreenCover(item: $viewer) { target in
+            FlekScreenshotViewer(photos: target.photos, index: target.index)
+        }
+        .onChange(of: isCompleted) { completed in
+            guard completed else { return }
+            showDone = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { showDone = false }
+        }
+        .sheet(isPresented: $showPremium) {
+            PremiumRequiredView()
+        }
+    }
+
+    // MARK: Dismiss strip
+
+    private var dismissStrip: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(.tertiaryLabel))
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.headerStripHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Opaque so the content scrolls cleanly beneath it rather than showing
+        // through the chevron.
+        .background(Color(.systemGroupedBackground))
+        .accessibilityLabel("lc.common.close".loc)
+    }
+
+    // MARK: Header
+
+    /// Icon on the left, with the name / developer / install button stacked
+    /// beside it. The column is pinned to the icon's height so the icon frames
+    /// the whole header — the title box is capped at two lines and the button
+    /// sits on the baseline of the icon rather than hanging below it.
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            // Progress rides on the icon, exactly as it does on a list row and
+            // on the springboard, so an install looks the same wherever it is
+            // being watched from.
+            ZStack {
+                if let state = installItem?.installState {
+                    FlekInstallIcon(state: state, size: Self.iconSize, corner: 29)
+                        .transition(.opacity)
+                } else {
+                    FlekRemoteIcon(url: app.app_icon, size: Self.iconSize, corner: 29)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: Self.iconSize, height: Self.iconSize)
+            .animation(.easeInOut(duration: 0.2), value: installItem == nil)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.app_name)
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let developer = detail?.developer, !developer.isEmpty {
+                    Text(String(format: "lc.flek.detail.by %@".loc, developer))
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .transition(.opacity)
+                }
+
+                // Collapsible: with a two-line name there is nothing to spare,
+                // and the button must still land on the icon's bottom edge.
+                Spacer(minLength: 0)
+
+                HStack(spacing: 10) {
+                    installButton
+                    advancedButton
+                }
+            }
+            .frame(height: Self.iconSize, alignment: .topLeading)
+        }
+        .padding(.horizontal, Self.hPadding)
+    }
+
+    // MARK: Install button
+
+    private var installButton: some View {
+        Button {
+            if requiresPremium {
+                showPremium = true
+            } else if installItem != nil {
+                installQueue.cancel(url: app.install_url)
+            } else {
+                onInstall(overrides.isEmpty ? nil : overrides)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if installButtonState == .done {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                Text(installButtonTitle)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(installButtonForeground)
+            // Sized to its label rather than filling the column: the phase
+            // labels ("Downloading…") are longer than "Install", so a minimum
+            // width keeps the idle button from looking cramped without letting
+            // it stretch the full width of the header.
+            .padding(.horizontal, 20)
+            .frame(minWidth: 118, minHeight: 38, maxHeight: 38)
+            .background(installButtonBackground)
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        // A little bounce, so finishing reads as a flash of green rather than a
+        // quiet recolour.
+        .animation(reduceMotion ? .easeInOut(duration: 0.2)
+                                : .spring(response: 0.32, dampingFraction: 0.6),
+                   value: installButtonState)
+    }
+
+    /// Opens the pre-install customisations. Badged once anything is set, so a
+    /// change made here isn't invisible from the page it applies to.
+    private var advancedButton: some View {
+        Button {
+            showAdvanced = true
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
+                .overlay(alignment: .topTrailing) {
+                    if !overrides.isEmpty {
+                        Circle()
+                            .fill(accent)
+                            .frame(width: 9, height: 9)
+                            .offset(x: 1, y: -1)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("lc.flek.advanced.title".loc)
+        // Attached here rather than to the sheet's root: two `.sheet` modifiers
+        // on the same view is the classic way to end up with only one of them
+        // ever presenting.
+        .sheet(isPresented: $showAdvanced) {
+            FlekAppAdvancedSheet(app: app, overrides: $overrides)
+        }
+    }
+
+    private enum InstallButtonState: Equatable { case idle, active, done }
+
+    private var installButtonState: InstallButtonState {
+        if installItem != nil { return .active }
+        return showDone ? .done : .idle
+    }
+
+    /// The button carries no progress of its own — that is on the icon. While an
+    /// install runs it is simply the way to stop it, which matters here because
+    /// the sheet covers the row that would otherwise offer that.
+    private var installButtonTitle: String {
+        switch installButtonState {
+        case .idle:   return "lc.common.install".loc
+        case .active: return "lc.common.cancel".loc
+        case .done:   return "lc.flek.installed".loc
+        }
+    }
+
+    private var installButtonForeground: Color {
+        switch installButtonState {
+        case .idle: return Color(.systemBackground)   // inverse of the fill below
+        case .active: return .primary
+        case .done: return .white
+        }
+    }
+
+    @ViewBuilder
+    private var installButtonBackground: some View {
+        switch installButtonState {
+        case .idle:
+            // The design's white-on-dark pill, mirrored for light mode.
+            Capsule().fill(Color(.label))
+        case .active:
+            Capsule().fill(Color(.secondarySystemGroupedBackground))
+        case .done:
+            Capsule().fill(Color.green)
+        }
+    }
+
+    // MARK: Warning
+
+    private func warningCard(_ text: String) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(.orange)
+            Text(text)
+                .font(.system(size: 16))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(Color(.secondarySystemGroupedBackground)))
+        .padding(.horizontal, Self.hPadding)
+    }
+
+    // MARK: Stats
+
+    private struct Stat: Identifiable {
+        let id = UUID()
+        let value: String
+        let label: String
+    }
+
+    private var stats: [Stat] {
+        var out: [Stat] = [
+            Stat(value: detail?.version ?? app.app_version, label: "lc.flek.detail.version".loc)
+        ]
+        if let size = detail?.formattedSize {
+            out.append(Stat(value: size, label: "lc.flek.detail.size".loc))
+        }
+        if let date = detail?.formattedDate {
+            out.append(Stat(value: date, label: "lc.flek.detail.updated".loc))
+        }
+        if let downloads = detail?.formattedDownloads {
+            out.append(Stat(value: downloads, label: "lc.flek.detail.downloads".loc))
+        }
+        return out
+    }
+
+    private var statChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(stats) { stat in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(stat.value)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(stat.label)
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground)))
+                }
+            }
+            .padding(.horizontal, Self.hPadding)
+        }
+    }
+
+    // MARK: Screenshots
+
+    /// One height for the whole row, with each shot's width following its own
+    /// aspect — the way a system gallery behaves.
+    ///
+    /// The height can't be a constant: at a portrait height a landscape
+    /// screenshot comes out wider than the screen, so a single shot fills the
+    /// row and is clipped on both sides. It is derived from the first shot's
+    /// aspect, resolved before the row is laid out.
+    private func galleryHeight(aspect: CGFloat, containerWidth: CGFloat) -> CGFloat {
+        // Leave a sliver of the next shot visible, so the row reads as scrollable.
+        let maxItemWidth = max(containerWidth - Self.hPadding * 2 - 28, 120)
+        return min(Self.maxScreenshotHeight, maxItemWidth / max(aspect, 0.05))
+    }
+
+    @ViewBuilder
+    private func screenshots(containerWidth: CGFloat) -> some View {
+        if let photos = detail?.photos, !photos.isEmpty {
+            if let aspect = model.galleryAspect {
+                let height = galleryHeight(aspect: aspect, containerWidth: containerWidth)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(photos.enumerated()), id: \.offset) { position, photo in
+                            Button {
+                                viewer = ViewerTarget(photos: photos, index: position)
+                            } label: {
+                                KFImage(URL(string: photo))
+                                    .placeholder {
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(Color(.secondarySystemGroupedBackground))
+                                            .frame(width: height * aspect)
+                                    }
+                                    .cacheOriginalImage()
+                                    .cancelOnDisappear(true)
+                                    .fade(duration: 0.15)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: height)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+                            .buttonStyle(FlekScreenshotPressStyle())
+                        }
+                    }
+                    .padding(.horizontal, Self.hPadding)
+                }
+                .frame(height: height)
+            } else {
+                // Measuring the first shot. Held at the portrait height so the
+                // page doesn't reflow twice — once here and again on arrival.
+                loadingGallery
+            }
+        } else if isFlekstore && model.isLoading {
+            loadingGallery
+        }
+    }
+
+    private var loadingGallery: some View {
+        ProgressView()
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.maxScreenshotHeight)
+    }
+
+    // MARK: Description
+
+    @ViewBuilder
+    private var description: some View {
+        if !model.descriptionBlocks.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("lc.flek.detail.description".loc)
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                // Tight by default so consecutive bullets read as one list;
+                // paragraphs and headings add their own leading space below.
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.descriptionBlocks) { block in
+                        descriptionBlock(block)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Self.hPadding)
+            // Links carry the app's accent rather than the system blue.
+            .tint(accent)
+        }
+    }
+
+    @ViewBuilder
+    private func descriptionBlock(_ block: FSDescriptionBlock) -> some View {
+        switch block.kind {
+        case .paragraph:
+            Text(block.text)
+                .foregroundStyle(.primary)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+        case .heading:
+            Text(block.text)
+                // The source's own heading font is ignored — sizing it here
+                // keeps headings consistent whatever the editor emitted.
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        case .listItem(let marker):
+            // Hanging indent, so a wrapped bullet lines up under its own text
+            // instead of under the marker.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(marker)
+                    .font(.system(size: FSDescriptionParser.baseSize))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 14, alignment: .leading)
+                Text(block.text)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.leading, 2)
+        }
+    }
+
+    // MARK: Failure
+
+    private var loadFailed: some View {
+        VStack(spacing: 12) {
+            Text("lc.flek.detail.loadFailed".loc)
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await model.retry(appID: app.app_id) }
+            } label: {
+                Text("lc.flek.detail.retry".loc)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 20)
+                    .frame(height: 38)
+                    .background(Capsule().fill(Color(.secondarySystemGroupedBackground)))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+        .padding(.horizontal, Self.hPadding)
+    }
+}
+
+/// Screenshots dim slightly under a finger, so it's clear they open.
+private struct FlekScreenshotPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}

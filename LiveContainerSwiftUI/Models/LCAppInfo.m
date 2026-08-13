@@ -195,6 +195,24 @@ uint32_t dyld_get_sdk_version(const struct mach_header* mh);
         return _cachedIconDark;
     }
     
+    // An icon the user chose when installing the app wins over anything derived
+    // from the bundle. It is kept under its own name rather than in the cache
+    // files below, which "Clear Icon Cache" deletes — a deliberate choice must
+    // survive that. The same image is used for both appearances.
+    NSString* customIconPath = [_bundlePath stringByAppendingPathComponent:@"LCCustomIcon.png"];
+    if([NSFileManager.defaultManager fileExistsAtPath:customIconPath]) {
+        CGImageRef customImageRef = loadCGImageFromURL([NSURL fileURLWithPath:customIconPath]);
+        if(customImageRef) {
+            UIImage* customIcon = [UIImage imageWithCGImage:customImageRef];
+            if(isDarkIcon) {
+                _cachedIconDark = customIcon;
+            } else {
+                _cachedIcon = customIcon;
+            }
+            return customIcon;
+        }
+    }
+
     // check if icon is cached on disk
     UIImage* uiIcon;
     NSString* cachedIconPath;

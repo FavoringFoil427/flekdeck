@@ -24,7 +24,12 @@ struct VariableBlurView: UIViewRepresentable {
         VariableBlurUIView(maxBlurRadius: maxBlurRadius, direction: direction)
     }
 
-    func updateUIView(_ uiView: VariableBlurUIView, context: Context) {}
+    func updateUIView(_ uiView: VariableBlurUIView, context: Context) {
+        // The radius is a stored property of the effect, not of the SwiftUI view,
+        // so a changed `maxBlurRadius` has to be pushed across — otherwise the
+        // view keeps whatever radius it was built with.
+        uiView.setMaxBlurRadius(maxBlurRadius)
+    }
 }
 
 final class VariableBlurUIView: UIVisualEffectView {
@@ -36,7 +41,11 @@ final class VariableBlurUIView: UIVisualEffectView {
         case trailing  // strong at right, clear at left
     }
 
+    private var blurFilter: NSObject?
+    private var appliedRadius: CGFloat
+
     init(maxBlurRadius: CGFloat, direction: Direction) {
+        appliedRadius = maxBlurRadius
         super.init(effect: UIBlurEffect(style: .regular))
 
         guard let variableBlur = Self.makeVariableBlurFilter() else { return }
@@ -46,6 +55,7 @@ final class VariableBlurUIView: UIVisualEffectView {
         variableBlur.setValue(gradientImage, forKey: "inputMaskImage")
         variableBlur.setValue(true, forKey: "inputNormalizeEdges")
 
+        blurFilter = variableBlur
         subviews.first?.layer.filters = [variableBlur]
 
         // Drop the visual-effect tint/vibrancy layers so it reads as pure blur.
@@ -55,6 +65,17 @@ final class VariableBlurUIView: UIVisualEffectView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Change the blur strength on an existing view. The gradient mask is left
+    /// alone (only the radius scales), so this is cheap enough to drive from a
+    /// state change; the filter is re-assigned because CoreAnimation only picks up
+    /// the new value when the layer's filter array is set again.
+    func setMaxBlurRadius(_ radius: CGFloat) {
+        guard radius != appliedRadius, let blurFilter else { return }
+        appliedRadius = radius
+        blurFilter.setValue(radius, forKey: "inputRadius")
+        subviews.first?.layer.filters = [blurFilter]
+    }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()

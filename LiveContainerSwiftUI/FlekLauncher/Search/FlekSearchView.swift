@@ -10,6 +10,7 @@
 
 import SwiftUI
 import Kingfisher
+import QuartzCore
 
 struct FlekSearchView: View {
     @Binding var isPresented: Bool
@@ -264,8 +265,23 @@ class MultiRepoSearchModel: ObservableObject {
         var isLoading: Bool = false
     }
 
-    @Published var sections: [RepoSection] = []
+    @Published var sections: [RepoSection] = [] {
+        didSet {
+            sectionsStamp = CACurrentMediaTime()
+            batch &+= 1
+        }
+    }
     @Published var isLoading = false
+
+    /// When the current batch of results was published. Result rows animate in
+    /// only when they belong to a fresh batch, so rows the lazy stack rebuilds
+    /// while the user scrolls just appear instead of re-animating.
+    private(set) var sectionsStamp: TimeInterval = 0
+
+    /// Bumped with every published batch. The results list keys its layout
+    /// animation off this, so a section filling in (or dropping out) slides the
+    /// rows below it instead of teleporting them.
+    @Published private(set) var batch = 0
 
     /// Cap on matches kept per repo section — bounds both the filtering work and
     /// the rendered rows for very broad (short) queries so results stay responsive.
@@ -278,6 +294,10 @@ class MultiRepoSearchModel: ObservableObject {
     private var cachedApps: [String: [FSAppModel]] = [:] // keyed by sourceURL
     private var flekstoreVM = FlekstoreAppsListViewModel()
     private var searchTask: Task<Void, Never>?
+    private var debounceTask: Task<Void, Never>?
+
+    /// How long typing settles before a query is sent.
+    private static let debounceDelay: UInt64 = 300_000_000
 
     func setup() {
         repos = FlekInstallerView.loadRepos()
@@ -302,7 +322,38 @@ class MultiRepoSearchModel: ObservableObject {
         }
     }
 
+    /// Call on every keystroke. Debounces the query *and* marks the model busy
+    /// straight away, so a view can show a loading state for the whole keystroke →
+    /// results gap. Deciding "empty" from `sections` alone flashes "Nothing found"
+    /// during the debounce, before the search has even started.
+    func queryChanged(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        debounceTask?.cancel()
+        guard !trimmed.isEmpty else {
+            cancelSearch()
+            return
+        }
+        isLoading = true
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.debounceDelay)
+            guard !Task.isCancelled else { return }
+            self?.search(trimmed)
+        }
+    }
+
+    /// Run the query now, skipping the debounce (the keyboard's Search key).
+    func searchNow(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        debounceTask?.cancel()
+        guard !trimmed.isEmpty else {
+            cancelSearch()
+            return
+        }
+        search(trimmed)
+    }
+
     func cancelSearch() {
+        debounceTask?.cancel()
         searchTask?.cancel()
         sections = []
         isLoading = false

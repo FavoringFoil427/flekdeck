@@ -35,6 +35,9 @@ final class InstallItem: Identifiable, Equatable {
     /// their own in the installer list to show progress on, so the installer
     /// surfaces them in its own tray.
     let isManual: Bool
+    /// Icon / name / bundle-ID changes chosen on the app's page, applied to the
+    /// bundle as it is installed.
+    let overrides: FlekInstallOverrides?
 
     var phase: InstallPhase = .queued
     /// Download progress 0…1
@@ -48,11 +51,13 @@ final class InstallItem: Identifiable, Equatable {
     var progressCancellable: AnyCancellable?
     var downloadingCancellable: AnyCancellable?
 
-    init(url: String, name: String?, iconURL: String?, isManual: Bool = false) {
+    init(url: String, name: String?, iconURL: String?, isManual: Bool = false,
+         overrides: FlekInstallOverrides? = nil) {
         self.url = url
         self.name = name
         self.iconURL = iconURL
         self.isManual = isManual
+        self.overrides = overrides
     }
 
     /// Snapshot for rendering in the UI (cards, rows, cells).
@@ -159,9 +164,11 @@ final class LCInstallQueue: ObservableObject {
 
     // MARK: Public API
 
-    func enqueue(url: String, name: String?, iconURL: String?, isManual: Bool = false) {
+    func enqueue(url: String, name: String?, iconURL: String?, isManual: Bool = false,
+                 overrides: FlekInstallOverrides? = nil) {
         guard !items.contains(where: { $0.url == url && isActive($0) }) else { return }
-        let item = InstallItem(url: url, name: name, iconURL: iconURL, isManual: isManual)
+        let item = InstallItem(url: url, name: name, iconURL: iconURL, isManual: isManual,
+                               overrides: overrides)
         items.append(item)
         startNextDownloads()
         updateIdleTimer()
@@ -220,6 +227,7 @@ final class LCInstallQueue: ObservableObject {
             try? FileManager.default.removeItem(at: fileURL)
             item.downloadedFileURL = nil
         }
+        item.overrides?.cleanUpStagedIcon()
         isInstalling = false
         objectWillChange.send()
         processInstallQueue()
@@ -236,6 +244,7 @@ final class LCInstallQueue: ObservableObject {
             try? FileManager.default.removeItem(at: fileURL)
             item.downloadedFileURL = nil
         }
+        item.overrides?.cleanUpStagedIcon()
         items.removeAll { $0.id == item.id }
         objectWillChange.send()
         updateIdleTimer()
@@ -271,6 +280,7 @@ final class LCInstallQueue: ObservableObject {
             try? FileManager.default.removeItem(at: fileURL)
             item.downloadedFileURL = nil
         }
+        item.overrides?.cleanUpStagedIcon()
         // Remove completed/failed items from the list after a short delay
         // so the UI has time to show the final state.
         let itemId = item.id
