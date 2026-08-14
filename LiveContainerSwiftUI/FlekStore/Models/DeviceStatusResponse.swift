@@ -15,6 +15,10 @@ struct DeviceStatusResponse: Codable {
     let isBanned: Bool
     let banReason: String?
     let message: String?
+    /// Optional server-side override for how long a clean verdict keeps opening
+    /// the app offline. Absent from current responses; `AccessVerdictStore`
+    /// falls back to its own default and clamps whatever arrives.
+    let offlineGraceDays: Int?
 
     private enum CodingKeys: String, CodingKey {
         case status
@@ -23,6 +27,7 @@ struct DeviceStatusResponse: Codable {
         case isBanned
         case banReason
         case message
+        case offlineGraceDays
     }
 
     init(from decoder: Decoder) throws {
@@ -33,5 +38,6 @@ struct DeviceStatusResponse: Codable {
         isBanned = try container.decodeIfPresent(Bool.self, forKey: .isBanned) ?? false
         banReason = try container.decodeIfPresent(String.self, forKey: .banReason)
         message = try container.decodeIfPresent(String.self, forKey: .message)
+        offlineGraceDays = try container.decodeIfPresent(Int.self, forKey: .offlineGraceDays)
     }
 }

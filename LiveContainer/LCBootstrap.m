@@ -19,6 +19,13 @@
 #include <mach-o/ldsyms.h>
 
 static int (*appMain)(int, char**);
+
+// Mirrors AccessVerdictStore.defaultGraceWindow / .maximumGraceWindow in
+// LiveContainerSwiftUI. Kept in sync by hand: the bootstrap runs before any
+// Swift is loaded, so it cannot read the constants from there.
+static const NSTimeInterval kDefaultOfflineGraceWindow = 3 * 24 * 60 * 60;
+static const NSTimeInterval kMaximumOfflineGraceWindow = 30 * 24 * 60 * 60;
+
 NSUserDefaults *lcUserDefaults;
 NSUserDefaults *lcSharedDefaults;
 NSString *lcAppGroupPath;
@@ -227,6 +234,50 @@ static void *getAppEntryPoint(void *handle) {
     }
     assert(entryoff > 0);
     return (void *)header + entryoff;
+}
+
+// Access gate for guest app launches.
+//
+// The SwiftUI launcher can only refuse to draw its own UI. A guest app started
+// from the "Launch App" Shortcuts intent, or from a leftover "selected" key,
+// reaches invokeAppMain() below without LiveContainerSwiftUI ever being loaded,
+// so the check there never runs. This is the one point every launch path passes
+// through, which makes it the only place a ban can actually be enforced.
+//
+// Cache only, never network: this sits on the launch path of every guest app
+// and must not add latency or fail when offline. LiveContainerSwiftUI owns
+// refreshing the cached verdict; see AccessVerdictStore, whose keys these are.
+static BOOL isGuestLaunchAllowed(NSUserDefaults *sharedDefaults) {
+    NSNumber *checkedAt = [sharedDefaults objectForKey:@"FSAccessVerdictCheckedAt"];
+    // Nothing has ever been verified on this install. Allow, so that a launch
+    // path which legitimately cannot see the cache is not bricked by this
+    // check; the SwiftUI gate still applies the first time the launcher opens.
+    if (!checkedAt) {
+        return YES;
+    }
+
+    // A ban is sticky and has no expiry, matching the Swift side: going offline
+    // or leaving the app closed must not be a way to shed it.
+    if ([sharedDefaults boolForKey:@"FSAccessVerdictIsBanned"]) {
+        return NO;
+    }
+
+    NSTimeInterval age = NSDate.date.timeIntervalSince1970 - checkedAt.doubleValue;
+    // A clock wound backwards shows up as a negative age. Treat it as expired
+    // rather than as an arbitrarily fresh verdict.
+    if (age < 0) {
+        return NO;
+    }
+
+    NSNumber *storedWindow = [sharedDefaults objectForKey:@"FSAccessVerdictGraceWindow"];
+    NSTimeInterval window = storedWindow ? storedWindow.doubleValue : kDefaultOfflineGraceWindow;
+    if (window < 0) {
+        window = 0;
+    } else if (window > kMaximumOfflineGraceWindow) {
+        window = kMaximumOfflineGraceWindow;
+    }
+
+    return age <= window;
 }
 
 static NSString* invokeAppMain(NSString *selectedApp, NSString *selectedContainer, int argc, char *argv[]) {
@@ -704,7 +755,21 @@ int LiveContainerMain(int argc, char *argv[]) {
         [lcUserDefaults removeObjectForKey:@"selected"];
         [lcUserDefaults removeObjectForKey:@"selectedContainer"];
     }
-    
+
+    if((selectedApp || [lcUserDefaults boolForKey:@"LCOpenSideStore"]) && !isGuestLaunchAllowed(lcSharedDefaults)) {
+        // Drop the pending launch and fall through to LiveContainerSwiftUI,
+        // which re-checks online and explains itself with the blocked or the
+        // verification screen. Under LiveProcess there is no UI to fall through
+        // to, so the multitask window closes instead.
+        selectedApp = nil;
+        selectedContainer = nil;
+        launchUrl = nil;
+        [lcUserDefaults removeObjectForKey:@"selected"];
+        [lcUserDefaults removeObjectForKey:@"selectedContainer"];
+        [lcUserDefaults removeObjectForKey:@"launchAppUrlScheme"];
+        [lcUserDefaults setBool:NO forKey:@"LCOpenSideStore"];
+    }
+
     if(isLiveProcess) {
         sideStoreExist = [NSFileManager.defaultManager fileExistsAtPath:[lcMainBundle.bundlePath stringByAppendingPathComponent:@"../../Frameworks/SideStoreApp.framework"]];
     } else {
