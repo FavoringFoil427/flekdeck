@@ -312,6 +312,17 @@ class AppInfoProvider {
     /// Full-window host for the switcher bar that limits touches to the bar's
     /// visible shape so its transparent corners/overhang pass taps to the content.
     private var barContainer: BarPassthroughContainer?
+    /// The window the bar, the floating button and the switcher overlay live in.
+    ///
+    /// They used to be plain subviews of the app's own window — which is exactly
+    /// where UIKit puts a modal presentation. A sheet, a full-screen cover, an
+    /// alert or a document picker is inserted above whatever the window already
+    /// held, so the installer's sources sheet, a settings sheet or an error alert
+    /// raised over a guest window all buried the bar and left no way out of the
+    /// app but the sheet's own dismiss. A presentation cannot escape the window of
+    /// the controller presenting it, so one window higher is enough to be out of
+    /// reach of all of them at once.
+    private var overlayWindow: MultitaskOverlayWindow?
     private var navAssistButton: UIView?
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
@@ -503,7 +514,10 @@ class AppInfoProvider {
         static let homeDockIconBounceScale: CGFloat = 1.16
     }
 
-    /// The window the bar and its overlays attach to. `connectedScenes` is an
+    /// The app's own window — the one the springboard, the guest windows and the
+    /// built-in pages live in.
+    ///
+    /// `connectedScenes` is an
     /// *unordered* Set and multi-scene support is enabled, so after an in-place app
     /// update iOS can restore a stale/background scene from the previous launch.
     /// Picking `connectedScenes.first`/`windows.first` could then return nil (→ the
@@ -512,15 +526,23 @@ class AppInfoProvider {
     /// home-indicator inset — the "weird sizing"). A clean install has only one
     /// fresh scene, which is why the bug never appears there. Resolve deterministically
     /// by preferring the foreground-active scene's key window, then falling back.
+    ///
+    /// Our own overlay window is never a candidate: it is never made key, but the
+    /// fallbacks below would happily settle on it, and everything that resolves the
+    /// key window here wants the app's content — its safe area, its root view
+    /// controller, its orientation.
     public var keyWindow: UIWindow? {
         let scenes = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .sorted { Self.sceneActivationRank($0) < Self.sceneActivationRank($1) }
         for scene in scenes {
-            if let key = scene.windows.first(where: { $0.isKeyWindow }) { return key }
+            if let key = scene.windows.first(where: { $0.isKeyWindow && !($0 is MultitaskOverlayWindow) }) {
+                return key
+            }
         }
         for scene in scenes {
-            if let visible = scene.windows.first(where: { !$0.isHidden }) ?? scene.windows.first {
+            let candidates = scene.windows.filter { !($0 is MultitaskOverlayWindow) }
+            if let visible = candidates.first(where: { !$0.isHidden }) ?? candidates.first {
                 return visible
             }
         }
@@ -692,6 +714,47 @@ class AppInfoProvider {
                 self.updateDockFrame(animated: false)
             }
         }
+    }
+
+    /// The view the bar, the floating button and the switcher overlay are parented
+    /// to: the root of the overlay window, created on first use.
+    ///
+    /// Created lazily rather than at init so the app's own window is long since
+    /// key by the time this one appears — a window made visible while nothing else
+    /// is key can be handed the key window role, and this one must never have it.
+    ///
+    /// Follows the app if it ever moves to another scene (an in-place update can
+    /// restore one), carrying whatever is on screen across rather than stranding
+    /// it on a window the user is no longer looking at.
+    private func overlayHostView() -> UIView? {
+        guard let scene = keyWindow?.windowScene else {
+            return overlayWindow?.rootViewController?.view
+        }
+        if let existing = overlayWindow, existing.windowScene === scene {
+            existing.isHidden = false
+            return existing.rootViewController?.view
+        }
+
+        let window = MultitaskOverlayWindow(windowScene: scene)
+        // One level above the app's own window: past every presentation made
+        // inside it, and still below the status bar and the system's own alert
+        // windows, which have no business being covered by ours.
+        window.windowLevel = .normal + 1
+        window.backgroundColor = .clear
+        window.rootViewController = MultitaskOverlayRootViewController()
+        window.isHidden = false
+
+        // Both windows share the scene's coordinate space, so the frames the
+        // moved views already have still mean the same thing here.
+        if let old = overlayWindow?.rootViewController?.view,
+           let new = window.rootViewController?.view {
+            for subview in old.subviews {
+                new.addSubview(subview)
+            }
+        }
+        overlayWindow?.isHidden = true
+        overlayWindow = window
+        return window.rootViewController?.view
     }
 
     /// Attach the safe-area sentinel to `window` (moving it if the key window
@@ -888,6 +951,9 @@ class AppInfoProvider {
         guard isDockEnabled() else { return }
         
         DispatchQueue.main.async {
+            // Before the app leaves the list, while its controller can still be
+            // found: anything it presented goes with it.
+            self.dismissPresentation(forAppUUID: appUUID)
             // Animate the list mutation so the remaining switcher cards slide in
             // to fill the gap smoothly instead of snapping into place.
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -975,16 +1041,18 @@ class AppInfoProvider {
                 self.applyBarInset(to: controller, reserved: true)
             }
 
-            // Add the pass-through container (which holds the bar) to the window.
+            // Add the pass-through container (which holds the bar) to the overlay
+            // window, out of reach of anything presented in the app's own.
+            let host: UIView = self.overlayHostView() ?? keyWindow
             if let container = self.barContainer {
-                container.frame = keyWindow.bounds
-                if container.superview !== keyWindow {
-                    keyWindow.addSubview(container)
+                container.frame = host.bounds
+                if container.superview !== host {
+                    host.addSubview(container)
                 } else {
-                    keyWindow.bringSubviewToFront(container)
+                    host.bringSubviewToFront(container)
                 }
             } else if hostingController.view.superview == nil {
-                keyWindow.addSubview(hostingController.view)
+                host.addSubview(hostingController.view)
             }
 
             self.updateDockFrame(animated: false)
@@ -1343,7 +1411,11 @@ class AppInfoProvider {
         let button = createNavAssistButton()
         button.center = CGPoint(x: x + size / 2, y: y)
 
-        window.addSubview(button)
+        // The overlay window, alongside the bar and for the same reason: when this
+        // button is the control on screen it is the only way out of the app, so a
+        // sheet presented over it must not be able to take it away. Its geometry is
+        // measured from `window` above, which shares the scene's coordinate space.
+        (self.overlayHostView() ?? window).addSubview(button)
         self.navAssistButton = button
         // Floating button now on stage → allow rotation.
         self.refreshOrientationLock()
@@ -1643,6 +1715,13 @@ class AppInfoProvider {
         for window in windowScene.windows {
             if let targetView = findMultitaskView(in: window, withUUID: uuid) {
                 passURLSchemeToView(targetView)
+                // The window being left behind takes its modals with it. Windows here
+                // are always maximized, so a sheet belonging to one of them would
+                // otherwise be left sitting over the window arriving in its place —
+                // the switcher's path to another app never minimizes the old one.
+                for other in self.apps where other.appUUID != uuid {
+                    self.dismissPresentation(forAppUUID: other.appUUID)
+                }
                 animateViewAppearance(targetView, from: center, in: window)
                 let wasHomeState = self.isHomeState
                 self.isHomeState = false
@@ -1846,6 +1925,49 @@ class AppInfoProvider {
         }
     }
     
+    // MARK: - A Window's Modals
+
+    /// The controller a window's modals are presented from: the hosting controller
+    /// for a built-in page, the decorated controller for a guest window.
+    private func presentingController(forAppUUID uuid: String) -> UIViewController? {
+        if let page = internalPageControllers[uuid] { return page }
+        return apps.first { $0.appUUID == uuid }?.view?._viewDelegate() as? DecoratedAppSceneViewController
+    }
+
+    /// Closes whatever a window has presented — a sheet, a cover, an alert — as the
+    /// window leaves the screen.
+    ///
+    /// UIKit puts a presentation in the *window*, beside the page that raised it
+    /// rather than inside it, so hiding the page leaves its sheet behind. Nothing
+    /// could reach that state while the bar sat underneath every presentation —
+    /// there was no way to press home or switch windows with a sheet open — but now
+    /// that the bar is above them, going home would strand the sheet over the
+    /// springboard.
+    ///
+    /// Closed rather than hidden along with the page. A sheet is not simply a view
+    /// laid over the window: UIKit re-hosts the presenting content inside the
+    /// presentation to build the card stack, so putting the container away takes
+    /// parts of the app with it and leaves the presentation half-live — reachable
+    /// by neither the page nor the springboard. Dismissing is the only way to get
+    /// the window back into a state UIKit agrees with.
+    ///
+    /// `then` runs once the window is out of that card stack and back in the
+    /// window on its own, which is what any animation of the window has to wait
+    /// for. Starting the minimize alongside the dismissal instead flew a page that
+    /// was still hosted inside the presentation: the page shrank into its icon
+    /// while the sheet stayed put on top of the springboard, and only caught up
+    /// when UIKit finished unwinding the presentation a beat later. It runs
+    /// straight away — same turn, no dispatch — when there is nothing presented,
+    /// so the common path keeps the timing it always had.
+    private func dismissPresentation(forAppUUID uuid: String, then: (() -> Void)? = nil) {
+        guard let controller = presentingController(forAppUUID: uuid),
+              controller.presentedViewController != nil else {
+            then?()
+            return
+        }
+        controller.dismiss(animated: false) { then?() }
+    }
+
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
         minimizeAllWindows(except: except, intoIcons: false)
     }
@@ -1863,26 +1985,33 @@ class AppInfoProvider {
             self.apps.forEach { app in
                 if app.isInternalPage {
                     guard let pageView = app.view else { return }
-                    if intoIcons, !pageView.isHidden, let itemID = app.springboardItemID {
-                        LCMinimizeToIconAnimator.minimize(pageView, toItemID: itemID)
-                    } else {
-                        pageView.isHidden = true
+                    // The page's sheet goes first and the flight waits for it, so the
+                    // page leaves from the window rather than from inside the
+                    // presentation it was hosted in.
+                    self.dismissPresentation(forAppUUID: app.appUUID) {
+                        if intoIcons, !pageView.isHidden, let itemID = app.springboardItemID {
+                            LCMinimizeToIconAnimator.minimize(pageView, toItemID: itemID)
+                        } else {
+                            pageView.isHidden = true
+                        }
                     }
                 } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
                    vc != except {
-                    app.view?.layer.removeAllAnimations()
-                    // A guest window goes into its own icon too. It has to fly the
-                    // live view — a guest renders into a layer hosted by the render
-                    // server, which this process cannot snapshot — and then be left
-                    // in the resting state the window class expects, which is what
-                    // `finishMinimizeWindow` is for.
-                    if intoIcons, let guestView = app.view, !guestView.isHidden,
-                       let itemID = app.springboardItemID {
-                        LCMinimizeToIconAnimator.minimize(guestView, toItemID: itemID) {
-                            vc.finishMinimizeWindow()
+                    self.dismissPresentation(forAppUUID: app.appUUID) {
+                        app.view?.layer.removeAllAnimations()
+                        // A guest window goes into its own icon too. It has to fly the
+                        // live view — a guest renders into a layer hosted by the render
+                        // server, which this process cannot snapshot — and then be left
+                        // in the resting state the window class expects, which is what
+                        // `finishMinimizeWindow` is for.
+                        if intoIcons, let guestView = app.view, !guestView.isHidden,
+                           let itemID = app.springboardItemID {
+                            LCMinimizeToIconAnimator.minimize(guestView, toItemID: itemID) {
+                                vc.finishMinimizeWindow()
+                            }
+                        } else {
+                            vc.minimizeWindow()
                         }
-                    } else {
-                        vc.minimizeWindow()
                     }
                 }
             }
@@ -2159,7 +2288,9 @@ class AppInfoProvider {
         switcherOverlayController = hc
         
         hc.view.alpha = 0
-        keyWindow.addSubview(hc.view)
+        // Into the overlay window, above the bar it replaces — and, like the bar,
+        // above anything the app has presented in its own window.
+        (overlayHostView() ?? keyWindow).addSubview(hc.view)
         // Force a full layout + render pass while the overlay is still invisible,
         // so its blurred background, cards and bottom bar are all drawn before the
         // fade starts. Without this the first visible frames show the bare black
@@ -2337,14 +2468,20 @@ class AppInfoProvider {
                 self?.internalPageControllers[uuid] = nil
                 self?.removeRunningApp(uuid)
             }
-            // A built-in page's own close button is the way home from it, so it
-            // makes the same trip into its icon the home button gives the rest.
-            // The page itself goes now — a snapshot flies in its place — so the
-            // bar and the home state update on time rather than after the flight.
-            if let pageView = app.view, !pageView.isHidden, let itemID = app.springboardItemID {
-                LCMinimizeToIconAnimator.minimizeByReplacing(pageView, toItemID: itemID, teardown: teardown)
-            } else {
-                teardown()
+            // Its modals go first, with the page still reachable — the teardown
+            // drops the controller they would have to be found through — and the
+            // flight waits for them, so the snapshot below is of the page itself
+            // rather than of a page still hosted inside its own sheet.
+            dismissPresentation(forAppUUID: uuid) {
+                // A built-in page's own close button is the way home from it, so it
+                // makes the same trip into its icon the home button gives the rest.
+                // The page itself goes now — a snapshot flies in its place — so the
+                // bar and the home state update on time rather than after the flight.
+                if let pageView = app.view, !pageView.isHidden, let itemID = app.springboardItemID {
+                    LCMinimizeToIconAnimator.minimizeByReplacing(pageView, toItemID: itemID, teardown: teardown)
+                } else {
+                    teardown()
+                }
             }
         } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
             vc.closeWindow()
@@ -2374,6 +2511,7 @@ class AppInfoProvider {
             guard let self = self else { return }
             let appsToClose = self.apps
             for app in appsToClose {
+                self.dismissPresentation(forAppUUID: app.appUUID)
                 if app.isInternalPage {
                     app.view?.removeFromSuperview()
                     self.internalPageControllers[app.appUUID] = nil
@@ -2483,6 +2621,48 @@ final class SafeAreaSentinelView: UIView {
         onChange?()
     }
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+}
+
+/// The window the multitask bar and its companions live in, one level above the
+/// app's own so that nothing presented inside the app can come up over them.
+///
+/// Transparent to any touch that misses their content: the bar hit-tests against
+/// its own shape and the rest of the screen still belongs to whatever is beneath.
+/// A window that answers `nil` is skipped, and the event goes on down the stack.
+final class MultitaskOverlayWindow: UIWindow {
+    /// Never the key window. UIKit hands that role to whichever window a touch
+    /// lands in, so tapping the bar handed it here — and a great deal of the app
+    /// asks the scene for its key window when what it means is "the window the app
+    /// is in": its root view controller, its safe area, the view to present from.
+    /// Refusing the role keeps all of that pointing at the app's own window; the
+    /// bar and the switcher need no keyboard, which is all the role really buys.
+    override var canBecomeKey: Bool { false }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        if hit === self || hit === rootViewController?.view { return nil }
+        return hit
+    }
+}
+
+/// Root of the overlay window. It exists only because a window is expected to
+/// have one — it draws nothing, and holds no content beyond the views the dock
+/// manager parents to it.
+final class MultitaskOverlayRootViewController: UIViewController {
+    override func loadView() {
+        let root = OverlayPassthroughView()
+        root.backgroundColor = .clear
+        view = root
+    }
+}
+
+/// Reports no hit of its own, so a touch landing on bare overlay falls through to
+/// the app underneath instead of stopping at a full-screen transparent view.
+final class OverlayPassthroughView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
+    }
 }
 
 final class BarPassthroughContainer: UIView {
