@@ -7,15 +7,22 @@
 //  behind it settles forward out of a slight zoom, and the icon it lands on
 //  takes a bounce at the moment it arrives.
 //
-//  Everything here runs off ONE critically damped spring — page, corners and
-//  grid share its mass, stiffness and damping — and the icon's bounce is fired
-//  by watching where the page actually is, not by a timer that predicts it. That
-//  is what keeps the parts in step on a slow device, a dropped frame or a 120Hz
-//  display alike.
+//  Everything here runs off ONE number — `flightDuration`, how long a window
+//  takes to cross in either direction. The critically damped spring that carries
+//  it is derived from that, per flight, so that each direction's own finish
+//  lands exactly on it: a closing window is done when it matches its icon, an
+//  opening one when it has all but reached full size. Opening and closing are
+//  therefore the same speed by construction, on every screen, rather than by two
+//  numbers kept in agreement by hand. Page, corners and grid all move on the
+//  flight's spring.
+//
+//  The icon's bounce is fired by watching where the window actually is, not by a
+//  timer that predicts it — which is what keeps the parts in step on a slow
+//  device, a dropped frame or a 120Hz display alike.
 //
 //  The handoff — the page's last frame and the icon's first — is placed where
 //  the two are the same size on screen, so neither jumps as one becomes the
-//  other. See `handoffProgress(finalScale:)`.
+//  other. See `handoffProgress(finalScale:iconPeak:)`.
 //
 //  Used wherever Settings or the Installer returns to the home screen — the
 //  multitask home button, the installer's own close button, and the full-screen
@@ -28,48 +35,77 @@ enum LCMinimizeToIconAnimator {
 
     // MARK: - The spring
 
-    /// The flight is a spring rather than a bezier, because that is the shape iOS
-    /// gives this transition: it leaves briskly, covers most of the distance
-    /// early, and eases into the icon along a decelerating tail no cubic curve
-    /// reproduces convincingly.
+    /// How long a window takes to cross, in either direction and on any screen.
     ///
-    /// `response` is the spring's natural period — what an undamped spring of the
-    /// same stiffness would take to reach its target. Every other number below is
-    /// derived from it, so the whole scene stays in step by construction rather
-    /// than by three constants that have to be kept in agreement by hand.
-    private static let springResponse: TimeInterval = 0.30
+    /// One number for the whole feature. Opening and closing are the same move
+    /// reversed and should take the same time, but "done" means something
+    /// different at each end: a closing window is finished when it matches the
+    /// icon and disappears, while an opening one is finished when it has all but
+    /// reached full size. Timing both to the same spring made the opening feel
+    /// the slower of the two, because it goes on visibly growing after the point
+    /// at which a closing window would already have gone.
+    ///
+    /// So the spring is derived from this, rather than the other way round: each
+    /// direction gets the spring that puts *its own* finish exactly here.
+    private static let flightDuration: TimeInterval = 0.21
 
-    /// Angular frequency, ω = 2π / response.
-    private static var springOmega: CGFloat { 2 * .pi / CGFloat(springResponse) }
+    /// How much of the growth counts as open. The last half-percent of a
+    /// critically damped spring is sub-pixel, and waiting for it is what made an
+    /// opening window feel as though it were settling in rather than arriving.
+    private static let openCompleteProgress: CGFloat = 0.995
 
-    /// Critically damped (ζ = 1): stiffness = ω², damping = 2ω. Critical is the
-    /// point of the whole choice — a page going into an icon must not overshoot
-    /// it and come back, which any springier damping ratio would do.
-    private static var springStiffness: CGFloat { springOmega * springOmega }
-    private static var springDamping: CGFloat { 2 * springOmega }
+    /// A critically damped spring, described by its angular frequency.
+    ///
+    /// Critical damping (ζ = 1) is the point of the choice: stiffness = ω²,
+    /// damping = 2ω, and a window going into an icon cannot overshoot it and swing
+    /// back, which any springier ratio would do.
+    private struct Spring {
+        let omega: CGFloat
 
-    private static var springTiming: UISpringTimingParameters {
-        UISpringTimingParameters(mass: 1,
-                                 stiffness: springStiffness,
-                                 damping: springDamping,
-                                 initialVelocity: .zero)
+        var timing: UISpringTimingParameters {
+            UISpringTimingParameters(mass: 1,
+                                     stiffness: omega * omega,
+                                     damping: 2 * omega,
+                                     initialVelocity: .zero)
+        }
+
+        func animation(keyPath: String) -> CASpringAnimation {
+            let animation = CASpringAnimation(keyPath: keyPath)
+            animation.mass = 1
+            animation.stiffness = omega * omega
+            animation.damping = 2 * omega
+            animation.initialVelocity = 0
+            return animation
+        }
+
+        /// How long it takes to settle completely, as Core Animation works it out
+        /// from the same parameters. Always longer than the flight, because the
+        /// tail is sub-pixel — which is exactly why nothing visible is timed to it.
+        var settlingDuration: TimeInterval {
+            animation(keyPath: "transform").settlingDuration
+        }
     }
 
-    /// How long that spring takes to settle completely, as Core Animation works
-    /// it out from the same parameters. Longer than the arrival below, because
-    /// the last few percent of a critically damped spring are sub-pixel — which
-    /// is exactly why nothing visible is timed to it.
-    private static var springSettlingDuration: TimeInterval {
-        springAnimation(keyPath: "transform").settlingDuration
+    /// The spring that covers `progress` of its distance in exactly
+    /// `flightDuration` — the one piece of arithmetic that makes the two
+    /// directions the same speed while letting each define its own finish.
+    private static func spring(reaching progress: CGFloat) -> Spring {
+        Spring(omega: CGFloat(omegaT(forProgress: progress) / flightDuration))
     }
 
-    private static func springAnimation(keyPath: String) -> CASpringAnimation {
-        let animation = CASpringAnimation(keyPath: keyPath)
-        animation.mass = 1
-        animation.stiffness = springStiffness
-        animation.damping = springDamping
-        animation.initialVelocity = 0
-        return animation
+    /// ωt at which a critically damped spring has covered `progress` of its
+    /// distance: the solution of (1 + ωt)·e^(−ωt) = 1 − progress. It has no
+    /// elementary inverse, so it is bisected — two dozen iterations of
+    /// arithmetic, once per flight.
+    private static func omegaT(forProgress progress: CGFloat) -> Double {
+        let target = Double(min(max(progress, 0), 0.999))
+        var low = 0.0
+        var high = 20.0
+        for _ in 0..<24 {
+            let mid = (low + high) / 2
+            if 1 - (1 + mid) * exp(-mid) < target { low = mid } else { high = mid }
+        }
+        return low
     }
 
     // MARK: - The handoff
@@ -95,20 +131,6 @@ enum LCMinimizeToIconAnimator {
         guard finalScale < 1 else { return 1 }
         let progress = (1 - finalScale * iconPeak) / (1 - finalScale)
         return min(max(progress, 0.8), 0.995)
-    }
-
-    /// When a critically damped spring has covered `progress` of its distance.
-    /// Its position, 1 − (1 + ωt)·e^(−ωt), has no elementary inverse, so this
-    /// bisects for ωt — two dozen iterations of arithmetic, once per flight.
-    private static func time(forProgress progress: CGFloat) -> TimeInterval {
-        let target = Double(min(max(progress, 0), 0.999))
-        var low = 0.0
-        var high = 20.0
-        for _ in 0..<24 {
-            let mid = (low + high) / 2
-            if 1 - (1 + mid) * exp(-mid) < target { low = mid } else { high = mid }
-        }
-        return TimeInterval(CGFloat(low) / springOmega)
     }
 
     /// When the cross-fade starts, as a fraction of the way to the handoff. The
@@ -149,10 +171,10 @@ enum LCMinimizeToIconAnimator {
 
     private static let cornerAnimationKey = "lcMinimizeCorner"
 
-    /// How long the page takes to go when Reduce Motion is on. Close to the
-    /// handoff the flight would have reached, so turning the setting on changes
-    /// how getting home *looks*, not how long it takes.
-    private static let dissolveDuration: TimeInterval = 0.25
+    /// How long the page takes to go when Reduce Motion is on. Exactly the flight
+    /// it stands in for, so turning the setting on changes how getting home
+    /// *looks*, not how long it takes.
+    private static var dissolveDuration: TimeInterval { flightDuration }
 
     /// Whether to go home without the flight. A full-screen surface scaling to a
     /// fifth of its size, over a grid scaling underneath it, is exactly the
@@ -171,10 +193,63 @@ enum LCMinimizeToIconAnimator {
     /// restored mid-flight from leaving an icon popping on its own.
     private static var arrivalWatchers: [String: LCFlightArrivalWatcher] = [:]
 
-    /// Whether the grid is already coming forward. Every flight asks it to, and
-    /// without this the second and third would each snap it back to its zoomed
-    /// starting point while the first was still settling.
+    /// Whether the grid is already on the move. Every flight asks it to go, and
+    /// without this the second and third would each snap it back to its starting
+    /// point while the first was still running.
+    /// How many windows are in the air. The host view blacks out everything
+    /// behind a visible window so a guest that does not fill the screen is
+    /// letterboxed rather than fringed with white — but a window in flight is
+    /// visible and small, and that backdrop would cover the springboard the
+    /// flight is crossing, arriving in one frame because opacity reaches its
+    /// final value as soon as the animation is committed. So it is held back for
+    /// the length of the flight. Counted, not flagged: pressing home with several
+    /// windows open puts several in the air at once, and the backdrop comes back
+    /// only when the last of them has landed.
+    private static var flightsInProgress = 0
+
+    private static func beginFlight() {
+        flightsInProgress += 1
+        if flightsInProgress == 1 { setBackdropSuspended(true) }
+    }
+
+    private static func endFlight() {
+        flightsInProgress = max(0, flightsInProgress - 1)
+        if flightsInProgress == 0 { setBackdropSuspended(false) }
+    }
+
+    private static func setBackdropSuspended(_ suspended: Bool) {
+        guard #available(iOS 16.0, *) else { return }
+        MultitaskDockManager.shared.windowHostingView.backdropSuspended = suspended
+    }
+
     private static var isGridSettling = false
+    /// Identifies the move the grid is currently making, so the backstop that
+    /// releases it cannot release a later one that has since claimed it.
+    private static var gridMove = 0
+
+    /// The operation each window is currently in the middle of, so a completion
+    /// belonging to a superseded one cannot undo the newer. Opening and closing
+    /// are the same view travelling in opposite directions and either can begin
+    /// while the other is still finishing — minimizing a window that is still
+    /// growing, or reopening one that is still on its way out.
+    private static var operations: [ObjectIdentifier: Int] = [:]
+    private static var lastOperation = 0
+
+    private static func beginOperation(on view: UIView) -> Int {
+        lastOperation &+= 1
+        operations[ObjectIdentifier(view)] = lastOperation
+        return lastOperation
+    }
+
+    private static func isCurrentOperation(_ token: Int, on view: UIView) -> Bool {
+        operations[ObjectIdentifier(view)] == token
+    }
+
+    private static func endOperation(_ token: Int, on view: UIView) {
+        if operations[ObjectIdentifier(view)] == token {
+            operations.removeValue(forKey: ObjectIdentifier(view))
+        }
+    }
 
     // MARK: - Entry points
 
@@ -193,15 +268,17 @@ enum LCMinimizeToIconAnimator {
         view.transform = .identity
         view.alpha = 1
 
+        let token = beginOperation(on: view)
         let finish = {
-            // Something may have brought the window back while it was still on
-            // its way out — reopening it resets the transform and puts the alpha
-            // back to 1. Hiding it now would take away a window the user has just
-            // asked for, so a flight that no longer owns the view stands down.
-            // (`minimizeWindow`'s `if (!finished) return` guarded the same case;
-            // a property animator finishes on schedule regardless, so the state
-            // has to be the test.)
-            guard view.alpha < 0.5 else { return }
+            // Something may have brought the window back while it was still on its
+            // way out. A newer operation on the same view owns it now, and hiding
+            // it here would take away a window the user has just asked for — as
+            // would finishing after a restore that bypasses this file altogether,
+            // which is what the alpha says. (`minimizeWindow`'s `if (!finished)
+            // return` guarded the same case; a property animator finishes on
+            // schedule regardless, so the state has to be the test.)
+            guard isCurrentOperation(token, on: view), view.alpha < 0.5 else { return }
+            endOperation(token, on: view)
 
             view.isHidden = true
             view.transform = .identity
@@ -265,6 +342,127 @@ enum LCMinimizeToIconAnimator {
         fade.startAnimation()
     }
 
+    // MARK: - Opening
+
+    /// The flight in reverse: a window grows out of the icon it belongs to, on the
+    /// same spring, its corners unrolling from the icon's radius to the screen's.
+    /// The window is left visible, untransformed and opaque.
+    ///
+    /// `sourceInWindow` overrides the icon lookup for a caller that knows where the
+    /// window is coming from and it is not an icon — the switcher, where the card
+    /// the user just pressed is the thing that should become the window.
+    static func expand(
+        _ view: UIView,
+        fromItemID itemID: String?,
+        sourceInWindow: CGRect? = nil,
+        completion: (() -> Void)? = nil
+    ) {
+        guard let container = view.superview,
+              view.bounds.width > 1, view.bounds.height > 1 else {
+            view.isHidden = false
+            view.alpha = 1
+            completion?()
+            return
+        }
+
+        view.layer.removeAllAnimations()
+        view.transform = .identity
+        view.isHidden = false
+
+        let token = beginOperation(on: view)
+        let finish = {
+            // A window minimized while it was still opening belongs to that
+            // newer operation; putting it back to full size here would undo it.
+            guard isCurrentOperation(token, on: view) else { return }
+            endOperation(token, on: view)
+
+            view.transform = .identity
+            view.alpha = 1
+            completion?()
+        }
+
+        if prefersDissolve {
+            view.alpha = 0
+            let fade = UIViewPropertyAnimator(duration: dissolveDuration, curve: .easeInOut) {
+                view.alpha = 1
+            }
+            fade.addCompletion { _ in finish() }
+            fade.startAnimation()
+            return
+        }
+
+        let full = view.frame
+        let source = onScreenFrame(sourceInWindow, in: container)
+            ?? itemID.flatMap { destination(forItemID: $0, in: container)?.frame }
+            ?? screenCentreDestination(in: container).frame
+        let scaleX = max(0.01, source.width / max(full.width, 1))
+        let scaleY = max(0.01, source.height / max(full.height, 1))
+        // The spring that has the window all but full size at `flightDuration` —
+        // the opening's own definition of arriving, landed on the same clock the
+        // closing one uses for its handoff, so the two read as one speed.
+        let spring = spring(reaching: openCompleteProgress)
+        let settling = spring.settlingDuration
+
+        let originalRadius = view.layer.cornerRadius
+        let originalMasksToBounds = view.layer.masksToBounds
+        let originalCornerCurve = view.layer.cornerCurve
+        view.layer.masksToBounds = true
+        view.layer.cornerCurve = .continuous
+
+        // Collapsed onto the icon to begin with, and released from there.
+        view.transform = CGAffineTransform(
+            translationX: source.midX - full.midX,
+            y: source.midY - full.midY
+        ).scaledBy(x: scaleX, y: scaleY)
+        view.alpha = 0
+
+        let screenRadius = displayCornerRadius()
+        let startRadius = min(source.width * iconCornerRadiusRatio,
+                              min(source.width, source.height) / 2) / scaleX
+        let corner = spring.animation(keyPath: "cornerRadius")
+        corner.fromValue = startRadius
+        corner.toValue = screenRadius
+        corner.duration = settling
+        view.layer.cornerRadius = screenRadius
+        view.layer.add(corner, forKey: cornerAnimationKey)
+
+        zoomGridAway(on: spring, settling: settling, under: view, in: container)
+
+        let flight = UIViewPropertyAnimator(duration: settling, timingParameters: spring.timing)
+        flight.addAnimations { view.transform = .identity }
+        flight.addCompletion { _ in
+            view.layer.removeAnimation(forKey: cornerAnimationKey)
+            view.layer.cornerRadius = originalRadius
+            view.layer.masksToBounds = originalMasksToBounds
+            view.layer.cornerCurve = originalCornerCurve
+            endFlight()
+            finish()
+        }
+
+        // The mirror of the closing cross-fade: the window is transparent while it
+        // is still icon-sized, so the icon shows through where it is going to be,
+        // and opaque by the time it has grown clear of it.
+        let fade = UIViewPropertyAnimator(
+            duration: max(0.05, flightDuration * (1 - fadeStartFraction)),
+            curve: .easeOut
+        ) {
+            view.alpha = 1
+        }
+
+        beginFlight()
+        flight.startAnimation()
+        fade.startAnimation()
+    }
+
+    /// An icon-sized source around a point, for a caller that knows where a window
+    /// is coming from but not how big the thing it came from was.
+    static func sourceRect(around pointInWindow: CGPoint) -> CGRect {
+        CGRect(x: pointInWindow.x - fallbackTargetSize / 2,
+               y: pointInWindow.y - fallbackTargetSize / 2,
+               width: fallbackTargetSize,
+               height: fallbackTargetSize)
+    }
+
     // MARK: - The flight
 
     /// Waits, briefly, for somewhere to fly to. Both possible destinations arrive
@@ -306,7 +504,14 @@ enum LCMinimizeToIconAnimator {
         let target = destination.frame
         let scaleX = max(0.01, target.width / max(start.width, 1))
         let scaleY = max(0.01, target.height / max(start.height, 1))
-        let settling = springSettlingDuration
+
+        // The spring that puts the handoff at `flightDuration`, whatever that
+        // handoff works out to be on this screen — which is what holds the speed
+        // steady from an iPhone SE to an iPad in landscape, where the same window
+        // has half again as far to travel.
+        let handoff = handoffProgress(finalScale: scaleX, iconPeak: destination.iconPeak)
+        let spring = spring(reaching: handoff)
+        let settling = spring.settlingDuration
 
         let originalRadius = view.layer.cornerRadius
         let originalMasksToBounds = view.layer.masksToBounds
@@ -318,7 +523,7 @@ enum LCMinimizeToIconAnimator {
         // on any other curve they run ahead of or behind the shrink. The radius
         // renders through the transform, so the value that lands at the icon's is
         // the icon's divided by the scale the page shrinks by.
-        let corner = springAnimation(keyPath: "cornerRadius")
+        let corner = spring.animation(keyPath: "cornerRadius")
         // Clamped to half the target's shorter side: the dock as a whole is a wide
         // pill, and an icon's proportion of its width would round the corners past
         // its own height.
@@ -331,9 +536,9 @@ enum LCMinimizeToIconAnimator {
         view.layer.cornerRadius = endRadius
         view.layer.add(corner, forKey: cornerAnimationKey)
 
-        settleGrid(settling: settling)
+        settleGrid(on: spring, settling: settling)
 
-        let flight = UIViewPropertyAnimator(duration: settling, timingParameters: springTiming)
+        let flight = UIViewPropertyAnimator(duration: settling, timingParameters: spring.timing)
         flight.addAnimations {
             view.transform = CGAffineTransform(
                 translationX: target.midX - start.midX,
@@ -345,6 +550,7 @@ enum LCMinimizeToIconAnimator {
             view.layer.cornerRadius = originalRadius
             view.layer.masksToBounds = originalMasksToBounds
             view.layer.cornerCurve = originalCornerCurve
+            endFlight()
             completion()
         }
 
@@ -352,10 +558,8 @@ enum LCMinimizeToIconAnimator {
         // instead of trailing the spring's long asymptotic tail: the page is gone
         // the instant it matches the icon, not fading for a further quarter of a
         // second over the top of it.
-        let handoff = handoffProgress(finalScale: scaleX, iconPeak: destination.iconPeak)
-        let handoffTime = time(forProgress: handoff)
-        let fadeStart = handoffTime * fadeStartFraction
-        let fade = UIViewPropertyAnimator(duration: handoffTime - fadeStart, curve: .easeIn) {
+        let fadeStart = flightDuration * fadeStartFraction
+        let fade = UIViewPropertyAnimator(duration: flightDuration - fadeStart, curve: .easeIn) {
             view.alpha = 0
         }
 
@@ -368,12 +572,16 @@ enum LCMinimizeToIconAnimator {
             view: view,
             finalScale: scaleX,
             arrivalProgress: handoff,
-            timeout: settling + 0.2
-        ) {
-            arrivalWatchers[itemID] = nil
-            answer(destination, itemID: itemID)
-        }
+            timeout: settling + 0.2,
+            // Runs on arrival and on giving up alike, so a flight that was
+            // interrupted does not leave its watcher in the table.
+            onFinish: { arrived in
+                arrivalWatchers[itemID] = nil
+                if arrived { answer(destination, itemID: itemID) }
+            }
+        )
 
+        beginFlight()
         flight.startAnimation()
         fade.startAnimation(afterDelay: fadeStart)
     }
@@ -382,22 +590,74 @@ enum LCMinimizeToIconAnimator {
 
     /// Brings the grid forward as the page recedes, on the same spring, so the
     /// two halves of the move land together.
-    private static func settleGrid(settling: TimeInterval) {
-        guard !isGridSettling,
-              let grid = LCSpringboardViewController.current?.viewIfLoaded,
-              grid.window != nil else { return }
+    private static func settleGrid(on spring: Spring, settling: TimeInterval) {
+        guard let grid = LCSpringboardViewController.current?.viewIfLoaded,
+              grid.window != nil, claimGrid() else { return }
 
-        isGridSettling = true
         grid.transform = CGAffineTransform(scaleX: gridZoom, y: gridZoom)
         grid.alpha = gridStartAlpha
 
-        let settle = UIViewPropertyAnimator(duration: settling, timingParameters: springTiming)
+        let settle = UIViewPropertyAnimator(duration: settling, timingParameters: spring.timing)
         settle.addAnimations {
             grid.transform = .identity
             grid.alpha = 1
         }
         settle.addCompletion { _ in isGridSettling = false }
         settle.startAnimation()
+        scheduleGridRelease(settling: settling)
+    }
+
+    /// Claims the grid for a move, and returns whether it was free to take.
+    private static func claimGrid() -> Bool {
+        guard !isGridSettling else { return false }
+        isGridSettling = true
+        gridMove &+= 1
+        return true
+    }
+
+    /// A backstop for the grid flag. If the animation that should clear it is
+    /// interrupted and never reports, the flag stays on and quietly disables the
+    /// counter-move for the rest of the session — the kind of fault nobody
+    /// notices except that the animation has felt flat for a week. Tied to the
+    /// move that scheduled it, so a stale backstop cannot free a grid that a
+    /// later move has since claimed.
+    private static func scheduleGridRelease(settling: TimeInterval) {
+        let move = gridMove
+        DispatchQueue.main.asyncAfter(deadline: .now() + settling + 0.5) {
+            if gridMove == move { isGridSettling = false }
+        }
+    }
+
+    /// The grid's half of an opening: it draws back and dims as the window grows
+    /// out of it, the same move `settleGrid` plays coming home, run the other way.
+    ///
+    /// Only when the window will cover the grid, because the grid has to be put
+    /// back at the end — it is left zoomed otherwise, and a later minimize would
+    /// start from the wrong place. Under a window that covers the screen that
+    /// reset is unseen; under a smaller one it would be a visible snap, so a
+    /// window that does not cover the grid leaves it alone.
+    private static func zoomGridAway(on spring: Spring, settling: TimeInterval, under view: UIView, in container: UIView) {
+        guard view.frame.union(container.bounds) == view.frame,
+              let grid = LCSpringboardViewController.current?.viewIfLoaded,
+              grid.window != nil, claimGrid() else { return }
+
+        grid.transform = .identity
+        grid.alpha = 1
+
+        let zoom = UIViewPropertyAnimator(duration: settling, timingParameters: spring.timing)
+        zoom.addAnimations {
+            grid.transform = CGAffineTransform(scaleX: gridZoom, y: gridZoom)
+            grid.alpha = gridStartAlpha
+        }
+        zoom.addCompletion { _ in
+            // Behind the open window now, so putting it back is unseen — and it
+            // has to be back before the window is ever minimized again.
+            grid.transform = .identity
+            grid.alpha = 1
+            isGridSettling = false
+        }
+        zoom.startAnimation()
+        scheduleGridRelease(settling: settling)
     }
 
     /// Whatever the window landed on answers it: the springboard icon bounces
@@ -483,13 +743,20 @@ enum LCMinimizeToIconAnimator {
     /// found yet — which is a reason to wait a moment, since the home dock only
     /// appears as the window leaves.
     private static func destination(forItemID itemID: String, in container: UIView) -> Destination? {
-        guard container.window != nil else { return nil }
+        guard let window = container.window else { return nil }
 
+        // Same window, not merely some window: on iPad a second scene has a
+        // springboard of its own, and `current` is whichever loaded last.
         if let cell = LCSpringboardViewController.current?.iconCell(forItemID: itemID),
-           cell.window != nil {
+           cell.window === window {
             let icon = cell.iconImageView
             let frame = icon.convert(icon.bounds, to: container)
-            if frame.width > 1, frame.height > 1 { return .springboardIcon(frame) }
+            // Fully on screen, not just overlapping it. A grid still laid out for
+            // the orientation the interface has just left reports icons half off
+            // the edge, and those are not somewhere to send a window.
+            if frame.width > 1, frame.height > 1, container.bounds.contains(frame) {
+                return .springboardIcon(frame)
+            }
         }
 
         if #available(iOS 16.0, *) {
@@ -508,10 +775,18 @@ enum LCMinimizeToIconAnimator {
 
     /// A frame reported in window coordinates, converted for `container` and
     /// confirmed to be somewhere the user can actually see.
+    ///
+    /// Required to be wholly on screen rather than merely overlapping it. These
+    /// come from SwiftUI, whose global space is documented as the screen, and on
+    /// an iPad in Split View or Stage Manager the window is not the screen — a
+    /// frame measured in one and used in the other is offset by the window's own
+    /// origin. Insisting it lands entirely within the container turns that into a
+    /// fall through to the next destination rather than a window flying somewhere
+    /// senseless.
     private static func onScreenFrame(_ inWindow: CGRect?, in container: UIView) -> CGRect? {
         guard let inWindow, inWindow.width > 1, inWindow.height > 1 else { return nil }
         let frame = container.convert(inWindow, from: nil)
-        return container.bounds.intersects(frame) ? frame : nil
+        return container.bounds.contains(frame) ? frame : nil
     }
 
     private static func screenCentreDestination(in container: UIView) -> Destination {
@@ -545,18 +820,21 @@ private final class LCFlightArrivalWatcher {
     private let finalScale: CGFloat
     private let arrivalProgress: CGFloat
     private let deadline: CFTimeInterval
-    private var onArrive: (() -> Void)?
+    /// Called exactly once either way — `true` when the window reached the icon,
+    /// `false` when it gave up on it — so the caller can drop the watcher whatever
+    /// the outcome rather than only on a landing.
+    private var onFinish: ((Bool) -> Void)?
 
     init(view: UIView,
          finalScale: CGFloat,
          arrivalProgress: CGFloat,
          timeout: TimeInterval,
-         onArrive: @escaping () -> Void) {
+         onFinish: @escaping (Bool) -> Void) {
         self.view = view
         self.finalScale = finalScale
         self.arrivalProgress = arrivalProgress
         self.deadline = CACurrentMediaTime() + timeout
-        self.onArrive = onArrive
+        self.onFinish = onFinish
 
         let link = CADisplayLink(target: self, selector: #selector(step))
         // Common modes: a flight started from a scrolling grid must still be
@@ -565,31 +843,43 @@ private final class LCFlightArrivalWatcher {
         self.link = link
     }
 
+    /// Stops watching without reporting — for a flight replaced by another one,
+    /// where the replacement's own watcher is the one that matters now.
     func cancel() {
+        stop()
+        onFinish = nil
+    }
+
+    private func stop() {
         link?.invalidate()
         link = nil
-        onArrive = nil
+    }
+
+    private func finish(arrived: Bool) {
+        let report = onFinish
+        stop()
+        onFinish = nil
+        report?(arrived)
     }
 
     @objc private func step() {
         guard let presentation = view?.layer.presentation() else {
-            if CACurrentMediaTime() >= deadline { cancel() }
+            // The view has gone, so nothing is going to arrive.
+            if CACurrentMediaTime() >= deadline { finish(arrived: false) }
             return
         }
 
         let total = 1 - finalScale
-        // A page that is not really shrinking has nowhere to arrive.
-        guard total > 0.01 else { cancel(); return }
+        // A window that is not really shrinking has nowhere to arrive.
+        guard total > 0.01 else { finish(arrived: false); return }
 
         let travelled = 1 - presentation.affineTransform().a
         if travelled / total >= arrivalProgress {
-            let arrived = onArrive
-            cancel()
-            arrived?()
+            finish(arrived: true)
         } else if CACurrentMediaTime() >= deadline {
             // Interrupted, or it never moved. Nothing landed on the icon, so
-            // nothing should bounce.
-            cancel()
+            // nothing should answer for it.
+            finish(arrived: false)
         }
     }
 }

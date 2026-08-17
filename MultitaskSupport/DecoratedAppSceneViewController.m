@@ -40,8 +40,18 @@ void UIKitFixesInit(void) {
 @property(nonatomic) CGRect originalFrame;
 @property(nonatomic) UIBarButtonItem *maximizeButton;
 @property(nonatomic) bool isAppTerminationRequested;
+/// Whether this window has already asked to be shown. It waits for the guest to
+/// have drawn something before making its entrance, and that cue can arrive from
+/// more than one place, so the first one wins and the rest are ignored.
+@property(nonatomic) BOOL didAskToBeShown;
 - (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation;
 @end
+
+/// How long a guest is given to draw its first frame before its window is shown
+/// anyway. Most apps put up their launch screen well inside this; one that
+/// crashes on the way up, or simply never reports its scene settings, must not
+/// leave an invisible window and a home screen that swallowed a tap.
+static const NSTimeInterval kAppContentWaitLimit = 1.2;
 
 @implementation DecoratedAppSceneViewController
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
@@ -54,7 +64,18 @@ void UIKitFixesInit(void) {
     [self setupDecoratedView];
     
     [MultitaskDockManager.shared addRunningApp:windowName appUUID:dataUUID view:self.view];
-    
+
+    // The window stays out of sight until the guest has drawn something. Opening
+    // it the instant its icon is pressed means growing a black rectangle out of
+    // that icon — the guest process has not rendered yet, so there is nothing in
+    // the window to see, and taking the home screen away to show it is worse than
+    // leaving the home screen there. It comes in when it has content to come in
+    // with; this is the backstop for a guest that never reports having any.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kAppContentWaitLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self askToBeShown];
+    });
+
+
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(switcherBarVisibilityChanged)
                                                  name:@"MultitaskBarVisibilityChanged"
@@ -284,6 +305,18 @@ void UIKitFixesInit(void) {
     }];
 }
 
+/// Asks for this window to make its entrance, once. The dock grows it out of the
+/// icon it was launched from; until this runs the window is invisible and the
+/// springboard is what the user is looking at.
+- (void)askToBeShown {
+    if (self.didAskToBeShown) return;
+    self.didAskToBeShown = YES;
+    // Posted rather than called, the way the bar's visibility travels the other
+    // way between these two files — the dock is Swift and this is not, and a
+    // notification needs neither side's generated header.
+    [NSNotificationCenter.defaultCenter postNotificationName:@"LCWindowIsReadyToShow" object:self.view];
+}
+
 - (void)finishMinimizeWindow {
     self.view.hidden = YES;
     self.view.transform = CGAffineTransformIdentity;
@@ -342,6 +375,9 @@ void UIKitFixesInit(void) {
 - (void)appSceneVC:(AppSceneViewController*)vc didInitializeWithError:(NSError *)error {
     dispatch_async(dispatch_get_main_queue(), ^{
         if(error) {
+            // Nothing is coming, so stop waiting for it — the window must not be
+            // left invisible with an alert to present from.
+            [self askToBeShown];
             [vc appTerminationCleanUp];
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"lc.common.error".loc message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"lc.common.ok".loc style:UIAlertActionStyleCancel handler:nil]];
@@ -374,6 +410,13 @@ void UIKitFixesInit(void) {
     [self applySceneFrameToSettings:newSettings orientation:baseSettings.interfaceOrientation];
 
     [_appSceneVC.presenter.scene updateSettings:newSettings withTransitionContext:newContext completion:nil];
+
+    // The guest is far enough up to be describing its own scene, which in
+    // practice is around the point its launch screen goes on screen. The nearest
+    // thing to a "first frame" this side of the process boundary: the window's
+    // content is rendered by the guest into a layer the host cannot inspect, so
+    // there is nothing here to watch for directly.
+    [self askToBeShown];
 }
 
 // Resizes the guest scene's drawable to match the current container view size.
@@ -546,7 +589,21 @@ void UIKitFixesInit(void) {
             maxFrame.size.height -= barThickness;
         }
     }
-    self.view.frame = maxFrame;
+    [self setWindowFrame:maxFrame];
+}
+
+/// Places the window through bounds and centre rather than `frame`.
+///
+/// A window carries a transform while it is growing out of its icon, or
+/// shrinking back into it, and `frame` is undefined under a transform —
+/// assigning it there is read back through the transform and leaves the window's
+/// bounds distorted for good. The scene reports its settings as the guest starts
+/// up, which is exactly when the opening animation is still running, so this path
+/// has to be safe to take mid-flight. With no transform it is identical to
+/// setting the frame.
+- (void)setWindowFrame:(CGRect)frame {
+    self.view.bounds = CGRectMake(0, 0, frame.size.width, frame.size.height);
+    self.view.center = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
 }
 
 - (void)updateWindowedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
@@ -564,7 +621,7 @@ void UIKitFixesInit(void) {
     frame.origin.x = MAX(maxFrame.origin.x - oobOffset, MIN(CGRectGetMaxX(maxFrame) - frame.size.width + oobOffset, center.x - frame.size.width / 2));
     frame.origin.y = MAX(maxFrame.origin.y, MIN(center.y - frame.size.height / 2, CGRectGetMaxY(maxFrame) - frame.size.height));
     [UIView animateWithDuration:0.3 animations:^{
-        self.view.frame = frame;
+        [self setWindowFrame:frame];
     }];
 }
 

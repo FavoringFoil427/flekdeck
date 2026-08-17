@@ -15,6 +15,11 @@ extension NSNotification.Name {
     /// Posted when the rounded/flat bar design setting is toggled in Settings, so
     /// the visible bar can re-lay out live instead of waiting for the next layout.
     static let multitaskBarDesignChanged = NSNotification.Name("MultitaskBarDesignChanged")
+    /// Posted by a guest window once its app has something on screen, which is
+    /// its cue to grow out of the icon it was launched from. Object is the
+    /// window's view. Until then it stays invisible and the springboard keeps the
+    /// screen. Name is duplicated as a literal in `DecoratedAppSceneViewController`.
+    static let lcWindowIsReadyToShow = NSNotification.Name("LCWindowIsReadyToShow")
 }
 
 // MARK: - App Info Provider
@@ -681,6 +686,16 @@ class AppInfoProvider {
             self,
             selector: #selector(barDesignSettingChanged),
             name: .multitaskBarDesignChanged,
+            object: nil
+        )
+        // A guest window announcing it has something to show. Sent rather than
+        // called, the way the bar's own state travels between these two files:
+        // the window is Objective-C and the dock is Swift, and a notification
+        // needs neither side's generated header to reach the other.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowIsReadyToShow(_:)),
+            name: .lcWindowIsReadyToShow,
             object: nil
         )
     }
@@ -1767,41 +1782,26 @@ class AppInfoProvider {
             view.layer.removeAllAnimations()
             view.isHidden = true
             view.transform = .identity
-            let origFrame = view.frame
             // Asked through hasShared first: un-minimizing a window must not be
             // what constructs the PiP manager. If it does not exist there is no
             // PiP to stop, so the scale-in below is already the right branch.
             if PiPManager.hasShared, let pipManager = PiPManager.shared,
                let decoratedVC = view._viewDelegate(), pipManager.isPiP(withDecoratedVC: decoratedVC) {
                 pipManager.stopPiP()
-            } else if UIAccessibility.isReduceMotionEnabled {
-                // Reduce Motion: the window arrives where it belongs and fades up,
-                // rather than being flung out of a tenth of its size. Matched to
-                // the way a page leaves under the setting, so opening and closing
-                // stay each other's opposite.
-                view.alpha = 0
                 view.isHidden = false
+                view.alpha = 1
+                self.bringViewToFront(view, in: window)
             } else {
-                view.transform = CGAffineTransform(scaleX: 0.1, y: 0.1)
-                view.isHidden = false
-                let smaller = min(view.frame.size.width, view.frame.size.height)
-                view.frame.size = CGSize(width: smaller, height: smaller)
-                if let center { view.center = center }
+                // Out of the icon it went into: the way home, run backwards. A
+                // window pressed in the switcher comes out of its card instead,
+                // that being what the user just touched.
+                self.bringViewToFront(view, in: window)
+                LCMinimizeToIconAnimator.expand(
+                    view,
+                    fromItemID: self.apps.first { $0.view === view }?.springboardItemID,
+                    sourceInWindow: center.map(LCMinimizeToIconAnimator.sourceRect(around:))
+                )
             }
-            
-            self.bringViewToFront(view, in: window)
-            UIView.animate(
-                withDuration: Constants.standardAnimationDuration,
-                delay: 0,
-                usingSpringWithDamping: 1.0,
-                initialSpringVelocity: 0,
-                options: .curveEaseInOut,
-                animations: {
-                    view.alpha = 1.0
-                    view.transform = .identity
-                    view.frame = origFrame
-                }
-            )
         } else {
             bringViewToFront(view, in: window)
 
@@ -1859,12 +1859,24 @@ class AppInfoProvider {
         
         let appName = appInfo?.displayName() ?? "Unknown App"
         let appModel = DockAppModel(appName: appName, appUUID: appUUID, appInfo: appInfo, view: view)
-        
+
+        // Hidden the instant it is registered, not when the animation gets around
+        // to it. The window is added to the hierarchy at full size by its own
+        // construction, and the opening runs a turn of the run loop later — long
+        // enough for one frame of a full-screen window to be drawn before it
+        // collapses onto its icon to grow back out of it.
+        view?.alpha = 0
+
         DispatchQueue.main.async {
             self.apps.append(appModel)
             self.frontmostAppUUID = appUUID
             self.isHomeState = false
-            
+
+            // The window is not shown here. A guest has drawn nothing yet, and
+            // growing an empty black rectangle out of the icon takes the home
+            // screen away to show the user precisely nothing. It stays hidden and
+            // asks to be shown once it has content — see `windowIsReadyToShow`.
+
             if !self.isVisible {
                 self.showDock()
             } else {
@@ -1905,14 +1917,21 @@ class AppInfoProvider {
         }
         
         internalPageControllers[uuid] = hostVC
-        
+        // Hidden from the moment it is in the hierarchy, so the frame before the
+        // opening animation starts is not a full-screen page appearing whole.
+        hostVC.view.alpha = 0
+
         let appModel = DockAppModel(appName: name, appUUID: uuid, view: hostVC.view, internalPageKind: kind)
         
         DispatchQueue.main.async {
             self.apps.append(appModel)
             self.frontmostAppUUID = uuid
             self.isHomeState = false
-            
+
+            // Out of its own icon, the same as a guest app — this page used to
+            // simply be there, one frame absent and the next full screen.
+            LCMinimizeToIconAnimator.expand(hostVC.view, fromItemID: appModel.springboardItemID)
+
             if !self.isVisible {
                 self.showDock()
             } else {
@@ -1966,6 +1985,27 @@ class AppInfoProvider {
             return
         }
         controller.dismiss(animated: false) { then?() }
+    }
+
+    /// A newly launched window has something to show, and now makes its entrance
+    /// out of the icon it was launched from.
+    ///
+    /// Until this runs the window is invisible and the springboard is what the
+    /// user is looking at, which is the point: a window opened the instant its
+    /// icon is pressed spends its first stretch as a black rectangle, because the
+    /// guest process renders on its own schedule. Growing that out of an icon
+    /// replaces the home screen with nothing. The home screen keeps the screen
+    /// until the app can take it.
+    @objc private func windowIsReadyToShow(_ note: Notification) {
+        guard isDockEnabled(), let view = note.object as? UIView else { return }
+        DispatchQueue.main.async {
+            guard let app = self.apps.first(where: { $0.view === view }) else {
+                // Not ours to animate — show it rather than leave it invisible.
+                view.alpha = 1
+                return
+            }
+            LCMinimizeToIconAnimator.expand(view, fromItemID: app.springboardItemID)
+        }
     }
 
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {

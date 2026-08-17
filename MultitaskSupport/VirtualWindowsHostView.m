@@ -79,7 +79,18 @@ static void *kBackdropObservationContext = &kBackdropObservationContext;
     [self updateBackdropVisibility];
 }
 
+- (void)setBackdropSuspended:(BOOL)backdropSuspended {
+    _backdropSuspended = backdropSuspended;
+    [self updateBackdropVisibility];
+}
+
 - (void)updateBackdropVisibility {
+    if(self.backdropSuspended) {
+        // A window is on its way into or out of an icon; what is behind it should
+        // be the home screen it is travelling across, not a black field.
+        _backdropView.hidden = YES;
+        return;
+    }
     BOOL anyWindowVisible = NO;
     for(UIView *subview in self.subviews) {
         if(subview == _backdropView) continue;
