@@ -2125,21 +2125,6 @@ class AppInfoProvider {
               let appView = app.view,
               !appView.isHidden, appView.alpha > 0.1 else { return }
         
-        // Capture the content region only, dropping the safe-area periphery on every
-        // edge. The guest is handed those insets as `peripheryInsets` and fills them
-        // with its own background, which on screen reads as the status-bar and
-        // home-indicator strips — but a card has neither, so they arrive as dead
-        // margin around the app. Internal pages need the same treatment for a second
-        // reason: they pin their bottom controls above the switcher bar, and that
-        // reserved strip is part of the safe area too.
-        //
-        // Trimming every edge rather than just the bottom keeps this correct in
-        // landscape, where the periphery sits on the sides — and those sides become
-        // the top and bottom of the card once the capture is turned upright.
-        let captureRect = appView.bounds.inset(by: appView.safeAreaInsets)
-        let viewSize = captureRect.size
-        guard viewSize.width > 0 && viewSize.height > 0 else { return }
-
         // The quarter turn a landscape capture needs to stand upright in a PORTRAIT
         // card, so it fills one rather than sitting as a band between black margins.
         // Which way to turn depends on the edge the user rotated towards, so the
@@ -2149,8 +2134,13 @@ class AppInfoProvider {
         // on iPad the card takes the shape of the screen, so it is landscape whenever
         // the device is, and the device can turn while the switcher is open. The card
         // applies this itself, against the shape it actually has.
+        //
+        // Decided from the view's own shape rather than from the trimmed capture,
+        // because the trim below depends on this turn and so cannot be what fixes it.
+        // The two never disagree: a trim takes a strip off an edge, which is nowhere
+        // near enough to stand a landscape view on its end.
         var quarterTurn: CGFloat = 0
-        if viewSize.width > viewSize.height {
+        if appView.bounds.width > appView.bounds.height {
             let interfaceOrientation = appView.window?.windowScene?.interfaceOrientation
                 ?? keyWindow?.windowScene?.interfaceOrientation
             switch interfaceOrientation {
@@ -2166,6 +2156,38 @@ class AppInfoProvider {
                 quarterTurn = UIDevice.current.orientation == .landscapeLeft ? .pi / 2 : -.pi / 2
             }
         }
+
+        // Capture the content region, dropping the safe-area periphery on every edge
+        // except the one that ends up along the TOP of the card. The guest is handed
+        // those insets as `peripheryInsets` and fills them with its own background,
+        // which on screen reads as the status-bar and home-indicator strips. The home
+        // indicator and the side strips are dead margin once the app is in a card, but
+        // the status bar is part of how the app actually looked, and the system's own
+        // switcher keeps it — so this one does too. Internal pages are trimmed for a
+        // second reason: they pin their bottom controls above the switcher bar, and
+        // that reserved strip is part of the safe area as well.
+        //
+        // Which edge survives depends on the turn the card will apply. A portrait
+        // capture is drawn as it was taken, so it is the capture's own top. A landscape
+        // capture is stood upright, and the turn carries one of its sides up there —
+        // clockwise brings the left edge to the top, counter-clockwise the right one.
+        //
+        // The capture's own top is kept in every case as well, not just the unturned
+        // one. It costs nothing where the turn is what matters (a phone held in
+        // landscape has no top inset to keep), and it covers the one case the turn
+        // cannot: an iPad, whose card takes the screen's shape, so a landscape capture
+        // is drawn flat in a landscape card with its top edge still on top.
+        var trim = appView.safeAreaInsets
+        trim.top = 0
+        if quarterTurn > 0 {
+            trim.left = 0
+        } else if quarterTurn < 0 {
+            trim.right = 0
+        }
+        let captureRect = appView.bounds.inset(by: trim)
+        let viewSize = captureRect.size
+        guard viewSize.width > 0 && viewSize.height > 0 else { return }
+
         appSnapshotRotations[appUUID] = quarterTurn
 
         // A frozen bitmap of the app exactly as it looks right now. `drawHierarchy`
@@ -3065,15 +3087,31 @@ struct AppSwitcherOverlay: View {
     private var cardWidth: CGFloat {
         dockManager.switcherScreenSize.width * 0.70
     }
-    /// Shaped like the snapshot it holds, not like the whole screen. Snapshots are
-    /// captured with the safe-area periphery trimmed off, so they are shorter than
-    /// the screen — sizing the card from the full screen aspect left the image
-    /// slightly too tall for it, and filling the card then cropped the sides.
+    /// Height of the header row above each card's image — the app icon's own size,
+    /// which is the tallest thing in it. Named because the card's height is capped
+    /// against the room the column has left once this and the chin have taken theirs.
+    private let cardHeaderHeight: CGFloat = 32
+
+    /// Shaped like the snapshot it holds, not like the whole screen. A snapshot keeps
+    /// the app's status-bar strip but is trimmed of the rest of the periphery, so it
+    /// is shorter than the screen by the bottom inset alone — sizing the card from the
+    /// full screen aspect left the image slightly too tall for it, and filling the
+    /// card then cropped the sides.
+    ///
+    /// Capped at the height the column actually has spare. Keeping the status-bar
+    /// strip makes a card taller than it used to be, and on a short screen carrying a
+    /// deep bar the header above and the chin below can want more room than is left.
+    /// The cap only binds there; everywhere else the card is still exactly its
+    /// snapshot's shape.
     private var cardHeight: CGFloat {
         let screen = dockManager.switcherScreenSize
         let insets = dockManager.cachedSafeAreaInsets
-        let contentHeight = max(screen.height - insets.top - insets.bottom, 1)
-        return cardWidth * (contentHeight / screen.width)
+        let contentHeight = max(screen.height - insets.bottom, 1)
+        let natural = cardWidth * (contentHeight / screen.width)
+        // Everything the column spends outside the image: the top spacer, the header
+        // row and the gap under it, the minimum gap above the chin, and the chin.
+        let chrome = (insets.top + 12) + (cardHeaderHeight + 8) + 20 + (dockManager.barFlatRegion + 20)
+        return min(natural, max(screen.height - chrome, 1))
     }
 
     // How far the cards slide left and the buttons slide down when the user taps
