@@ -416,14 +416,20 @@ enum LCMinimizeToIconAnimator {
         ).scaledBy(x: scaleX, y: scaleY)
         view.alpha = 0
 
-        let screenRadius = displayCornerRadius()
+        // The corners unroll from the icon's to the window's own, ending on the
+        // radius the window actually rests at rather than on the screen's. Ending
+        // anywhere else means the completion has to put the real radius back, and
+        // that correction lands in a single frame — which is the corners looking
+        // icon-round for the whole opening and then snapping square at the end.
+        // The radius renders through the transform, so the value that *starts* at
+        // the icon's is the icon's divided by the scale the window starts at.
         let startRadius = min(source.width * iconCornerRadiusRatio,
                               min(source.width, source.height) / 2) / scaleX
         let corner = spring.animation(keyPath: "cornerRadius")
         corner.fromValue = startRadius
-        corner.toValue = screenRadius
+        corner.toValue = originalRadius
         corner.duration = settling
-        view.layer.cornerRadius = screenRadius
+        view.layer.cornerRadius = originalRadius
         view.layer.add(corner, forKey: cornerAnimationKey)
 
         zoomGridAway(on: spring, settling: settling, under: view, in: container)
@@ -530,7 +536,10 @@ enum LCMinimizeToIconAnimator {
         let landedRadius = min(target.width * iconCornerRadiusRatio,
                                min(target.width, target.height) / 2)
         let endRadius = landedRadius / scaleX
-        corner.fromValue = originalRadius > 0 ? originalRadius : displayCornerRadius()
+        // Starts on the radius the window is actually resting at, for the same
+        // reason the opening ends on it: any other starting value is a one-frame
+        // correction, here at the beginning of the move rather than the end.
+        corner.fromValue = originalRadius
         corner.toValue = endRadius
         corner.duration = settling
         view.layer.cornerRadius = endRadius
@@ -796,11 +805,6 @@ enum LCMinimizeToIconAnimator {
                              height: fallbackTargetSize))
     }
 
-    /// The screen's own corner radius, so a page with square corners of its own
-    /// still starts the flight shaped like the screen it fills.
-    private static func displayCornerRadius() -> CGFloat {
-        (UIScreen.main.value(forKey: "_displayCornerRadius") as? CGFloat) ?? 0
-    }
 }
 
 // MARK: - Arrival watcher
