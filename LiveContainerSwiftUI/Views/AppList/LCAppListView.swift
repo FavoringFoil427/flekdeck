@@ -180,9 +180,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             showSearch = true
                         } label: {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+                                .font(.system(size: FlekTheme.bottomBarGlyphSize, weight: .regular))
                                 .foregroundStyle(Color.primary.opacity(0.6))
-                                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
+                                .frame(width: FlekTheme.bottomBarControlSize, height: FlekTheme.bottomBarControlSize)
                         }
                         .buttonStyle(.plain)
                         .glassEffect(in: .circle)
@@ -199,8 +199,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         .transition(.scale(scale: 0.6, anchor: .trailing).combined(with: .opacity))
                         .installerBarShadow()
                 }
-                FlekGlassCircleButton(systemImage: "magnifyingglass",
-                                      size: FlekTheme.searchPillSize * 1.3, iconScale: 0.42) {
+                FlekGlassCircleButton(systemImage: "magnifyingglass") {
                     showSearch = true
                 }
                 .installerBarShadow()
@@ -226,14 +225,20 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// Hiding Mode keeps them out until the session is unlocked — the same rule the
     /// URL-scheme launch path applies — and launching one still passes through the
     /// Face ID gate in `launchHomeApp`.
-    /// How far the home bottom bar sits from the edge.
+    /// How far the home bottom bar sits from the bottom of the safe area.
     ///
-    /// List mode sits lower than grid by sinking into the home-indicator inset. A
-    /// device with a physical home button has no such inset, so the negative value
-    /// pushed the bar off the bottom of the screen — there, fall back to the grid's
-    /// margin instead.
+    /// The grid puts its controls a fixed distance from the bottom edge of the
+    /// *screen*, which on a device with a home indicator is inside the inset —
+    /// hence the negative result there, reaching back down past it.
+    ///
+    /// List mode sits lower still, sinking into the home-indicator inset. A
+    /// device with a physical home button has no such inset, so the negative
+    /// value pushed the bar off the bottom of the screen — it keeps a small
+    /// positive margin instead.
     private var homeBottomBarInset: CGFloat {
-        guard homeLayout == FlekHomeLayout.list.rawValue else { return 5 }
+        guard homeLayout == FlekHomeLayout.list.rawValue else {
+            return FlekTheme.bottomBarScreenMargin - homeBottomSafeInset
+        }
         return homeBottomSafeInset > 2 ? -9 : 5
     }
 
@@ -310,7 +315,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         doneButtonLabel
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 5)
+                    // The same inset as the bar it stands in for, so that
+                    // entering edit mode does not shift the control's position.
+                    .padding(.bottom, homeBottomBarInset)
                 } else {
                     homeBottomBar
                         .id(colorScheme)
@@ -686,7 +693,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
         .foregroundStyle(Color.primary.opacity(0.75))
         .padding(.horizontal, 18)
-        .frame(height: FlekTheme.searchPillSize * 1.3)
+        .frame(height: FlekTheme.bottomBarControlSize)
 
         if #available(iOS 26.0, *) {
             return AnyView(label.glassEffect(.regular.interactive(false)))
@@ -1013,20 +1020,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             safeAreaInsets: safeArea
         )
 
-        let ipp: Int
-        if let padCount = LCSpringboardPageCell.padItemsPerPage(forPageSize: pageSize) {
-            // iPad: a fixed grid, the same count whichever way it is held.
-            ipp = padCount
-        } else {
-            let cellHeight = LCSpringboardPageCell.computeCellHeight(forPageSize: pageSize)
-            let pageControlHeight: CGFloat = 30
-            let topPad: CGFloat = 8
-            let lineSpacing: CGFloat = 8
-            let effectiveHeight = screenBounds.height - safeArea.top - topPad
-            let pageHeight = effectiveHeight - pageControlHeight
-            let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
-            ipp = max(1, rows * LCSpringboardPageCell.phoneColumns)
-        }
+        let ipp = LCSpringboardPageCell.itemsPerPage(forPageSize: pageSize)
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
         if !sizes.isEmpty {

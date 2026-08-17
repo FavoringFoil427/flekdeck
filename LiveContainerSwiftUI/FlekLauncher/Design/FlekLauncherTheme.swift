@@ -76,8 +76,40 @@ enum FlekTheme {
     // Label
     static let labelSize: CGFloat = 14
 
-    // Bottom search pill
-    static let searchPillSize: CGFloat = 50
+    // Bottom bar. The search button and the multitask bar sit side by side, so
+    // one size covers both: it is the diameter of either when round, and the
+    // height of the multitask bar once it grows into a capsule around the apps
+    // it is running.
+
+    /// Sized off the screen rather than fixed, the way the grid's cards are:
+    /// 58pt on the 402pt-wide screen the design is drawn for, and the same share
+    /// of the width on anything else.
+    private static let bottomBarControlRatio: CGFloat = 58.0 / 402.0
+    /// Bounds on that share. A tablet is wide enough to work out a search button
+    /// the size of an app icon, and the narrowest phones a control too small to
+    /// comfortably hit.
+    private static let bottomBarControlRange: ClosedRange<CGFloat> = 50...72
+
+    static var bottomBarControlSize: CGFloat {
+        let screen = UIScreen.main.bounds.size
+        // The narrow side of the screen, so that turning the device — or running
+        // in a window that is wider than it is tall — does not resize the bar.
+        let width = min(screen.width, screen.height)
+        let scaled = (width * bottomBarControlRatio).rounded()
+        return min(max(scaled, bottomBarControlRange.lowerBound),
+                   bottomBarControlRange.upperBound)
+    }
+
+    /// The glyph inside one of those controls, and a running app's icon in the
+    /// multitask bar. Both are fractions of the control rather than sizes of
+    /// their own, so the bar keeps its proportions at every size it takes.
+    static var bottomBarGlyphSize: CGFloat { bottomBarControlSize * 0.42 }
+    static var bottomBarAppIconSize: CGFloat { bottomBarControlSize * 0.72 }
+
+    /// How far the bar sits from the bottom edge of the screen. Measured to the
+    /// edge itself rather than to the safe area, so on a device with a home
+    /// indicator the bar reaches back down past it.
+    static let bottomBarScreenMargin: CGFloat = 28
 }
 
 /// Frosted "liquid glass" surface used by cards, pills and popups.
@@ -147,8 +179,8 @@ extension View {
 /// "back to home" affordance shown over full-screen internal pages.
 struct FlekGlassCircleButton: View {
     let systemImage: String
-    var size: CGFloat = FlekTheme.searchPillSize
-    var iconScale: CGFloat = 0.5
+    var size: CGFloat = FlekTheme.bottomBarControlSize
+    var iconScale: CGFloat = 0.42
     var action: () -> Void
 
     var body: some View {

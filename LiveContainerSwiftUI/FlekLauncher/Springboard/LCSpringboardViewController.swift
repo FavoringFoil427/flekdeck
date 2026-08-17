@@ -105,9 +105,8 @@ final class LCSpringboardViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        // The outer CV fills the full view height so that overflowing rows
-        // (clipsToBounds = false) remain interactive — their cells are
-        // within the CV's bounds and receive tap events.
+        // The outer CV fills the view, so every icon a page lays out is inside
+        // its bounds and receives tap events.
         let cvHeight = view.bounds.height
 
         outerCollectionView.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: cvHeight)
@@ -238,34 +237,14 @@ final class LCSpringboardViewController: UIViewController {
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
     }
 
-    /// Recalculate the `itemsPerPage` metric from screen dimensions.
+    /// Recalculate the `itemsPerPage` metric from the size of a page.
     ///
-    /// Uses the full screen height minus the top safe area and a small top
-    /// padding, rather than the constrained `view.bounds.height`. This gives
-    /// more rows because the grid extends beyond the page cell via
-    /// `clipsToBounds = false`, allowing the last row to overflow into the
-    /// dock area — matching the real iOS SpringBoard's compact spacing.
+    /// A page is exactly the view: the padding that holds the grid off the top
+    /// of the screen and clear of the dock is applied outside the springboard,
+    /// so the rows that fit here are the rows the design has room for.
     private func recalculateItemsPerPage() {
-        // iPad's grid is fixed, and portrait and landscape hold the same number,
-        // so a page keeps its contents when the device is turned.
-        if let padCount = LCSpringboardPageCell.padItemsPerPage(forPageSize: view.bounds.size) {
-            itemsPerPage = padCount
-            return
-        }
-
-        let screenH = UIScreen.main.bounds.height
-        let topSafe = view.window?.safeAreaInsets.top ?? 59
-        let topPad: CGFloat = 8
-        let effectiveHeight = screenH - topSafe - topPad
-        guard effectiveHeight > 0 else { return }
-
-        let pageControlHeight: CGFloat = 30
-        let pageHeight = effectiveHeight - pageControlHeight
-
-        let cellHeight = LCSpringboardPageCell.computeCellHeight(forPageSize: view.bounds.size)
-        let lineSpacing: CGFloat = 8
-        let rows = max(1, Int((pageHeight + lineSpacing) / (cellHeight + lineSpacing)))
-        itemsPerPage = rows * LCSpringboardPageCell.phoneColumns
+        guard view.bounds.height > 0 else { return }
+        itemsPerPage = LCSpringboardPageCell.itemsPerPage(forPageSize: view.bounds.size)
     }
 
     /// Flatten `pages` back into a single array, padding non-last pages

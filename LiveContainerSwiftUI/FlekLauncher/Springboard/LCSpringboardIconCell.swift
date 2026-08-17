@@ -9,6 +9,24 @@
 import UIKit
 import SwiftUI
 
+/// A label that keeps its text at the top of its box instead of centred in it.
+///
+/// The title's box is tall enough for the second line a long app name may need,
+/// but most names take one — and a one-line name has to sit where the design
+/// puts it, not halfway down a box sized for the exception.
+private final class LCIconTitleLabel: UILabel {
+    override func textRect(forBounds bounds: CGRect,
+                           limitedToNumberOfLines numberOfLines: Int) -> CGRect {
+        var rect = super.textRect(forBounds: bounds, limitedToNumberOfLines: numberOfLines)
+        rect.origin.y = bounds.origin.y
+        return rect
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: textRect(forBounds: bounds, limitedToNumberOfLines: numberOfLines))
+    }
+}
+
 final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Subviews
@@ -21,15 +39,15 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         return iv
     }()
 
+    /// The font is set in `layoutSubviews`, where the card's width is known.
     let nameLabel: UILabel = {
-        let label = UILabel()
-        label.font = .systemFont(ofSize: 15, weight: .medium)
+        let label = LCIconTitleLabel()
         label.textColor = .label
         label.textAlignment = .center
-        label.numberOfLines = 1
+        label.numberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.78
+        label.minimumScaleFactor = 0.8
         return label
     }()
 
@@ -167,18 +185,52 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Layout constants
 
-    /// A tenth larger on iPad, matching its larger glass card — the fixed 75pt
-    /// icon read as small inside it. iPhone keeps its exact size.
-    static let iconSize: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 82 : 75
-    private static let iconCornerRadius: CGFloat =
-        UIDevice.current.userInterfaceIdiom == .pad ? 18 : 17   // 22.37% of iconSize
+    /// What the icon and its title take up inside the card, as fractions of the
+    /// card's width rather than fixed sizes: a wider screen gets a bigger icon
+    /// instead of the same icon adrift in a bigger card. Read off the design's
+    /// 110×120 card — a 66pt icon, a 77×14 title, and 8pt between the two —
+    /// which leaves 16pt above the icon and 16pt below the title.
+    private static let iconWidthFraction: CGFloat = 66.0 / 110.0
+    private static let labelWidthFraction: CGFloat = 77.0 / 110.0
+    private static let labelHeightFraction: CGFloat = 14.0 / 110.0
+    private static let labelTopSpacingFraction: CGFloat = 8.0 / 110.0
+    /// 12pt against the design's card, and the same share of a wider one.
+    private static let labelFontFraction: CGFloat = 12.0 / 110.0
+    /// A name too long for one line wraps rather than being cut short. Beyond
+    /// this it is cut short — and shrunk first, by `minimumScaleFactor`.
+    private static let titleMaxLines: Int = 2
+    /// The squircle's corner as a share of its side — the same ratio
+    /// `LCMinimizeToIconAnimator` rounds a landing window to.
+    private static let iconCornerFraction: CGFloat = 0.2237
+
+    /// The card this icon sits in, worked out from the screen rather than from
+    /// the cell's own bounds: the icon is rasterised when the cell is
+    /// configured, which happens before it has been laid out. Measured across
+    /// the screen's narrow side, so turning the device does not re-render every
+    /// icon at a new size.
+    static var cellWidth: CGFloat {
+        let screen = UIScreen.main.bounds.size
+        return LCSpringboardPageCell.computeCellWidth(
+            forPageSize: CGSize(width: min(screen.width, screen.height),
+                                height: max(screen.width, screen.height))
+        )
+    }
+
+    static var iconSize: CGFloat { (cellWidth * iconWidthFraction).rounded() }
+    static var iconCornerRadius: CGFloat { (iconSize * iconCornerFraction).rounded() }
+    private static var labelSize: CGSize {
+        CGSize(width: (cellWidth * labelWidthFraction).rounded(),
+               height: (cellWidth * labelHeightFraction).rounded())
+    }
+    private static var labelTopSpacing: CGFloat {
+        (cellWidth * labelTopSpacingFraction).rounded()
+    }
+    private static var labelFont: UIFont {
+        .systemFont(ofSize: (cellWidth * labelFontFraction).rounded(), weight: .medium)
+    }
+
     private static let deleteButtonSize: CGFloat = 24
-    
     private static let cardCorner: CGFloat = 24
-    private static let cardPadding: CGFloat = 10
-    private static let iconTopPadding: CGFloat = 16
-    private static let labelTopSpacing: CGFloat = 6
-    private static let labelHeight: CGFloat = 16
 
     // MARK: - Suppress default highlight
 
@@ -270,12 +322,15 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         glassBackgroundView?.frame = bounds
         glassBackgroundView?.layer.cornerRadius = Self.cardCorner
 
-        // Content block: icon + spacing + label
+        // Content block: icon + spacing + label, centred in the card, so the
+        // room left over falls equally above the icon and below the title.
         let iconS = Self.iconSize
-        let contentHeight = iconS + Self.labelTopSpacing + Self.labelHeight
-        let contentY = (bounds.height - contentHeight) / 2 + 4
+        let labelS = Self.labelSize
+        let labelGap = Self.labelTopSpacing
+        let contentHeight = iconS + labelGap + labelS.height
+        let contentY = ((bounds.height - contentHeight) / 2).rounded()
 
-        let iconX = (bounds.width - iconS) / 2
+        let iconX = ((bounds.width - iconS) / 2).rounded()
         iconImageView.frame = CGRect(x: iconX, y: contentY, width: iconS, height: iconS)
 
         installOverlay.frame = iconImageView.bounds
@@ -326,11 +381,18 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Rotate so stroke starts at top (clockwise)
         ringFillLayer.transform = CATransform3DMakeRotation(-.pi / 2, 0, 0, 1)
 
+        // The box the block above is centred on is the design's one-line title,
+        // so every icon in a row sits at the same height whatever its name is
+        // called. A name that needs the second line grows down into the room
+        // left below it rather than pushing its own icon up out of the row.
+        nameLabel.font = Self.labelFont
+        let labelTop = contentY + iconS + labelGap
+        let maxTitleHeight = (nameLabel.font.lineHeight * CGFloat(Self.titleMaxLines)).rounded(.up)
         nameLabel.frame = CGRect(
-            x: 4,
-            y: contentY + iconS + Self.labelTopSpacing,
-            width: bounds.width - 8,
-            height: Self.labelHeight
+            x: ((bounds.width - labelS.width) / 2).rounded(),
+            y: labelTop,
+            width: labelS.width,
+            height: min(max(labelS.height, maxTitleHeight), bounds.height - labelTop)
         )
 
         // Single-mode badge (top-right corner of glass card)

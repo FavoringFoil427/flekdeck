@@ -50,7 +50,13 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     /// Columns on iPhone, and in any window too narrow for the iPad grid.
     static let phoneColumns: Int = 3
-    private static let phoneSpacing: CGFloat = 12
+    /// The gap between two cards, across and down alike, and the margin the
+    /// grid keeps from the sides of the screen.
+    private static let phoneSpacing: CGFloat = 8
+    private static let phoneSideMargin: CGFloat = 28
+    /// Strip left clear at the foot of a phone page for the page dots, which
+    /// the springboard draws along the bottom of its own view.
+    private static let phoneBottomReserve: CGFloat = 30
 
     /// Narrowest window that gets the iPad grid. Below it — Slide Over, a small
     /// Stage Manager window — the phone's three columns suit the width better.
@@ -70,11 +76,13 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// cell takes the gap gives up — a big card with tight gaps reads as a grid of
     /// icons rather than icons stranded far apart.
     private static let padCellWidthFraction: CGFloat = 0.95
-    /// Bounds on the iPad cell, sized around its 82pt icon: the cell can neither
-    /// crowd the icon nor grow so large that it is adrift in the card.
+    /// Bounds on the iPad cell. The icon is a fraction of the cell, so these
+    /// bound the icon too: neither so narrow that it shrinks to a phone's, nor
+    /// so wide that one icon takes a quarter of the screen.
     private static let padCellWidthRange: ClosedRange<CGFloat> = 114...145
-    /// Height an iPad cell never goes below — room for the 82pt icon and its
-    /// label with the same breathing space the phone's 121pt cell gives its 75pt.
+    /// Height an iPad cell never goes below, so a short window keeps the same
+    /// breathing space above the icon and below the label that the phone's
+    /// card gives them.
     private static let padMinCellHeight: CGFloat = 130
     private static let padMinSpacing: CGFloat = 16
     /// Widest gap between iPad cells. Past this the spare space goes to the
@@ -84,10 +92,15 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// of the springboard view.
     private static let padBottomReserve: CGFloat = 34
 
-    /// Padding `LCAppListView` puts around the springboard. Callers with no view
-    /// to measure need it to work out the page size from the screen.
-    static let gridTopPadding: CGFloat = 8
-    static let gridBottomPadding: CGFloat = 89
+    /// Padding `LCAppListView` puts around the springboard, measured from the
+    /// safe area: the design's 108pt down from the top of the screen and 134pt
+    /// up from the bottom, less the 62 and 34 the insets already account for.
+    /// Callers with no view to measure need it to work out the page size from
+    /// the screen. The dots live inside the springboard's view rather than
+    /// below it, so the grid itself stops `phoneBottomReserve` short of the
+    /// bottom padding — which is what puts the last row at the designed 134.
+    static let gridTopPadding: CGFloat = 46
+    static let gridBottomPadding: CGFloat = 70
 
     /// Whether a page of this size uses the iPad grid.
     static func usesPadGrid(pageSize: CGSize) -> Bool {
@@ -107,22 +120,30 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         size.width * padGridWidthFraction / CGFloat(padGrid(forPageSize: size).columns)
     }
 
-    /// Dynamic cell width with tight margins to maximise icon size.
+    /// What the margins and the gaps between the columns leave for a card.
     static func computeCellWidth(forPageSize size: CGSize) -> CGFloat {
         guard usesPadGrid(pageSize: size) else {
             let screenWidth = max(size.width, 320)
-            let sidePadding: CGFloat = screenWidth >= 390 ? 16 : 12
             let cols = CGFloat(phoneColumns)
             let totalSpacing: CGFloat = phoneSpacing * (cols - 1)
-            let availableWidth = screenWidth - (sidePadding * 2) - totalSpacing
+            let availableWidth = screenWidth - (phoneSideMargin * 2) - totalSpacing
             return floor(availableWidth / cols)
         }
         let target = padColumnPitch(forPageSize: size) * padCellWidthFraction
         return floor(min(max(target, padCellWidthRange.lowerBound), padCellWidthRange.upperBound))
     }
 
+    /// A card is a little taller than it is wide — the room the label takes up
+    /// under the icon. Twelve elevenths of it: five rows of the card the design's
+    /// margins give come to exactly the height between the top of the grid and
+    /// the page dots, so the last row lands where the design puts it. Multiplied
+    /// before it is divided, so that a ratio a hair under the real one cannot
+    /// floor an exact height down to the point below.
+    private static let cellAspect: (width: CGFloat, height: CGFloat) = (11, 12)
+
     static func computeCellHeight(forPageSize size: CGSize) -> CGFloat {
-        let fromAspect = floor(computeCellWidth(forPageSize: size) * 64.0 / 59.0)
+        let fromAspect = floor(computeCellWidth(forPageSize: size)
+                               * cellAspect.height / cellAspect.width)
         return usesPadGrid(pageSize: size) ? max(fromAspect, padMinCellHeight) : fromAspect
     }
 
@@ -184,6 +205,23 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         return max(1, padVerticalLayout(forPageSize: size).rows * columns(forPageSize: size))
     }
 
+    /// Rows a phone page holds: as many as fit above the strip kept for the
+    /// page dots, hanging from the top of the page. What is left over at the
+    /// bottom stays empty rather than being shared out among the rows, so the
+    /// gap between two rows is the 8pt the design asks for on every screen.
+    static func phoneRows(forPageSize size: CGSize) -> Int {
+        let cellHeight = computeCellHeight(forPageSize: size)
+        let available = size.height - phoneBottomReserve
+        guard cellHeight > 0, available > 0 else { return 1 }
+        return max(1, Int((available + phoneSpacing) / (cellHeight + phoneSpacing)))
+    }
+
+    /// Icons a page of this size holds, whichever grid it uses.
+    static func itemsPerPage(forPageSize size: CGSize) -> Int {
+        if let padCount = padItemsPerPage(forPageSize: size) { return padCount }
+        return max(1, phoneRows(forPageSize: size) * phoneColumns)
+    }
+
     /// The springboard's own size on a screen of the given size: the safe area
     /// and the padding around the grid taken off. For callers that have no view
     /// to measure but need to arrive at the same page capacity.
@@ -237,8 +275,9 @@ final class LCSpringboardPageCell: UICollectionViewCell {
             layout.sectionInset = UIEdgeInsets(top: vertical.topInset, left: inset,
                                                bottom: Self.padBottomReserve, right: inset)
         } else {
-            layout.minimumLineSpacing = 8
-            layout.sectionInset = UIEdgeInsets(top: 0, left: inset, bottom: 12, right: inset)
+            layout.minimumLineSpacing = Self.phoneSpacing
+            layout.sectionInset = UIEdgeInsets(top: 0, left: inset,
+                                               bottom: Self.phoneBottomReserve, right: inset)
         }
     }
 
@@ -270,20 +309,15 @@ final class LCSpringboardPageCell: UICollectionViewCell {
 
     /// Calculates how many rows fit in the current page height.
     func rowsPerPage() -> Int {
-        if Self.usesPadGrid(pageSize: contentView.bounds.size) {
-            return Self.padVerticalLayout(forPageSize: contentView.bounds.size).rows
+        let size = contentView.bounds.size
+        if Self.usesPadGrid(pageSize: size) {
+            return Self.padVerticalLayout(forPageSize: size).rows
         }
-        guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else { return 5 }
-        let cellHeight = layout.itemSize.height
-        let topInset = layout.sectionInset.top
-        let lineSpacing = layout.minimumLineSpacing
-        let bottomInset = layout.sectionInset.bottom
-        let availableHeight = contentView.bounds.height - topInset - bottomInset
-        return max(1, Int((availableHeight + lineSpacing) / (cellHeight + lineSpacing)))
+        return Self.phoneRows(forPageSize: size)
     }
 
     func itemsPerPage() -> Int {
-        return rowsPerPage() * Self.columns(forPageSize: contentView.bounds.size)
+        return Self.itemsPerPage(forPageSize: contentView.bounds.size)
     }
 
     /// Reload items, deferring if a context menu is active to avoid cell reuse glitches.
@@ -433,7 +467,7 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         params.backgroundColor = .clear
         params.visiblePath = UIBezierPath(
             roundedRect: cell.iconImageView.bounds,
-            cornerRadius: 13.4
+            cornerRadius: LCSpringboardIconCell.iconCornerRadius
         )
         params.shadowPath = UIBezierPath()
         return UITargetedPreview(view: cell.iconImageView, parameters: params)
@@ -446,7 +480,7 @@ extension LCSpringboardPageCell: UICollectionViewDelegate {
         params.backgroundColor = .clear
         params.visiblePath = UIBezierPath(
             roundedRect: cell.iconImageView.bounds,
-            cornerRadius: 13.4
+            cornerRadius: LCSpringboardIconCell.iconCornerRadius
         )
         params.shadowPath = UIBezierPath()
         return UITargetedPreview(view: cell.iconImageView, parameters: params)

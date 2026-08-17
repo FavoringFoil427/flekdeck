@@ -4249,7 +4249,7 @@ struct AppSwitcherCard: View {
 struct MultitaskHomeIcons: View {
     @ObservedObject var dockManager = MultitaskDockManager.shared
     let darkModeIcon: Bool
-    private let iconSize: CGFloat = FlekTheme.searchPillSize * 0.94
+    private var iconSize: CGFloat { FlekTheme.bottomBarAppIconSize }
 
     var body: some View {
         ForEach(Array(dockManager.apps.suffix(4))) { app in
@@ -4337,7 +4337,7 @@ struct MultitaskHomeDockPill: View {
     let darkModeIcon: Bool
 
     private var hasApps: Bool { !dockManager.apps.isEmpty }
-    private let pillHeight: CGFloat = FlekTheme.searchPillSize * 1.3
+    private var pillHeight: CGFloat { FlekTheme.bottomBarControlSize }
 
     var body: some View {
         if hasApps {
@@ -4376,9 +4376,9 @@ struct MultitaskHomeDockPill: View {
             MultitaskDockManager.shared.showAppSwitcher()
         } label: {
             Image(systemName: FlekSymbol.appSwitcher)
-                .font(.system(size: FlekTheme.searchPillSize * 0.55, weight: .regular))
+                .font(.system(size: FlekTheme.bottomBarGlyphSize, weight: .regular))
                 .foregroundStyle(Color.primary.opacity(0.6))
-                .frame(width: FlekTheme.searchPillSize * 1.3, height: FlekTheme.searchPillSize * 1.3)
+                .frame(width: FlekTheme.bottomBarControlSize, height: FlekTheme.bottomBarControlSize)
         }
         .buttonStyle(.plain)
     }
