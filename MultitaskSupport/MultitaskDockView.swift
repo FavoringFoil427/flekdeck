@@ -1654,8 +1654,11 @@ class AppInfoProvider {
             view.isHidden = true
             view.transform = .identity
             let origFrame = view.frame
-            let pipManager = PiPManager.shared!
-            if let decoratedVC = view._viewDelegate(), pipManager.isPiP(withDecoratedVC: decoratedVC) {
+            // Asked through hasShared first: un-minimizing a window must not be
+            // what constructs the PiP manager. If it does not exist there is no
+            // PiP to stop, so the scale-in below is already the right branch.
+            if PiPManager.hasShared, let pipManager = PiPManager.shared,
+               let decoratedVC = view._viewDelegate(), pipManager.isPiP(withDecoratedVC: decoratedVC) {
                 pipManager.stopPiP()
             } else if UIAccessibility.isReduceMotionEnabled {
                 // Reduce Motion: the window arrives where it belongs and fades up,
@@ -2786,24 +2789,19 @@ struct AppSwitcherOverlay: View {
     
     private let cardSpacing: CGFloat = 16
 
-    /// Room kept below Close all for the chin.
-    ///
-    /// The chin's opaque height is `effectiveBarHeight - cornerRadius + bottom inset`,
-    /// so a device with *smaller* screen corners ends up with a taller chin. A flat
-    /// 50pt cleared it on iPhone, where the large corner radius keeps the chin short,
-    /// but not on iPad — where the radius is a third of the size and the chin grew
-    /// past the button.
-    ///
-    /// Subtracting the button's own bottom padding and flooring at the previous 50
-    /// keeps iPhone spacing exactly as it was and gives iPad only the extra it needs.
-    private var bottomChinReserve: CGFloat {
-        // Plus a small gap: on a 13 mini the subtraction lands exactly on the button's
-        // own padding, leaving the two touching.
-        return max(50, dockManager.barFlatRegion - 20 + 3)
-    }
-
     // Fixed corner radius (matches the Figma design spec).
     private let cardCornerRadius: CGFloat = 34
+
+    /// Height of every control in the chin's action row, and the diameter of the
+    /// two round ones either side of Close all. Sized so the circles read as
+    /// siblings of the capsule rather than as smaller accessories, then held
+    /// inside the chin with a margin — the flat region is only as deep as the
+    /// device's corner radius and bottom inset leave it, and on a device with a
+    /// large screen radius that is barely more than the controls themselves.
+    private var switcherActionSize: CGFloat {
+        min(52, max(dockManager.barFlatRegion - 12, 40))
+    }
+    private let switcherActionSpacing: CGFloat = 12
 
     // Card dimensions — proportional to screen like iOS app switcher
     /// Raised from 0.62 to hold the card's original height. Card height now follows
@@ -2959,7 +2957,46 @@ struct AppSwitcherOverlay: View {
                 // fall to the bottom edge.
                 Spacer(minLength: 20)
 
-                // Close all button (floating capsule, centered above the bar).
+                // Reserve the chin's footprint — the controls live inside it, as a
+                // separate bottom-anchored layer below — so the cards stop above it.
+                Spacer()
+                    .frame(height: dockManager.barFlatRegion + 20)
+            }
+            // Dead while the switcher animates out. Without this a second tap
+            // during the ~0.3s exit could land on a card that is still sliding
+            // and visible, bringing that app forward while we are already on the
+            // way to the springboard.
+            .allowsHitTesting(!exiting)
+
+            // The chin: the switcher bar itself, anchored flush to the very bottom
+            // edge with exactly the real bar's thickness (bar height + bottom safe
+            // area), holding the overlay's three controls the way the real bar holds
+            // its own. Left toggles the bar (the action this chin used to carry as a
+            // full-width "Hide Switcher Bar" label), middle closes everything, right
+            // goes home. As its own bottom-aligned ZStack layer it can't be shifted
+            // by the VStack's flow, so its height matches the real bar precisely.
+            HStack(spacing: switcherActionSpacing) {
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
+                    }
+                }) {
+                    Image(systemName: dockManager.prefersFloatingButton ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                        .contentTransition(.opacity)
+                        .frame(width: switcherActionSize, height: switcherActionSize)
+                        .modifier(GlassCircleBackground())
+                        // The whole circle takes the tap, not just the glyph.
+                        // Without it the ring around a chevron is see-through to
+                        // hit testing, and a near-miss reaches the backdrop
+                        // behind — which returns to the springboard.
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
+
                 Button(action: {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showCloseAllConfirm = true
@@ -2972,11 +3009,11 @@ struct AppSwitcherOverlay: View {
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .frame(height: switcherActionSize)
                     .modifier(GlassCapsuleBackground())
+                    .contentShape(Capsule())
                 }
-                .padding(.bottom, 20)
-                .offset(y: exiting ? exitButtonOffset : 0)
+                .buttonStyle(.plain)
                 .alert("Close All Apps?", isPresented: $showCloseAllConfirm) {
                     Button("Cancel", role: .cancel) { }
                     Button("Close All", role: .destructive) {
@@ -2986,68 +3023,35 @@ struct AppSwitcherOverlay: View {
                     Text("This closes every open app.")
                 }
 
-                // Reserve the chin's footprint so Close all sits above the bottom
-                // bar (which is a separate bottom-anchored layer below).
-                Spacer()
-                    .frame(height: bottomChinReserve)
-            }
-            // Dead while the switcher animates out. Without this a second tap
-            // during the ~0.3s exit could land on a card that is still sliding
-            // and visible, bringing that app forward while we are already on the
-            // way to the springboard.
-            .allowsHitTesting(!exiting)
-
-            // Control preference toggle, styled as the switcher bar it hides: a
-            // full-width black bar anchored flush to the very bottom edge with
-            // exactly the real bar's thickness (bar height + bottom safe area).
-            // As its own bottom-aligned ZStack layer it can't be shifted by the
-            // VStack's flow, so its height matches the real bar precisely.
-            Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
+                Button(action: {
+                    exitToSpringboard()
+                }) {
+                    Image(systemName: "app")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: switcherActionSize, height: switcherActionSize)
+                        .modifier(GlassCircleBackground())
+                        .contentShape(Circle())
                 }
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: dockManager.prefersFloatingButton ? "platter.filled.bottom.iphone" : "chevron.down")
-                        .font(.system(size: 18, weight: .semibold))
-                        .contentTransition(.opacity)
-                    Text(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
-                        .font(.system(size: 18, weight: .medium))
-                        .contentTransition(.opacity)
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                // Center the label in the flat solid body (from the flat-top line
-                // down to the bottom edge), instead of pinning it to the bottom.
-                // Pad the top by the corner-ledge height so centering happens below
-                // the concave corners, while keeping the overall height (bar height
-                // + bottom safe area) so the bar shape/background is unchanged.
-                // `barFlatRegion`, not the raw expression: it floors at the button
-                // height. Without that floor a device with no bottom inset and a
-                // shallow corner radius — an iPad with a home button computes 19pt —
-                // gets a chin too short to hold the 44pt controls inside it.
-                .frame(maxWidth: .infinity,
-                       minHeight: dockManager.barFlatRegion,
-                       alignment: .center)
-                .padding(.top, dockManager.barCornerRadiusActive)
-                // Limit the tap area to the bar's actual visible shape. The frame is
-                // as tall as the real bar (incl. the concave overhang), but that
-                // overhang is transparent and overlaps the "Close all" button above
-                // it — a rectangular hit area there stole Close all's taps and
-                // flipped this toggle instead. Matching the hit shape to the fill
-                // frees the overhang so Close all receives its taps.
-                .contentShape(BarTopBar(radius: dockManager.barCornerRadiusActive,
-                                        curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive))
+                .buttonStyle(.plain)
+                .accessibilityLabel("Home")
             }
-            .buttonStyle(.plain)
-            // Same concave rounded top corners and height as the switcher bar it
-            // hides — including the rounding amount from the Settings slider, so
-            // this chin always matches the real bar. Solid black while the bar is
-            // the active control; once the user taps Hide (floating-button mode),
-            // the black fades out to reveal a translucent ultra-thin-material bar
-            // underneath. Layering the black over the material and animating its
-            // opacity lets the two states cross-fade smoothly when the toggle flips.
+            // Centred in the flat solid body — the block from the flat-top line down
+            // to the screen edge — exactly as the real bar centres its own controls.
+            // `barFlatRegion`, not the raw expression: it floors at the button
+            // height. Without that floor a device with no bottom inset and a
+            // shallow corner radius — an iPad with a home button computes 19pt —
+            // gets a chin too short to hold the controls inside it.
+            .frame(maxWidth: .infinity)
+            .frame(height: dockManager.barFlatRegion, alignment: .center)
+            .padding(.top, dockManager.barCornerRadiusActive)
+            // Same concave rounded top corners and height as the real switcher bar —
+            // including the rounding amount from the Settings slider, so this chin
+            // always matches it. Solid black while the bar is the active control;
+            // once the user taps the arrow (floating-button mode), the black fades
+            // out to reveal a translucent ultra-thin-material bar underneath.
+            // Layering the black over the material and animating its opacity lets
+            // the two states cross-fade smoothly when the toggle flips.
             .background {
                 BarTopBar(radius: dockManager.barCornerRadiusActive,
                           curve: dockManager.barCornerRadiusActive * dockManager.barLedgeAmountActive)
@@ -3060,14 +3064,14 @@ struct AppSwitcherOverlay: View {
                             .opacity(dockManager.prefersFloatingButton ? 0 : 1)
                     }
                     .animation(.easeInOut(duration: 0.32), value: dockManager.barLedgeAmountActive)
+                    .animation(.easeInOut(duration: 0.25), value: dockManager.prefersFloatingButton)
                     .ignoresSafeArea()
             }
             .offset(y: exiting ? exitButtonOffset : 0)
-            // Inert during the exit animation, like the cards above. This chin
-            // toggle is a separate ZStack sibling, so the cards' own
-            // allowsHitTesting guard doesn't reach it — without this, a second tap
-            // landing in the chin while the switcher slides away would silently
-            // flip the persisted "Hide Switcher Bar" preference.
+            // Inert during the exit animation, like the cards above. This chin is a
+            // separate ZStack sibling, so the cards' own allowsHitTesting guard
+            // doesn't reach it — without this, a second tap landing on the arrow
+            // while the switcher slides away would flip the persisted preference.
             .allowsHitTesting(!exiting)
         }
         .ignoresSafeArea()
@@ -4114,6 +4118,19 @@ struct GlassCapsuleBackground: ViewModifier {
             return AnyView(content.glassEffect(in: .capsule))
         }
         return AnyView(content.background(Capsule().fill(Color.white.opacity(0.15))))
+    }
+}
+
+// MARK: - Glass Circle Background (native Liquid Glass on iOS 26+, fallback on older)
+/// The round sibling of `GlassCapsuleBackground`, for the switcher's arrow and
+/// home buttons flanking Close all.
+struct GlassCircleBackground: ViewModifier {
+    /// Erased to AnyView — see `DockPillBackground.body` for why.
+    func body(content: Content) -> AnyView {
+        if #available(iOS 26.0, *) {
+            return AnyView(content.glassEffect(in: .circle))
+        }
+        return AnyView(content.background(Circle().fill(Color.white.opacity(0.15))))
     }
 }
 
