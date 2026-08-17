@@ -146,6 +146,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         isMultitaskHomeState && hasMultitaskApps
     }
 
+    /// How the dock arrives. Normally it springs in beside the search button, but
+    /// not when a minimizing window is already on its way to it: something still
+    /// travelling into position is not something a window can land on, and the
+    /// window's own arrival is the animation that matters at that moment. The
+    /// icon it lands on answers with its own bounce either way.
+    private var dockEntranceAnimation: Animation? {
+        if #available(iOS 16.0, *), MultitaskDockManager.shared.homeDockShouldSkipEntrance {
+            return nil
+        }
+        return .spring(response: 0.42, dampingFraction: 0.82)
+    }
+
     /// Bottom home bar: the multitask dock pill (only while apps are running)
     /// beside a persistent search button. The search button keeps its identity
     /// across states, so it glides as the pill springs in/out — a morph rather
@@ -177,7 +189,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         .installerBarShadow()
                     }
                 }
-                .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
+                .animation(dockEntranceAnimation, value: showMultitaskDock)
             )
         }
         return AnyView(
@@ -193,7 +205,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 }
                 .installerBarShadow()
             }
-            .animation(.spring(response: 0.42, dampingFraction: 0.82), value: showMultitaskDock)
+            .animation(dockEntranceAnimation, value: showMultitaskDock)
         )
     }
     @Environment(\.colorScheme) private var colorScheme

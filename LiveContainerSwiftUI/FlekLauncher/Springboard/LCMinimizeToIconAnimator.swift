@@ -91,9 +91,9 @@ enum LCMinimizeToIconAnimator {
     /// That lands around 96% of the way on a phone and 99% on the wider iPad
     /// grid, which is the point of deriving it rather than picking one number:
     /// the same fixed percentage is a different number of points on every screen.
-    private static func handoffProgress(finalScale: CGFloat) -> CGFloat {
+    private static func handoffProgress(finalScale: CGFloat, iconPeak: CGFloat) -> CGFloat {
         guard finalScale < 1 else { return 1 }
-        let progress = (1 - finalScale * bounceScale) / (1 - finalScale)
+        let progress = (1 - finalScale * iconPeak) / (1 - finalScale)
         return min(max(progress, 0.8), 0.995)
     }
 
@@ -137,6 +137,15 @@ enum LCMinimizeToIconAnimator {
     /// layout, or a page with no home-screen icon of its own. It still recedes
     /// rather than blinking out.
     private static let fallbackTargetSize: CGFloat = 78
+
+    /// How long to give a destination to appear before giving up on one, and how
+    /// often to look. Spaced by a frame rather than by a turn of the run loop:
+    /// the home dock is rendered by SwiftUI in response to the home state it
+    /// belongs to, and several run-loop hops can pass inside a single frame,
+    /// before it has been laid out at all. Costs nothing in the common case,
+    /// where the icon is already on screen and the first look finds it.
+    private static let targetAttempts = 3
+    private static let targetRetryInterval: TimeInterval = 1.0 / 60
 
     private static let cornerAnimationKey = "lcMinimizeCorner"
 
@@ -203,7 +212,8 @@ enum LCMinimizeToIconAnimator {
         if prefersDissolve {
             dissolve(view, completion: finish)
         } else {
-            fly(view, in: container, toItemID: itemID, completion: finish)
+            flyWhenTargetIsReady(view, in: container, toItemID: itemID,
+                                 attemptsLeft: targetAttempts, completion: finish)
         }
     }
 
@@ -233,7 +243,8 @@ enum LCMinimizeToIconAnimator {
         // run loop (sometimes two) to be back on screen before its icons can be
         // measured — hence the wait rather than a flight straight from here.
         DispatchQueue.main.async {
-            flyWhenGridIsReady(snapshot, in: window, toItemID: itemID, attemptsLeft: 3) {
+            flyWhenTargetIsReady(snapshot, in: window, toItemID: itemID,
+                                 attemptsLeft: targetAttempts) {
                 snapshot.removeFromSuperview()
             }
         }
@@ -256,31 +267,43 @@ enum LCMinimizeToIconAnimator {
 
     // MARK: - The flight
 
-    private static func flyWhenGridIsReady(
+    /// Waits, briefly, for somewhere to fly to. Both possible destinations arrive
+    /// a turn of the run loop late in their own way: the springboard is still
+    /// behind a cover that has only just been dismissed, and the home dock is only
+    /// laid out as the home state it belongs to takes effect. A few turns is the
+    /// difference between landing on an icon and shrinking into the middle of the
+    /// screen for want of waiting.
+    private static func flyWhenTargetIsReady(
         _ view: UIView,
         in container: UIView,
         toItemID itemID: String,
         attemptsLeft: Int,
         completion: @escaping () -> Void
     ) {
-        if attemptsLeft > 0, iconFrame(forItemID: itemID, in: container) == nil {
-            DispatchQueue.main.async {
-                flyWhenGridIsReady(view, in: container, toItemID: itemID,
-                                   attemptsLeft: attemptsLeft - 1, completion: completion)
+        guard let destination = destination(forItemID: itemID, in: container) else {
+            if attemptsLeft > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + targetRetryInterval) {
+                    flyWhenTargetIsReady(view, in: container, toItemID: itemID,
+                                         attemptsLeft: attemptsLeft - 1, completion: completion)
+                }
+            } else {
+                fly(view, in: container, to: screenCentreDestination(in: container),
+                    itemID: itemID, completion: completion)
             }
             return
         }
-        fly(view, in: container, toItemID: itemID, completion: completion)
+        fly(view, in: container, to: destination, itemID: itemID, completion: completion)
     }
 
     private static func fly(
         _ view: UIView,
         in container: UIView,
-        toItemID itemID: String,
+        to destination: Destination,
+        itemID: String,
         completion: @escaping () -> Void
     ) {
         let start = view.frame
-        let target = iconFrame(forItemID: itemID, in: container) ?? fallbackFrame(in: container)
+        let target = destination.frame
         let scaleX = max(0.01, target.width / max(start.width, 1))
         let scaleY = max(0.01, target.height / max(start.height, 1))
         let settling = springSettlingDuration
@@ -296,7 +319,12 @@ enum LCMinimizeToIconAnimator {
         // renders through the transform, so the value that lands at the icon's is
         // the icon's divided by the scale the page shrinks by.
         let corner = springAnimation(keyPath: "cornerRadius")
-        let endRadius = target.width * iconCornerRadiusRatio / scaleX
+        // Clamped to half the target's shorter side: the dock as a whole is a wide
+        // pill, and an icon's proportion of its width would round the corners past
+        // its own height.
+        let landedRadius = min(target.width * iconCornerRadiusRatio,
+                               min(target.width, target.height) / 2)
+        let endRadius = landedRadius / scaleX
         corner.fromValue = originalRadius > 0 ? originalRadius : displayCornerRadius()
         corner.toValue = endRadius
         corner.duration = settling
@@ -324,7 +352,7 @@ enum LCMinimizeToIconAnimator {
         // instead of trailing the spring's long asymptotic tail: the page is gone
         // the instant it matches the icon, not fading for a further quarter of a
         // second over the top of it.
-        let handoff = handoffProgress(finalScale: scaleX)
+        let handoff = handoffProgress(finalScale: scaleX, iconPeak: destination.iconPeak)
         let handoffTime = time(forProgress: handoff)
         let fadeStart = handoffTime * fadeStartFraction
         let fade = UIViewPropertyAnimator(duration: handoffTime - fadeStart, curve: .easeIn) {
@@ -343,7 +371,7 @@ enum LCMinimizeToIconAnimator {
             timeout: settling + 0.2
         ) {
             arrivalWatchers[itemID] = nil
-            bounceIcon(itemID)
+            answer(destination, itemID: itemID)
         }
 
         flight.startAnimation()
@@ -372,6 +400,21 @@ enum LCMinimizeToIconAnimator {
         settle.startAnimation()
     }
 
+    /// Whatever the window landed on answers it: the springboard icon bounces
+    /// here, while the home dock's icon is asked to do its own — it is a SwiftUI
+    /// view with no UIView of ours to transform.
+    private static func answer(_ destination: Destination, itemID: String) {
+        switch destination {
+        case .springboardIcon:
+            bounceIcon(itemID)
+        case .dockIcon:
+            NotificationCenter.default.post(name: .lcHomeDockIconDidTakeWindow, object: itemID)
+        case .dockPill, .screenCentre:
+            // Nothing there belongs to this window, so nothing answers for it.
+            break
+        }
+    }
+
     /// The icon takes the page. Looked up at the moment this fires, so a grid
     /// that reloaded during the flight still bounces the icon that is actually on
     /// screen.
@@ -392,24 +435,90 @@ enum LCMinimizeToIconAnimator {
 
     // MARK: - Where the page is headed
 
-    /// The icon's frame in `container`'s coordinates, or nil when the item has no
-    /// icon on screen to aim at.
-    private static func iconFrame(forItemID itemID: String, in container: UIView) -> CGRect? {
-        guard container.window != nil,
-              let cell = LCSpringboardViewController.current?.iconCell(forItemID: itemID),
-              cell.window != nil else { return nil }
+    /// Where a window is going, and what should answer it when it gets there.
+    private enum Destination {
+        /// The item's own icon on the springboard, in front of the user now.
+        case springboardIcon(CGRect)
+        /// Its icon in the home dock — where a window goes when its springboard
+        /// icon is on a page the user is not looking at. Flying to an icon they
+        /// cannot see means flying off the side of the display, and scrolling the
+        /// home screen to it means moving them somewhere they never asked to go.
+        case dockIcon(CGRect)
+        /// The dock itself, for a window that belongs there but has no icon in it:
+        /// the dock shows the four most recent apps, and a fifth still went to the
+        /// same place.
+        case dockPill(CGRect)
+        /// Nothing on screen to aim at: the middle, so it recedes rather than
+        /// blinking out.
+        case screenCentre(CGRect)
 
-        let icon = cell.iconImageView
-        let frame = icon.convert(icon.bounds, to: container)
-        guard frame.width > 1, frame.height > 1 else { return nil }
-        return frame
+        var frame: CGRect {
+            switch self {
+            case .springboardIcon(let frame), .dockIcon(let frame),
+                 .dockPill(let frame), .screenCentre(let frame):
+                return frame
+            }
+        }
+
+        /// Whether an icon swells to take the window. Only an icon can; the dock
+        /// as a whole and the screen's middle have nothing to do it, and the
+        /// handoff is sized against this.
+        var iconPeak: CGFloat {
+            switch self {
+            case .springboardIcon, .dockIcon: return bounceScale
+            case .dockPill, .screenCentre: return 1
+            }
+        }
     }
 
-    private static func fallbackFrame(in container: UIView) -> CGRect {
-        CGRect(x: container.bounds.midX - fallbackTargetSize / 2,
-               y: container.bounds.midY - fallbackTargetSize / 2,
-               width: fallbackTargetSize,
-               height: fallbackTargetSize)
+    /// Whether a window carrying this item would have to fall back to the dock:
+    /// its own icon is not on the springboard page in front of the user. Asked
+    /// before the home state flips, so the dock can be told to appear in place
+    /// rather than springing in under an arriving window.
+    static func willUseHomeDock(forItemID itemID: String) -> Bool {
+        LCSpringboardViewController.current?.iconCell(forItemID: itemID) == nil
+    }
+
+    /// The best destination available right now, or nil if neither icon can be
+    /// found yet — which is a reason to wait a moment, since the home dock only
+    /// appears as the window leaves.
+    private static func destination(forItemID itemID: String, in container: UIView) -> Destination? {
+        guard container.window != nil else { return nil }
+
+        if let cell = LCSpringboardViewController.current?.iconCell(forItemID: itemID),
+           cell.window != nil {
+            let icon = cell.iconImageView
+            let frame = icon.convert(icon.bounds, to: container)
+            if frame.width > 1, frame.height > 1 { return .springboardIcon(frame) }
+        }
+
+        if #available(iOS 16.0, *) {
+            let dock = MultitaskDockManager.shared
+            // Reported in window coordinates by whatever drew itself there.
+            if let frame = onScreenFrame(dock.homeDockIconFrames[itemID], in: container) {
+                return .dockIcon(frame)
+            }
+            if let frame = onScreenFrame(dock.homeDockPillFrame, in: container) {
+                return .dockPill(frame)
+            }
+        }
+
+        return nil
+    }
+
+    /// A frame reported in window coordinates, converted for `container` and
+    /// confirmed to be somewhere the user can actually see.
+    private static func onScreenFrame(_ inWindow: CGRect?, in container: UIView) -> CGRect? {
+        guard let inWindow, inWindow.width > 1, inWindow.height > 1 else { return nil }
+        let frame = container.convert(inWindow, from: nil)
+        return container.bounds.intersects(frame) ? frame : nil
+    }
+
+    private static func screenCentreDestination(in container: UIView) -> Destination {
+        .screenCentre(CGRect(x: container.bounds.midX - fallbackTargetSize / 2,
+                             y: container.bounds.midY - fallbackTargetSize / 2,
+                             width: fallbackTargetSize,
+                             height: fallbackTargetSize))
     }
 
     /// The screen's own corner radius, so a page with square corners of its own
