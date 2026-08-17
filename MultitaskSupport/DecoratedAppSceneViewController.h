@@ -14,6 +14,11 @@ API_AVAILABLE(ios(16.0))
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC;
 - (void)closeWindow;
 - (void)minimizeWindow;
+/// Puts an already-animated-away window into its resting minimized state. Split
+/// out of `minimizeWindow` so a caller that supplies its own animation — the
+/// home button, which shrinks the window into its springboard icon — can still
+/// leave the window exactly as this class expects to find it.
+- (void)finishMinimizeWindow;
 - (void)minimizeWindowPiP;
 - (void)unminimizeWindowPiP;
 - (void)updateVerticalConstraints;

@@ -74,10 +74,19 @@ enum FlekHomeItem: Identifiable, DragulaItem {
     var id: String {
         switch self {
         case .defaultApp(let kind): return "default.\(kind.rawValue)"
-        case .installed(let app): return "app.\(app.appInfo.relativeBundlePath ?? app.appInfo.bundlePath() ?? "unknown")"
+        case .installed(let app): return Self.installedID(for: app.appInfo)
         case .installing(let item): return "installing.\(item.id)"
         case .placeholder(let uid): return "placeholder.\(uid)"
         }
+    }
+
+    /// The id an installed app's tile is filed under, derived from its bundle
+    /// alone. Callers holding only an `LCAppInfo` — the multitask dock registers
+    /// its windows by app info, not by model — can name the same tile without
+    /// building an `LCAppModel` just to ask it, and cannot drift from the id the
+    /// springboard actually uses, because this is where that id comes from.
+    static func installedID(for appInfo: LCAppInfo) -> String {
+        "app.\(appInfo.relativeBundlePath ?? appInfo.bundlePath() ?? "unknown")"
     }
 
     /// Only real app items can be dragged.

@@ -390,15 +390,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             hasMultitaskApps = newValue
         }
         .fullScreenCover(isPresented: $showSettingsCover) {
-            FlekInternalPage(isPresented: $showSettingsCover) {
-                LCSettingsView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
+            FlekMinimizingCover(isPresented: $showSettingsCover,
+                                itemID: FlekHomeItem.defaultApp(.settings).id) { minimize in
+                FlekInternalPage(minimize: minimize) {
+                    LCSettingsView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
+                }
             }
         }
         .fullScreenCover(isPresented: $showInstallerCover, onDismiss: {
             installerPreselectRepoURL = nil
         }) {
-            FlekInstallerView(preselectFlekstore: installerPreselectFlekstore, preselectRepoURL: installerPreselectRepoURL) {
-                showInstallerCover = false
+            FlekMinimizingCover(
+                isPresented: $showInstallerCover,
+                itemID: FlekHomeItem.defaultApp(installerPreselectFlekstore ? .flekstore : .installer).id
+            ) { minimize in
+                FlekInstallerView(preselectFlekstore: installerPreselectFlekstore, preselectRepoURL: installerPreselectRepoURL) {
+                    minimize()
+                }
             }
         }
         .sheet(item: $navigationTarget) { target in

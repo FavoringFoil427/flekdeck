@@ -128,6 +128,19 @@ class AppInfoProvider {
     
     var isInternalPage: Bool { internalPageKind != nil }
     
+    /// The home-screen item this window belongs to, so minimizing it can find the
+    /// icon to shrink into: a built-in page by its kind, a guest app by its
+    /// bundle. Both are asked of `FlekHomeItem`, so neither can drift from the id
+    /// the springboard files that icon under. Nil for a guest registered without
+    /// app info, which has no icon that can be named.
+    var springboardItemID: String? {
+        if let kind = internalPageKind.flatMap(FlekDefaultAppKind.init(rawValue:)) {
+            return FlekHomeItem.defaultApp(kind).id
+        }
+        guard let appInfo else { return nil }
+        return FlekHomeItem.installedID(for: appInfo)
+    }
+
     /// Asset catalog icon name for built-in pages
     var internalPageIconAssetName: String? {
         switch internalPageKind {
@@ -1023,8 +1036,10 @@ class AppInfoProvider {
             }
             
             if hasVisibleWindow {
-                // Minimize ALL visible windows and hide the dock bar
-                self.minimizeAllWindows()
+                // Minimize ALL visible windows and hide the dock bar. This is the
+                // way home, so a built-in page shrinks into its own icon on the
+                // way rather than simply going out.
+                self.minimizeAllWindows(intoIcons: true)
                 self.updateFrontmostApp()
                 self.isHomeState = true
                 self.hideDock()
@@ -1642,6 +1657,13 @@ class AppInfoProvider {
             let pipManager = PiPManager.shared!
             if let decoratedVC = view._viewDelegate(), pipManager.isPiP(withDecoratedVC: decoratedVC) {
                 pipManager.stopPiP()
+            } else if UIAccessibility.isReduceMotionEnabled {
+                // Reduce Motion: the window arrives where it belongs and fades up,
+                // rather than being flung out of a tenth of its size. Matched to
+                // the way a page leaves under the setting, so opening and closing
+                // stay each other's opposite.
+                view.alpha = 0
+                view.isHidden = false
             } else {
                 view.transform = CGAffineTransform(scaleX: 0.1, y: 0.1)
                 view.isHidden = false
@@ -1665,7 +1687,12 @@ class AppInfoProvider {
             )
         } else {
             bringViewToFront(view, in: window)
-            
+
+            // The pulse that acknowledges a tap on an already-visible window is
+            // motion for its own sake — the window is where it was either way —
+            // so under Reduce Motion it is simply brought forward.
+            guard !UIAccessibility.isReduceMotionEnabled else { return }
+
             UIView.animate(withDuration: Constants.shortAnimationDuration1, animations: {
                 let scale = Constants.bringToFrontScale
                 view.transform = CGAffineTransform(scaleX: scale, y: scale)
@@ -1782,6 +1809,14 @@ class AppInfoProvider {
     }
     
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
+        minimizeAllWindows(except: except, intoIcons: false)
+    }
+
+    /// `intoIcons` is the home button's path: a built-in page shrinks into its
+    /// own springboard icon on the way out. Every other caller — switching apps,
+    /// the switcher's own way back — has its own choreography over the top of
+    /// this, so there the page just goes.
+    func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil, intoIcons: Bool) {
         DispatchQueue.main.async {
             // Capture snapshots of visible windows before minimizing them
             for app in self.apps {
@@ -1789,11 +1824,28 @@ class AppInfoProvider {
             }
             self.apps.forEach { app in
                 if app.isInternalPage {
-                    app.view?.isHidden = true
+                    guard let pageView = app.view else { return }
+                    if intoIcons, !pageView.isHidden, let itemID = app.springboardItemID {
+                        LCMinimizeToIconAnimator.minimize(pageView, toItemID: itemID)
+                    } else {
+                        pageView.isHidden = true
+                    }
                 } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController,
                    vc != except {
                     app.view?.layer.removeAllAnimations()
-                    vc.minimizeWindow()
+                    // A guest window goes into its own icon too. It has to fly the
+                    // live view — a guest renders into a layer hosted by the render
+                    // server, which this process cannot snapshot — and then be left
+                    // in the resting state the window class expects, which is what
+                    // `finishMinimizeWindow` is for.
+                    if intoIcons, let guestView = app.view, !guestView.isHidden,
+                       let itemID = app.springboardItemID {
+                        LCMinimizeToIconAnimator.minimize(guestView, toItemID: itemID) {
+                            vc.finishMinimizeWindow()
+                        }
+                    } else {
+                        vc.minimizeWindow()
+                    }
                 }
             }
         }
@@ -2240,11 +2292,22 @@ class AppInfoProvider {
 
     func closeApp(uuid: String) {
         guard let app = apps.first(where: { $0.appUUID == uuid }) else { return }
-        
+
         if app.isInternalPage {
-            app.view?.removeFromSuperview()
-            internalPageControllers[uuid] = nil
-            removeRunningApp(uuid)
+            let teardown = { [weak self] in
+                app.view?.removeFromSuperview()
+                self?.internalPageControllers[uuid] = nil
+                self?.removeRunningApp(uuid)
+            }
+            // A built-in page's own close button is the way home from it, so it
+            // makes the same trip into its icon the home button gives the rest.
+            // The page itself goes now — a snapshot flies in its place — so the
+            // bar and the home state update on time rather than after the flight.
+            if let pageView = app.view, !pageView.isHidden, let itemID = app.springboardItemID {
+                LCMinimizeToIconAnimator.minimizeByReplacing(pageView, toItemID: itemID, teardown: teardown)
+            } else {
+                teardown()
+            }
         } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
             vc.closeWindow()
         }

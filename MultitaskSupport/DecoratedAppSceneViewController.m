@@ -269,15 +269,25 @@ void UIKitFixesInit(void) {
 
 - (void)minimizeWindow {
     if (self.view.hidden) return;
+    // Reduce Motion: the window gives way where it stands instead of collapsing
+    // to a tenth of its size. The counterpart of the fade it comes back with, so
+    // a guest window leaves the way it arrives.
+    BOOL reduceMotion = UIAccessibilityIsReduceMotionEnabled();
     [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
         self.view.alpha = 0;
-        self.view.transform = CGAffineTransformMakeScale(0.1, 0.1);
+        if (!reduceMotion) {
+            self.view.transform = CGAffineTransformMakeScale(0.1, 0.1);
+        }
     } completion:^(BOOL finished) {
         if (!finished) return;
-        self.view.hidden = YES;
-        self.view.transform = CGAffineTransformIdentity;
-        [self.view.superview sendSubviewToBack:self.view];
+        [self finishMinimizeWindow];
     }];
+}
+
+- (void)finishMinimizeWindow {
+    self.view.hidden = YES;
+    self.view.transform = CGAffineTransformIdentity;
+    [self.view.superview sendSubviewToBack:self.view];
 }
 
 - (void)minimizeWindowPiP {

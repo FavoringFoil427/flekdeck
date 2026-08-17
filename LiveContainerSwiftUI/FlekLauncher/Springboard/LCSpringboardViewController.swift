@@ -11,6 +11,11 @@ import UIKit
 
 final class LCSpringboardViewController: UIViewController {
 
+    /// The grid currently on screen, so a page being minimized can find the icon
+    /// to fly into. Only ever one: the grid layout's representable makes it, and
+    /// the list layout makes none at all.
+    private(set) static weak var current: LCSpringboardViewController?
+
     // MARK: - Public data
 
     /// Flat list of all items (source of truth from SwiftUI).
@@ -56,10 +61,15 @@ final class LCSpringboardViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+        Self.current = self
 
         setupOuterCollectionView()
         setupPageControl()
         setupDragManager()
+    }
+
+    deinit {
+        if Self.current === self { Self.current = nil }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -536,6 +546,38 @@ final class LCSpringboardViewController: UIViewController {
     func visiblePageCell(forPage page: Int) -> LCSpringboardPageCell? {
         let ip = IndexPath(item: page, section: 0)
         return outerCollectionView.cellForItem(at: ip) as? LCSpringboardPageCell
+    }
+
+    /// The icon cell for `itemID`, bringing its page on screen first when the
+    /// item sits on another one. That page swap is deliberately not animated:
+    /// the caller is about to shrink a full-screen page over the grid, so it
+    /// happens behind the page and is never seen. Returns nil for an item that
+    /// is not on the grid at all.
+    func iconCell(forItemID itemID: String) -> LCSpringboardIconCell? {
+        guard let position = position(ofItemID: itemID) else { return nil }
+
+        if visiblePageCell(forPage: position.page) == nil {
+            scrollToPage(position.page, animated: false)
+            outerCollectionView.layoutIfNeeded()
+        }
+        guard let pageCell = visiblePageCell(forPage: position.page) else { return nil }
+
+        // The page cell reloads its grid when it is displayed; force that layout
+        // through so the icon exists to be measured, even on a page that was
+        // off screen a moment ago.
+        pageCell.collectionView.layoutIfNeeded()
+        let indexPath = IndexPath(item: position.index, section: 0)
+        return pageCell.collectionView.cellForItem(at: indexPath) as? LCSpringboardIconCell
+    }
+
+    /// Which page holds `itemID`, and where on it.
+    private func position(ofItemID itemID: String) -> (page: Int, index: Int)? {
+        for (page, items) in pages.enumerated() {
+            if let index = items.firstIndex(where: { $0.id == itemID }) {
+                return (page, index)
+            }
+        }
+        return nil
     }
 
     // MARK: - Gesture handlers
