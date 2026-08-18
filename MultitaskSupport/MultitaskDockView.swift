@@ -361,11 +361,51 @@ class AppInfoProvider {
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
 
-    /// Which edge the floating button stashes against. Portrait uses the
-    /// horizontal edges (left/right); landscape uses the vertical edges
-    /// (top/bottom) so the button tucks away along the long edges instead.
+    /// An edge of the screen, or — when it names stored state — an edge of the
+    /// device itself, which is the same set of four sides read in the phone's own
+    /// frame rather than the interface's.
     private enum NavAssistEdge { case left, right, top, bottom }
-    private var navAssistStashedEdge: NavAssistEdge = .right
+
+    /// Where the floating button lives, held in the VIEWER's frame: which side of
+    /// what the user is looking at it is parked on, and how far along that side it
+    /// sits as a fraction of the side's usable travel (down the viewer's left and
+    /// right sides from the top; across the viewer's top and bottom from the left).
+    ///
+    /// The viewer's frame, because that is the one the user is describing when they
+    /// say the button was "on the right". Which layout edge that turns out to be
+    /// depends on whether the interface turns with the phone:
+    ///
+    ///  - Interface rotates with the device — the layout's right edge already *is*
+    ///    the viewer's right, and the button stays on it.
+    ///  - Interface stays put while the phone turns (a portrait-locked host with a
+    ///    guest app rotating inside it) — the viewer's right is now the layout's top
+    ///    or bottom, depending on which way the phone was turned, and the button has
+    ///    to move to that edge to stay where the user left it.
+    ///
+    /// `navAssistViewerSteps` is the difference between those two worlds, and is 0
+    /// in the first. `currentScreenPlacement()` resolves the stored position into
+    /// the layout edge and offset to draw at; `rememberScreenPlacement(edge:fraction:)`
+    /// converts a drag's layout-space landing spot back.
+    private var navAssistViewEdge: NavAssistEdge = .right
+    private var navAssistAlongFraction: CGFloat = 0.5
+
+    /// Last device orientation worth acting on, as quarter-turns. `UIDevice` reports
+    /// face-up and face-down as orientations of their own; a phone laid flat on a
+    /// table must not read as "portrait" and swing the button across the screen.
+    /// Nil until the device has reported a real one.
+    private var lastKnownDeviceSteps: Int?
+    /// True while a finger is actually moving the button, so the geometry callbacks
+    /// that re-place it on a resize don't pull it out from under that finger.
+    ///
+    /// Asked of the gesture rather than latched by it: a latch set on `.began` is
+    /// never cleared if the button is torn down mid-drag (the switcher bar coming
+    /// back, the dock hiding), and a stuck latch would silently stop every later
+    /// re-placement. A recogniser that has gone away answers false by construction.
+    private var isNavAssistDragging: Bool {
+        navAssistButton?.gestureRecognizers?.contains {
+            $0 is UIPanGestureRecognizer && ($0.state == .began || $0.state == .changed)
+        } ?? false
+    }
 
     // Backward compatibility — always false since collapsed dock concept was removed
     @objc public var isCollapsed: Bool { return false }
@@ -760,6 +800,11 @@ class AppInfoProvider {
         prefersFloatingButton = false
         LCUtils.appGroupUserDefault.set(false, forKey: MultitaskDockManager.preferFloatingButtonKey)
         keyWindow!.rootViewController!.view.addSubview(self.windowHostingView)
+        // Ask UIKit to keep `UIDevice.current.orientation` live. Without this the
+        // device orientation reads as unknown and its notification may never fire —
+        // and when the interface itself is not rotating, the phone being turned is
+        // the *only* signal that the floating button has to move.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         if let win = keyWindow { attachSafeAreaSentinel(to: win) }
         refreshCachedSafeAreaInsets()
         setupDockView()
@@ -852,7 +897,17 @@ class AppInfoProvider {
         // windows, which have no business being covered by ours.
         window.windowLevel = .normal + 1
         window.backgroundColor = .clear
-        window.rootViewController = MultitaskOverlayRootViewController()
+        let root = MultitaskOverlayRootViewController()
+        // The button is positioned in this host's coordinate space, so the host is
+        // what has to be re-measured when it changes size — a rotation, or anything
+        // else that resizes the window. Runs both from the rotation coordinator (so
+        // the move rides the system animation) and from the host's own layout (the
+        // authoritative moment, whatever order the rotation callbacks arrive in).
+        root.onHostGeometryChange = { [weak self] bounds in
+            guard let self, let button = self.navAssistButton, !self.isNavAssistDragging else { return }
+            self.placeNavAssist(button, in: bounds, stashed: self.isNavAssistStashed, animated: false)
+        }
+        window.rootViewController = root
         window.isHidden = false
 
         // Both windows share the scene's coordinate space, so the frames the
@@ -901,6 +956,7 @@ class AppInfoProvider {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
     }
 
     @objc private func deviceOrientationDidChange() {
@@ -912,10 +968,19 @@ class AppInfoProvider {
                 // system's own rotation animation completes, avoiding a compounded
                 // spin from animating our -90° transform at the same time.
                 self.updateDockFrame(animated: false)
-                // Reposition nav assist if visible
-                if let button = self.navAssistButton {
-                    self.snapNavAssistToEdge(button, animated: false)
-                }
+            }
+            // Put the floating button back on the edge it was already on, measured
+            // in its host's bounds. Not gated on `isVisible` (that tracks the bar)
+            // and deliberately outside it: the button is its own control, and this
+            // is a cheap idempotent re-place. The host's layout callback repeats it
+            // once the rotation settles, which is what makes a device notification
+            // arriving before the window has resized harmless.
+            if let button = self.navAssistButton, !self.isNavAssistDragging {
+                // Animated: when the interface is not rotating there is no system
+                // animation for the move to hide inside, and a jump reads as a
+                // glitch. When it is, this pass finds the button already at its
+                // target and the animation costs nothing.
+                self.placeNavAssist(button, stashed: self.isNavAssistStashed, animated: true)
             }
             // Move the internal-page bar reservation to the correct edge for the
             // new orientation (bottom in portrait, right in landscape).
@@ -1530,23 +1595,24 @@ class AppInfoProvider {
         navAssistButton?.removeFromSuperview()
         navAssistButton = nil
 
-        let size = Constants.navAssistSize
-        let screenBounds = window.bounds
-        let x = screenBounds.width - safeAreaInsets.right - size - Constants.navAssistMargin
-        let y = screenBounds.height * 0.5
-
         isNavAssistStashed = false
         navAssistChevron = nil
 
         let button = createNavAssistButton()
-        button.center = CGPoint(x: x + size / 2, y: y)
 
         // The overlay window, alongside the bar and for the same reason: when this
         // button is the control on screen it is the only way out of the app, so a
-        // sheet presented over it must not be able to take it away. Its geometry is
-        // measured from `window` above, which shares the scene's coordinate space.
-        (self.overlayHostView() ?? window).addSubview(button)
+        // sheet presented over it must not be able to take it away.
+        let host = self.overlayHostView() ?? window
+        host.addSubview(button)
         self.navAssistButton = button
+        // A fresh button starts halfway down the right of the user's view, whichever
+        // layout edge that currently is.
+        self.navAssistViewEdge = .right
+        self.navAssistAlongFraction = 0.5
+        // Placed only now that it has a host: its position is measured in that
+        // host's space, and the host is not necessarily `window`.
+        self.placeNavAssist(button, stashed: false, animated: false)
         // Floating button now on stage → allow rotation.
         self.refreshOrientationLock()
 
@@ -1593,6 +1659,9 @@ class AppInfoProvider {
         iconView.frame = button.bounds
         iconView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         iconView.tag = 100 // Tag for reliable lookup
+        // Upright from the start: the button can be created while the phone is
+        // already held sideways.
+        iconView.transform = navAssistIconTransform
         button.addSubview(iconView)
         
         button.layer.cornerRadius = size / 2
@@ -1637,7 +1706,7 @@ class AppInfoProvider {
             )
             gesture.setTranslation(.zero, in: button.superview)
             
-        case .ended, .cancelled:
+        case .ended, .cancelled, .failed:
             snapNavAssistToEdge(button, animated: true)
             
         default:
@@ -1646,17 +1715,15 @@ class AppInfoProvider {
     }
     
     private func snapNavAssistToEdge(_ button: UIView, animated: Bool) {
-        let screenBounds = keyWindow!.bounds
-        let safeArea = safeAreaInsets
+        guard let screenBounds = navAssistHostBounds(for: button) else { return }
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         let stashThreshold: CGFloat = halfSize + margin // How close to edge before stashing
 
-        // Portrait keeps the button on the vertical (left/right) edges; in
-        // landscape it may dock/stash against any of the four edges.
-        let allowedEdges: [NavAssistEdge] = isBarLandscape
-            ? [.left, .right, .top, .bottom]
-            : [.left, .right]
+        // Every edge is dockable in either orientation. The edge is remembered and
+        // carried through rotation, so restricting the set per orientation would
+        // mean a button parked on one could not stay there once the device turned.
+        let allowedEdges: [NavAssistEdge] = [.left, .right, .top, .bottom]
 
         // Distance from the button center to a given screen edge.
         func distance(to edge: NavAssistEdge) -> CGFloat {
@@ -1668,47 +1735,213 @@ class AppInfoProvider {
             }
         }
 
-        // Snap to whichever allowed edge is nearest.
+        // Snap to whichever allowed edge is nearest, and remember where along it the
+        // drag left the button so a rotation can reproduce the same spot.
         let edge = allowedEdges.min(by: { distance(to: $0) < distance(to: $1) })!
+        let range = navAssistAlongRange(for: edge, in: screenBounds, insets: navAssistHostInsets(for: button))
+        let along: CGFloat
+        switch edge {
+        case .left, .right:  along = button.center.y
+        case .top, .bottom:  along = button.center.x
+        }
 
-        let minX = safeArea.left + margin + halfSize
-        let maxX = screenBounds.width - safeArea.right - margin - halfSize
-        let minY = safeArea.top + margin + halfSize
-        let maxY = screenBounds.height - safeArea.bottom - margin - halfSize
-        let clampedX = max(minX, min(maxX, button.center.x))
-        let clampedY = max(minY, min(maxY, button.center.y))
+        rememberScreenPlacement(edge: edge, fraction: navAssistFraction(of: along, in: range))
+        placeNavAssist(button, in: screenBounds, stashed: distance(to: edge) < stashThreshold, animated: animated)
+    }
+
+    // MARK: - Nav Assist Viewer Frame
+
+    /// The four sides in clockwise order, the order a quarter-turn steps through.
+    private static let navAssistEdgesClockwise: [NavAssistEdge] = [.top, .right, .bottom, .left]
+
+    /// Quarter-turns the interface has been turned against the phone's own frame.
+    /// `.landscapeLeft` is the phone held turned clockwise (home button on the
+    /// left — the enum names are inverted against `UIDeviceOrientation`, see
+    /// UIOrientation.h), which puts the phone's top side at the picture's right:
+    /// one step.
+    private var navAssistInterfaceSteps: Int {
+        let scene = navAssistButton?.window?.windowScene ?? keyWindow?.windowScene
+        switch scene?.interfaceOrientation {
+        case .landscapeLeft:      return 1
+        case .portraitUpsideDown: return 2
+        case .landscapeRight:     return 3
+        default:                  return 0
+        }
+    }
+
+    /// Quarter-turns the phone itself is being held at, from the same zero.
+    /// `UIDeviceOrientation.landscapeRight` is home button on the left, i.e. the
+    /// phone turned clockwise — the mirror of the interface naming above.
+    ///
+    /// Falls back to the interface's own turn when the device won't say (flat on a
+    /// table, or orientation notifications not running), which makes the two cancel
+    /// out and leaves the button on the layout edge it is already on.
+    private func navAssistDeviceSteps() -> Int {
+        switch UIDevice.current.orientation {
+        case .portrait:           lastKnownDeviceSteps = 0
+        case .landscapeRight:     lastKnownDeviceSteps = 1
+        case .portraitUpsideDown: lastKnownDeviceSteps = 2
+        case .landscapeLeft:      lastKnownDeviceSteps = 3
+        default: break
+        }
+        return lastKnownDeviceSteps ?? navAssistInterfaceSteps
+    }
+
+    /// Quarter-turns from the layout's frame to the viewer's — how far what the user
+    /// sees has turned relative to the coordinates the button is positioned in.
+    ///
+    /// Zero whenever the interface rotates with the phone, because then they are the
+    /// same frame. Non-zero exactly when the interface has stayed where it was while
+    /// the phone turned, which is the case that has to move the button to a
+    /// different layout edge to leave it on the same side of the user's view.
+    private var navAssistViewerSteps: Int {
+        ((navAssistDeviceSteps() - navAssistInterfaceSteps) % 4 + 4) % 4
+    }
+
+    /// The turn that keeps the button's symbol upright to the user: the inverse of
+    /// however far the layout is turned away from the viewer's frame. Identity
+    /// whenever the interface rotates with the phone — there the layout is already
+    /// the right way up — and a quarter-turn back when it is not, where a glyph
+    /// drawn upright in layout coordinates would otherwise read as lying on its
+    /// side. Quarter-turns only, so the square symbol never clips.
+    private var navAssistIconTransform: CGAffineTransform {
+        let steps = navAssistViewerSteps
+        guard steps != 0 else { return .identity }
+        return CGAffineTransform(rotationAngle: -CGFloat(steps) * .pi / 2)
+    }
+
+    private func navAssistRotate(_ edge: NavAssistEdge, by steps: Int) -> NavAssistEdge {
+        let edges = Self.navAssistEdgesClockwise
+        guard let index = edges.firstIndex(of: edge) else { return edge }
+        return edges[(index + steps % 4 + 4) % 4]
+    }
+
+    /// Whether the along-edge direction reverses when the layout is turned `steps`
+    /// quarter-turns into the viewer's frame. A quarter-turn keeps one pair of sides
+    /// running the same way and reverses the other; a half-turn reverses both.
+    /// Named for the edge as it is in the layout, so the same answer serves both
+    /// directions of the conversion.
+    private func navAssistFractionFlips(layoutEdge: NavAssistEdge, steps: Int) -> Bool {
+        switch ((steps % 4) + 4) % 4 {
+        case 1:  return layoutEdge == .left || layoutEdge == .right
+        case 2:  return true
+        case 3:  return layoutEdge == .top || layoutEdge == .bottom
+        default: return false
+        }
+    }
+
+    /// The stored viewer-frame position resolved into the layout edge that is
+    /// currently on that side of the user's view, and the offset to draw it at.
+    private func currentScreenPlacement() -> (edge: NavAssistEdge, fraction: CGFloat) {
+        let steps = navAssistViewerSteps
+        let edge = navAssistRotate(navAssistViewEdge, by: -steps)
+        let flips = navAssistFractionFlips(layoutEdge: edge, steps: steps)
+        return (edge, flips ? 1 - navAssistAlongFraction : navAssistAlongFraction)
+    }
+
+    /// Records where a drag left the button — a layout edge and offset — as the side
+    /// of the user's view it landed on, so a later turn of the phone can put it back
+    /// on that same side rather than that same layout edge.
+    private func rememberScreenPlacement(edge: NavAssistEdge, fraction: CGFloat) {
+        let steps = navAssistViewerSteps
+        navAssistViewEdge = navAssistRotate(edge, by: steps)
+        navAssistAlongFraction = navAssistFractionFlips(layoutEdge: edge, steps: steps)
+            ? 1 - fraction
+            : fraction
+    }
+
+    /// The space the button's center is expressed in: its own superview — the
+    /// overlay window's root view — not `keyWindow`. The two are different windows,
+    /// and measuring a position for one against the other is what puts the button
+    /// somewhere the user cannot see it. `keyWindow` is only the fallback for a
+    /// button that has not been added to a host yet.
+    private func navAssistHostBounds(for button: UIView) -> CGRect? {
+        guard let bounds = button.superview?.bounds ?? keyWindow?.bounds,
+              bounds.width > 0, bounds.height > 0 else { return nil }
+        return bounds
+    }
+
+    /// Safe-area insets of that same host, for the same reason.
+    private func navAssistHostInsets(for button: UIView) -> UIEdgeInsets {
+        button.superview?.safeAreaInsets ?? safeAreaInsets
+    }
+
+    /// The span the button's center may travel along `edge` — the free axis (Y for
+    /// the side edges, X for the top and bottom), inset by the safe area and the
+    /// margin at both ends.
+    private func navAssistAlongRange(for edge: NavAssistEdge, in screenBounds: CGRect, insets safeArea: UIEdgeInsets) -> ClosedRange<CGFloat> {
+        let margin = Constants.navAssistMargin
+        let halfSize = Constants.navAssistSize / 2
+        let lower: CGFloat
+        let upper: CGFloat
+        switch edge {
+        case .left, .right:
+            lower = safeArea.top + margin + halfSize
+            upper = screenBounds.height - safeArea.bottom - margin - halfSize
+        case .top, .bottom:
+            lower = safeArea.left + margin + halfSize
+            upper = screenBounds.width - safeArea.right - margin - halfSize
+        }
+        return lower...max(lower, upper)
+    }
+
+    /// Where `along` sits within `range`, as 0...1. A degenerate range (a window too
+    /// small for the button to travel at all) reads as the middle.
+    private func navAssistFraction(of along: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0.5 }
+        return min(max((along - range.lowerBound) / span, 0), 1)
+    }
+
+    /// Puts the button back on the side of the phone it is parked on, at the offset
+    /// along that side it is parked at, docked or stashed. Everything is derived
+    /// from the stored device-frame position and the bounds passed in — never from
+    /// the button's current center — which is what makes this safe to re-run after a
+    /// rotation has left that center describing the old geometry.
+    private func placeNavAssist(_ button: UIView, in bounds: CGRect? = nil, stashed: Bool, animated: Bool) {
+        guard let screenBounds = bounds ?? navAssistHostBounds(for: button),
+              screenBounds.width > 0, screenBounds.height > 0 else { return }
+        let margin = Constants.navAssistMargin
+        let halfSize = Constants.navAssistSize / 2
+        // The physical side the button is parked on, read as the screen edge it
+        // shows up as in the orientation the interface is in right now.
+        let placement = currentScreenPlacement()
+        let range = navAssistAlongRange(for: placement.edge, in: screenBounds, insets: navAssistHostInsets(for: button))
+        let along = range.lowerBound + (range.upperBound - range.lowerBound) * placement.fraction
+
+        if stashed {
+            stashNavAssist(button, in: screenBounds, edge: placement.edge, along: along, animated: animated)
+            return
+        }
 
         // Resting position when docked to an edge ignores that edge's safe-area
         // inset so the button can sit right against the physical edge (the notch
-        // inset on the sides, and the home-indicator inset at the bottom,
-        // otherwise push it far inward in landscape). Portrait only uses the
-        // left/right edges, whose insets are zero, so it is unaffected.
+        // inset on the sides, and the home-indicator inset at the bottom, would
+        // otherwise push it far inward in landscape).
         let edgeMinX = margin + halfSize
         let edgeMaxX = screenBounds.width - margin - halfSize
         let edgeMinY = margin + halfSize
         let edgeMaxY = screenBounds.height - margin - halfSize
 
-        if distance(to: edge) < stashThreshold {
-            navAssistStashedEdge = edge
-            // The stash slides the button off `edge`; `along` is the free-axis
-            // coordinate (Y for left/right edges, X for top/bottom edges).
-            let along: CGFloat
-            switch edge {
-            case .left, .right:  along = clampedY
-            case .top, .bottom:  along = clampedX
-            }
-            stashNavAssist(button, edge: edge, along: along, animated: animated)
-        } else {
-            let target: CGPoint
-            switch edge {
-            case .left:   target = CGPoint(x: edgeMinX, y: clampedY)
-            case .right:  target = CGPoint(x: edgeMaxX, y: clampedY)
-            case .top:    target = CGPoint(x: clampedX, y: edgeMinY)
-            case .bottom: target = CGPoint(x: clampedX, y: edgeMaxY)
-            }
-            restoreNavAssistIcon(button)
-            moveNavAssist(button, to: target, alpha: 1.0, animated: animated)
+        let target: CGPoint
+        switch placement.edge {
+        case .left:   target = CGPoint(x: edgeMinX, y: along)
+        case .right:  target = CGPoint(x: edgeMaxX, y: along)
+        case .top:    target = CGPoint(x: along, y: edgeMinY)
+        case .bottom: target = CGPoint(x: along, y: edgeMaxY)
         }
+        restoreNavAssistIcon(button)
+        moveNavAssist(button, to: clampNavAssistCenter(target, in: screenBounds), alpha: 1.0, animated: animated)
+    }
+
+    /// Keeps a center inside the host, which keeps at least half the button on
+    /// screen on each axis — the same half a stash deliberately leaves showing.
+    /// A backstop: if the remembered fraction is ever applied against geometry it
+    /// wasn't measured in, the button comes out at the wrong spot rather than at no
+    /// spot at all.
+    private func clampNavAssistCenter(_ center: CGPoint, in screenBounds: CGRect) -> CGPoint {
+        CGPoint(x: min(max(center.x, 0), screenBounds.width),
+                y: min(max(center.y, 0), screenBounds.height))
     }
 
     /// Clears the stashed chevron and restores the normal iphone.app.switcher icon.
@@ -1720,7 +1953,15 @@ class AppInfoProvider {
     }
 
     /// Animates (or snaps) the floating button to a center point.
+    ///
+    /// Also the one place the symbol's counter-turn is applied, because every
+    /// placement — docked, stashed, dragged, re-placed on a turn of the phone —
+    /// comes through here, so the glyph can never be left lying on its side.
+    /// The chevron is deliberately left alone: it points into the screen, and
+    /// which way that is survives the turn on its own.
     private func moveNavAssist(_ button: UIView, to center: CGPoint, alpha: CGFloat, animated: Bool) {
+        let icon = button.viewWithTag(100)
+        let iconTransform = navAssistIconTransform
         if animated {
             UIView.animate(
                 withDuration: Constants.standardAnimationDuration,
@@ -1731,15 +1972,16 @@ class AppInfoProvider {
             ) {
                 button.center = center
                 button.alpha = alpha
+                icon?.transform = iconTransform
             }
         } else {
             button.center = center
             button.alpha = alpha
+            icon?.transform = iconTransform
         }
     }
     
-    private func stashNavAssist(_ button: UIView, edge: NavAssistEdge, along: CGFloat, animated: Bool) {
-        let screenBounds = keyWindow!.bounds
+    private func stashNavAssist(_ button: UIView, in screenBounds: CGRect, edge: NavAssistEdge, along: CGFloat, animated: Bool) {
         let size = Constants.navAssistSize
         // Show half the button off the edge; the chevron is positioned in the
         // visible half (below) so it stays fully on-screen.
@@ -1803,29 +2045,14 @@ class AppInfoProvider {
 
         // See-through while stashed (down from the default), but the frosted
         // background stays so the chevron keeps contrast against app content.
-        moveNavAssist(button, to: newCenter, alpha: 0.55, animated: animated)
+        moveNavAssist(button, to: clampNavAssistCenter(newCenter, in: screenBounds), alpha: 0.55, animated: animated)
     }
     
     private func unstashNavAssist() {
         guard let button = navAssistButton else { return }
-        let screenBounds = keyWindow!.bounds
-        let safeArea = safeAreaInsets
-        let margin = Constants.navAssistMargin
-        let halfSize = Constants.navAssistSize / 2
-        
-        // Remove chevron, restore iphone.app.switcher icon
-        restoreNavAssistIcon(button)
-
-        // Slide back in from whichever edge it was stashed against.
-        var newCenter = button.center
-        switch navAssistStashedEdge {
-        case .right: newCenter.x = screenBounds.width - safeArea.right - margin - halfSize
-        case .left:  newCenter.x = safeArea.left + margin + halfSize
-        case .bottom: newCenter.y = screenBounds.height - safeArea.bottom - margin - halfSize
-        case .top:    newCenter.y = safeArea.top + margin + halfSize
-        }
-
-        moveNavAssist(button, to: newCenter, alpha: 1.0, animated: true)
+        // Slides back in from whichever edge it was stashed against, to the same
+        // resting place a drag to that edge would have left it in.
+        placeNavAssist(button, stashed: false, animated: true)
     }
     
     // Find and bring corresponding multitask view to front
@@ -2875,16 +3102,49 @@ final class MultitaskOverlayWindow: UIWindow {
 /// have one — it draws nothing, and holds no content beyond the views the dock
 /// manager parents to it.
 final class MultitaskOverlayRootViewController: UIViewController {
+    /// Called with this host's bounds whenever they change — from the rotation
+    /// coordinator with the size being rotated into, and again from the host's own
+    /// layout once the new size is real. The dock manager re-places the floating
+    /// button from it. Two callers because neither is sufficient alone: a
+    /// device-orientation notification can arrive before the window has resized
+    /// (and fires for face-up/down, where it never does), while the layout pass
+    /// always runs but only after the fact.
+    var onHostGeometryChange: ((CGRect) -> Void)?
+
     override func loadView() {
         let root = OverlayPassthroughView()
         root.backgroundColor = .clear
+        root.onSizeChange = { [weak self] bounds in
+            self?.onHostGeometryChange?(bounds)
+        }
         view = root
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        // Inside the coordinator so the move rides the system's rotation animation
+        // rather than jumping before or after it.
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            self?.onHostGeometryChange?(CGRect(origin: .zero, size: size))
+        })
     }
 }
 
 /// Reports no hit of its own, so a touch landing on bare overlay falls through to
 /// the app underneath instead of stopping at a full-screen transparent view.
 final class OverlayPassthroughView: UIView {
+    /// Reports a real change of size, once per change — the moment anything
+    /// positioned in this view's space has to be measured again.
+    var onSizeChange: ((CGRect) -> Void)?
+    private var lastReportedSize: CGSize?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.size != lastReportedSize else { return }
+        lastReportedSize = bounds.size
+        onSizeChange?(bounds)
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
         return hit === self ? nil : hit
