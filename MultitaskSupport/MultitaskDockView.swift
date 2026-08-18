@@ -288,6 +288,23 @@ class AppInfoProvider {
     /// How long the system takes to turn the interface.
     static let rotationDuration: TimeInterval = 0.35
 
+    /// Whether the bar's and the switcher's controls tap back when pressed.
+    /// Off is a deliberate choice — the buttons sit under the thumb during any
+    /// app switch, and their feedback is the most repeated in the app — so it
+    /// lives in Settings ▸ Personalization rather than following the system's
+    /// global haptics setting alone.
+    static let buttonHapticsKey = "LCMultitaskButtonHaptics"
+
+    /// The controls' one and only feedback: the softest impact iOS offers, so a
+    /// row of buttons pressed dozens of times a session stays unobtrusive.
+    /// Silent when the user has switched it off.
+    static func buttonHaptic() {
+        let defaults = LCUtils.appGroupUserDefault
+        let enabled = defaults.object(forKey: buttonHapticsKey) as? Bool ?? true
+        guard enabled else { return }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+    }
+
     /// Persisted user preference for which multitask control to show when an app
     /// is opened: the switcher bar (false) or the floating button (true). The
     /// switcher overlay toggles this; it takes effect the next time an app opens.
@@ -501,6 +518,25 @@ class AppInfoProvider {
         static let barHeightWithLedgePad: CGFloat = 58.0
         static let barIconSize: CGFloat = 40.0
         static let barButtonSize: CGFloat = 40.0
+        /// The switcher's Close all capsule, and the width the bar's app menu
+        /// starts from — so the two read as the same control in both states.
+        static let barMenuBaseWidth: CGFloat = 112.0
+        /// As wide as the app menu may grow to fit a long name before the name
+        /// itself has to give way. Past this the row starts to crowd the side
+        /// buttons on a narrow phone, and the capsule stops looking like the one
+        /// Close all occupies.
+        static let barMenuMaxWidth: CGFloat = 140.0
+        /// The app menu's internal layout, shared by the label and the width
+        /// measurement that sizes its capsule — they have to agree or the name is
+        /// measured against the wrong room.
+        static let barMenuHPadding: CGFloat = 10.0
+        static let barMenuSpacing: CGFloat = 4.0
+        static let barMenuIconSize: CGFloat = 24.0
+        static let barMenuChevronWidth: CGFloat = 12.0
+        /// Clearance kept either side of the row so it never runs to the bezel.
+        static let barRowMargin: CGFloat = 16.0
+        /// The row is drawn at `barButtonSize` and scaled up by this on screen.
+        static let barContentScale: CGFloat = 1.1
         static let barSpacing: CGFloat = 10.0
         static let barHPadding: CGFloat = 12.0
         static let barVPadding: CGFloat = 4.0
@@ -593,6 +629,63 @@ class AppInfoProvider {
     func refreshCachedSafeAreaInsets() {
         let current = safeAreaInsets
         if cachedSafeAreaInsets != current { cachedSafeAreaInsets = current }
+        refreshCachedWindowShortEdge()
+    }
+
+    /// The window's shorter side — the one the bar's row has to fit across. The
+    /// window, not the screen: on iPad the app can be handed a fraction of the
+    /// display in Split View or Slide Over, and `UIScreen` would still report the
+    /// whole panel.
+    @Published private(set) var cachedWindowShortEdge: CGFloat =
+        min(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+
+    func refreshCachedWindowShortEdge() {
+        guard let bounds = keyWindow?.bounds, bounds.width > 0, bounds.height > 0 else { return }
+        let edge = min(bounds.width, bounds.height)
+        if cachedWindowShortEdge != edge { cachedWindowShortEdge = edge }
+    }
+
+    /// Room the row's middle capsule may occupy, after the two side buttons, the
+    /// gaps and the side padding have taken theirs.
+    ///
+    /// The window, not the screen: Display Zoom drops an iPhone to 320pt and an
+    /// iPad Slide Over window is narrower still, and nothing else stops the row
+    /// running past the bezel there. Everything in the row is scaled up by
+    /// `barContentScale` on screen, so the budget is divided back down by it.
+    private var barMenuBudget: CGFloat {
+        let sides = Constants.barButtonSize * 2
+            + Constants.barSpacing * 2
+            + Constants.barHPadding * 2
+        return (cachedWindowShortEdge - Constants.barRowMargin * 2)
+            / Constants.barContentScale - sides
+    }
+
+    /// The switcher's Close all capsule: one fixed size, whatever is on screen.
+    public var barCloseAllWidth: CGFloat {
+        min(Constants.barMenuBaseWidth, barMenuBudget)
+    }
+
+    /// The bar's app menu capsule, sized to the app it is naming.
+    ///
+    /// It starts at Close all's width and grows with a longer name, up to
+    /// `barMenuMaxWidth`. A name too long even for that doesn't widen it further —
+    /// the label shrinks inside the capsule instead (see `FrontmostAppIconLabel`),
+    /// which keeps the capsule recognisably the same control as the one the
+    /// switcher puts in its place.
+    public var barMenuWidth: CGFloat {
+        let name = frontmostAppName()
+        let textWidth = (name as NSString).size(withAttributes: [
+            .font: UIFont.systemFont(ofSize: 14, weight: .medium)
+        ]).width
+        // Padding + icon + gap + name + gap + chevron + padding, matching the
+        // label's own layout.
+        let content = Constants.barMenuHPadding * 2
+            + Constants.barMenuIconSize
+            + Constants.barMenuSpacing * 2
+            + ceil(textWidth)
+            + Constants.barMenuChevronWidth
+        let ideal = min(max(content, Constants.barMenuBaseWidth), Constants.barMenuMaxWidth)
+        return min(ideal, barMenuBudget)
     }
 
     /// The visible solid strip of the bar (below the concave corners). Floored to
@@ -602,7 +695,7 @@ class AppInfoProvider {
     /// cornerRadius + inset) fell short of the 44pt buttons. Portrait's larger
     /// natural value still wins, so it's unaffected.
     public var barFlatRegion: CGFloat {
-        let buttonRoom = Constants.barButtonSize * 1.1 + 14   // buttons + margin
+        let buttonRoom = Constants.barButtonSize * Constants.barContentScale + 14   // buttons + margin
         let base = max(effectiveBarHeight - barCornerRadiusActive, 0) + safeAreaInsets.bottom
         return max(base, buttonRoom)
     }
@@ -645,18 +738,9 @@ class AppInfoProvider {
         // Side buttons: hide + home
         let sideButtonsWidth = Constants.barButtonSize * 2 + Constants.barSpacing * 2
         
-        // Menu label: icon + app name text + chevron
-        let menuIconSize: CGFloat = 24
-        let chevronWidth: CGFloat = 12
-        let menuInternalSpacing: CGFloat = 5
-        let menuHPadding: CGFloat = 8
-        let appName = frontmostAppName()
-        let textWidth = (appName as NSString).size(withAttributes: [
-            .font: UIFont.systemFont(ofSize: 14, weight: .medium)
-        ]).width
-        let menuWidth = menuHPadding + menuIconSize + menuInternalSpacing + textWidth + menuInternalSpacing + chevronWidth + menuHPadding
-        
-        return Constants.barHPadding + sideButtonsWidth + menuWidth + Constants.barHPadding
+        // Menu label: a fixed capsule now, whatever the app is called — the name
+        // truncates inside it rather than stretching it.
+        return Constants.barHPadding + sideButtonsWidth + barMenuWidth + Constants.barHPadding
     }
     
     private func frontmostAppName() -> String {
@@ -2833,12 +2917,14 @@ final class BarPassthroughContainer: UIView {
 @available(iOS 16.0, *)
 struct SwitcherBarContentView: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
+    /// Bumped on each home press to drive the glyph's bounce.
+    @State private var homeBounce = 0
 
     
     var body: some View {
         activeBarContent
         // Make the bar buttons 10% larger (scales the glass pills + glyphs uniformly).
-        .scaleEffect(1.1)
+        .scaleEffect(MultitaskDockManager.Constants.barContentScale)
         .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
         // Center the buttons in the flat solid body — a block spanning the flat-top
         // line down to the screen edge (visible flat strip + safe area). Same formula
@@ -2868,7 +2954,7 @@ struct SwitcherBarContentView: View {
         HStack(spacing: MultitaskDockManager.Constants.barSpacing) {
             // Left: Hide button
             Button(action: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                MultitaskDockManager.buttonHaptic()
                 dockManager.hideSwitcherBar()
             }) {
                 Image(systemName: "chevron.down")
@@ -2876,12 +2962,13 @@ struct SwitcherBarContentView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: MultitaskDockManager.Constants.barButtonSize,
                            height: MultitaskDockManager.Constants.barButtonSize)
+                    .stableBarGlass(capsule: false)
             }
-            .stableBarGlass(capsule: false)
+            .buttonStyle(BarControlButtonStyle())
             
             // Middle: App switcher button
             Button(action: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                MultitaskDockManager.buttonHaptic()
                 if dockManager.isAppSwitcherOpen {
                     dockManager.dismissAppSwitcher()
                 } else {
@@ -2891,19 +2978,23 @@ struct SwitcherBarContentView: View {
                 FrontmostAppIconLabel()
                     .stableBarGlass(capsule: true)
             }
+            .buttonStyle(BarControlButtonStyle())
             
             // Right: Home button
             Button(action: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                MultitaskDockManager.buttonHaptic()
+                homeBounce += 1
                 dockManager.goHome()
             }) {
                 Image(systemName: "app")
                     .foregroundColor(.white)
                     .font(.system(size: 16, weight: .medium))
+                    .modifier(SymbolBounce(value: homeBounce))
                     .frame(width: MultitaskDockManager.Constants.barButtonSize,
                            height: MultitaskDockManager.Constants.barButtonSize)
+                    .stableBarGlass(capsule: false)
             }
-            .stableBarGlass(capsule: false)
+            .buttonStyle(BarControlButtonStyle())
         }
     }
     
@@ -2946,31 +3037,48 @@ struct FrontmostAppIconLabel: View {
     }
     
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: MultitaskDockManager.Constants.barMenuSpacing) {
             if let icon = appIcon {
                 Image(uiImage: icon)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .frame(width: 24, height: 24)
+                    .frame(width: MultitaskDockManager.Constants.barMenuIconSize,
+                           height: MultitaskDockManager.Constants.barMenuIconSize)
             } else {
                 Image(systemName: "app.fill")
                     .foregroundColor(.white)
                     .font(.system(size: 18))
-                    .frame(width: 24, height: 24)
+                    .frame(width: MultitaskDockManager.Constants.barMenuIconSize,
+                           height: MultitaskDockManager.Constants.barMenuIconSize)
             }
             
+            // The capsule grows to fit this up to `barMenuMaxWidth`. Past that it
+            // stops, and the name is what gives way: it shrinks first, and only
+            // truncates once there is nothing left to shrink.
             Text(frontmostApp?.appName ?? "App")
                 .foregroundColor(.white)
                 .font(.system(size: 14, weight: .medium))
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
             
             Image(systemName: "chevron.up")
                 .foregroundColor(.white.opacity(0.6))
                 .font(.system(size: 10, weight: .semibold))
+                .frame(width: MultitaskDockManager.Constants.barMenuChevronWidth)
         }
-        .padding(.horizontal, 16)
-        .frame(height: MultitaskDockManager.Constants.barButtonSize)
+        .padding(.horizontal, MultitaskDockManager.Constants.barMenuHPadding)
+        // Sized by the manager, not by this layout: the switcher's Close all has
+        // to agree with it, and a capsule that sized itself to its contents would
+        // stretch to fill the row's slack instead of stopping at its cap.
+        .frame(width: dockManager.barMenuWidth,
+               height: MultitaskDockManager.Constants.barButtonSize)
+        // The width belongs to whichever app is frontmost, so it changes on every
+        // switch. Glide between the two rather than snapping, the way iOS resizes
+        // its own pill controls.
+        .animation(.spring(response: 0.3, dampingFraction: 0.9),
+                   value: dockManager.barMenuWidth)
         .onAppear { loadIcon() }
         .onChange(of: dockManager.frontmostAppUUID) { _ in loadIcon() }
         .onChange(of: dockManager.apps.count) { _ in loadIcon() }
@@ -3143,22 +3251,14 @@ struct AppSwitcherOverlay: View {
     @State private var isPresented = false
     @State private var exiting = false
     @State private var showCloseAllConfirm = false
+    /// Bumped on press to bounce each glyph; see `SymbolBounce`.
+    @State private var closeBounce = 0
+    @State private var homeBounce = 0
     
     private let cardSpacing: CGFloat = 16
 
     // Fixed corner radius (matches the Figma design spec).
     private let cardCornerRadius: CGFloat = 34
-
-    /// Height of every control in the chin's action row, and the diameter of the
-    /// two round ones either side of Close all. Sized so the circles read as
-    /// siblings of the capsule rather than as smaller accessories, then held
-    /// inside the chin with a margin — the flat region is only as deep as the
-    /// device's corner radius and bottom inset leave it, and on a device with a
-    /// large screen radius that is barely more than the controls themselves.
-    private var switcherActionSize: CGFloat {
-        min(52, max(dockManager.barFlatRegion - 12, 40))
-    }
-    private let switcherActionSpacing: CGFloat = 12
 
     // Card dimensions — proportional to screen like iOS app switcher
     /// Raised from 0.62 to hold the card's original height. Card height now follows
@@ -3348,9 +3448,9 @@ struct AppSwitcherOverlay: View {
             // full-width "Hide Switcher Bar" label), middle closes everything, right
             // goes home. As its own bottom-aligned ZStack layer it can't be shifted
             // by the VStack's flow, so its height matches the real bar precisely.
-            HStack(spacing: switcherActionSpacing) {
+            HStack(spacing: MultitaskDockManager.Constants.barSpacing) {
                 Button(action: {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    MultitaskDockManager.buttonHaptic()
                     // A spring, not a curve: the symbol replace below takes its
                     // timing from this transaction, and iOS's own symbol swaps
                     // settle with a little spring rather than easing flatly.
@@ -3359,37 +3459,45 @@ struct AppSwitcherOverlay: View {
                     }
                 }) {
                     Image(systemName: dockManager.prefersFloatingButton ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
+                        .font(.system(size: 14, weight: .semibold))
                         .modifier(SymbolReplaceTransition())
-                        .frame(width: switcherActionSize, height: switcherActionSize)
-                        .modifier(GlassCircleBackground())
+                        .frame(width: MultitaskDockManager.Constants.barButtonSize,
+                               height: MultitaskDockManager.Constants.barButtonSize)
+                        .stableBarGlass(capsule: false)
                         // The whole circle takes the tap, not just the glyph.
                         // Without it the ring around a chevron is see-through to
                         // hit testing, and a near-miss reaches the backdrop
                         // behind — which returns to the springboard.
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BarControlButtonStyle())
                 .accessibilityLabel(dockManager.prefersFloatingButton ? "Use Switcher Bar" : "Hide Switcher Bar")
+                .modifier(ChinControlEntrance(shown: isPresented, index: 0, from: -1))
 
                 Button(action: {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    MultitaskDockManager.buttonHaptic()
+                    closeBounce += 1
                     showCloseAllConfirm = true
                 }) {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 5) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
+                            .modifier(SymbolBounce(value: closeBounce))
                         Text("Close all")
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
+                            .lineLimit(1)
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .frame(height: switcherActionSize)
-                    .modifier(GlassCapsuleBackground())
+                    // The same fixed width the bar's app menu uses, so the capsule
+                    // this one replaces is exactly the size it was.
+                    .frame(width: dockManager.barCloseAllWidth,
+                           height: MultitaskDockManager.Constants.barButtonSize)
+                    .stableBarGlass(capsule: true)
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BarControlButtonStyle())
+                .modifier(ChinControlEntrance(shown: isPresented, index: 1, from: 0))
                 .alert("Close All Apps?", isPresented: $showCloseAllConfirm) {
                     Button("Cancel", role: .cancel) { }
                     Button("Close All", role: .destructive) {
@@ -3400,24 +3508,33 @@ struct AppSwitcherOverlay: View {
                 }
 
                 Button(action: {
+                    homeBounce += 1
                     exitToSpringboard()
                 }) {
                     Image(systemName: "app")
-                        .font(.system(size: 20, weight: .medium))
                         .foregroundColor(.white)
-                        .frame(width: switcherActionSize, height: switcherActionSize)
-                        .modifier(GlassCircleBackground())
+                        .font(.system(size: 16, weight: .medium))
+                        .modifier(SymbolBounce(value: homeBounce))
+                        .frame(width: MultitaskDockManager.Constants.barButtonSize,
+                               height: MultitaskDockManager.Constants.barButtonSize)
+                        .stableBarGlass(capsule: false)
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(BarControlButtonStyle())
                 .accessibilityLabel("Home")
+                .modifier(ChinControlEntrance(shown: isPresented, index: 2, from: 1))
             }
+            // Sized and spaced exactly as the real bar sizes and spaces its own
+            // row — same button metric, same 10pt gaps, same 1.1 scale-up, same
+            // side padding — so the controls don't change size as the switcher
+            // opens over the bar or dismisses back into it.
+            .scaleEffect(MultitaskDockManager.Constants.barContentScale)
+            .padding(.horizontal, MultitaskDockManager.Constants.barHPadding)
             // Centred in the flat solid body — the block from the flat-top line down
             // to the screen edge — exactly as the real bar centres its own controls.
-            // `barFlatRegion`, not the raw expression: it floors at the button
-            // height. Without that floor a device with no bottom inset and a
-            // shallow corner radius — an iPad with a home button computes 19pt —
-            // gets a chin too short to hold the controls inside it.
+            // `barFlatRegion` floors at that same button height, so the row always
+            // has room: on a device with no bottom inset and a shallow corner radius
+            // the natural region is far too short to hold it.
             .frame(maxWidth: .infinity)
             .frame(height: dockManager.barFlatRegion, alignment: .center)
             .padding(.top, dockManager.barCornerRadiusActive)
@@ -4552,14 +4669,69 @@ private struct DockPillBackground: ViewModifier {
     }
 }
 
-// MARK: - Glass Capsule Background (native Liquid Glass on iOS 26+, fallback on older)
-struct GlassCapsuleBackground: ViewModifier {
-    /// Erased to AnyView — see `DockPillBackground.body` for why.
+// MARK: - Chin Control Entrance
+/// Brings one of the switcher's chin controls in as the overlay opens: it rises
+/// the last few points into the row and fades up, with the side buttons leaning
+/// out from the middle and each one starting a beat after the last.
+///
+/// The stagger is what makes the row read as arriving rather than as being drawn
+/// — the same left-to-right cascade iOS gives a toolbar it is presenting.
+/// `from` is which way the control leans in: -1 leading, 0 straight up, 1
+/// trailing.
+@available(iOS 16.0, *)
+struct ChinControlEntrance: ViewModifier {
+    let shown: Bool
+    let index: Int
+    let from: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: shown ? 0 : from * 14, y: shown ? 0 : 18)
+            .opacity(shown ? 1 : 0)
+            // Bound to `shown` alone, so it plays on the way in and leaves the
+            // exit — a single offset carrying the whole chin off the bottom —
+            // to run undisturbed.
+            .animation(.spring(response: 0.42, dampingFraction: 0.82)
+                        .delay(Double(index) * 0.04),
+                       value: shown)
+    }
+}
+
+// MARK: - Bar Control Button Style
+/// The press behaviour shared by every control in the bar and in the switcher's
+/// chin: the glass and its glyph shrink together under the finger and spring
+/// back on release, the way iOS's own glass controls answer a touch.
+///
+/// A `ButtonStyle` rather than a gesture, so the press state comes from the
+/// button itself and survives a finger that slides off and back on. It scales
+/// `configuration.label`, which is why each control puts its glass *inside* its
+/// label — glass applied to the button outside the style would sit still while
+/// the glyph shrank inside it.
+@available(iOS 16.0, *)
+struct BarControlButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7),
+                       value: configuration.isPressed)
+    }
+}
+
+// MARK: - Symbol Bounce
+/// Bounces an SF Symbol each time `value` changes, as iOS bounces its own
+/// symbols to acknowledge a button whose effect is elsewhere on screen.
+///
+/// Erased to AnyView — see `DockPillBackground.body` for why: symbol effects are
+/// an iOS 17 type and must not reach an iOS 16 runtime through this Body.
+@available(iOS 16.0, *)
+struct SymbolBounce: ViewModifier {
+    let value: Int
     func body(content: Content) -> AnyView {
-        if #available(iOS 26.0, *) {
-            return AnyView(content.glassEffect(in: .capsule))
+        if #available(iOS 17.0, *) {
+            return AnyView(content.symbolEffect(.bounce, value: value))
         }
-        return AnyView(content.background(Capsule().fill(Color.white.opacity(0.15))))
+        return AnyView(content)
     }
 }
 
@@ -4580,19 +4752,6 @@ struct SymbolReplaceTransition: ViewModifier {
         }
         // No symbol effects before 17: fade one glyph into the other instead.
         return AnyView(content.contentTransition(.opacity))
-    }
-}
-
-// MARK: - Glass Circle Background (native Liquid Glass on iOS 26+, fallback on older)
-/// The round sibling of `GlassCapsuleBackground`, for the switcher's arrow and
-/// home buttons flanking Close all.
-struct GlassCircleBackground: ViewModifier {
-    /// Erased to AnyView — see `DockPillBackground.body` for why.
-    func body(content: Content) -> AnyView {
-        if #available(iOS 26.0, *) {
-            return AnyView(content.glassEffect(in: .circle))
-        }
-        return AnyView(content.background(Circle().fill(Color.white.opacity(0.15))))
     }
 }
 
