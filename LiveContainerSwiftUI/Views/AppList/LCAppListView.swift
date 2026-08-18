@@ -745,7 +745,8 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 // Shared with the grid maths, which works the page size back out
                 // from the screen when there is no view to measure.
                 .padding(.top, LCSpringboardPageCell.gridTopPadding)
-                .padding(.bottom, LCSpringboardPageCell.gridBottomPadding)
+                .padding(.bottom, LCSpringboardPageCell.gridBottomPadding(
+                    safeAreaBottom: homeBottomSafeInset))
             }
         }
     }

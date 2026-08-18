@@ -92,15 +92,29 @@ final class LCSpringboardPageCell: UICollectionViewCell {
     /// of the springboard view.
     private static let padBottomReserve: CGFloat = 34
 
-    /// Padding `LCAppListView` puts around the springboard, measured from the
-    /// safe area: the design's 108pt down from the top of the screen and 134pt
-    /// up from the bottom, less the 62 and 34 the insets already account for.
-    /// Callers with no view to measure need it to work out the page size from
-    /// the screen. The dots live inside the springboard's view rather than
-    /// below it, so the grid itself stops `phoneBottomReserve` short of the
-    /// bottom padding — which is what puts the last row at the designed 134.
+    /// Padding `LCAppListView` puts above the springboard, measured from the
+    /// safe area: the design's 108pt down from the top of the screen, less the
+    /// 62 the inset already accounts for. Callers with no view to measure need
+    /// it to work out the page size from the screen.
     static let gridTopPadding: CGFloat = 46
-    static let gridBottomPadding: CGFloat = 70
+
+    /// Clear space between the page dots and the top of the bottom bar.
+    private static let barClearance: CGFloat = 18
+
+    /// Padding below the springboard, which the bottom bar decides. The dots sit
+    /// at the foot of the springboard's own view rather than below it, so the
+    /// view has to stop short of the search button and the multitask bar or they
+    /// cover the dots. That cannot be a fixed number, because the bar is itself
+    /// sized off the screen and a tablet's stands half again as tall as a
+    /// phone's — which is exactly how it came to swallow them.
+    ///
+    /// On the screen the design is drawn for this works out at 70, putting the
+    /// last row of icons at the design's 134 up from the bottom: the grid stops
+    /// `phoneBottomReserve` short of the padding to leave the dots their strip.
+    static func gridBottomPadding(safeAreaBottom: CGFloat) -> CGFloat {
+        max(0, FlekTheme.bottomBarScreenMargin + FlekTheme.bottomBarControlSize
+               + barClearance - safeAreaBottom)
+    }
 
     /// Whether a page of this size uses the iPad grid.
     static func usesPadGrid(pageSize: CGSize) -> Bool {
@@ -229,7 +243,7 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         CGSize(
             width: screenSize.width - safeAreaInsets.left - safeAreaInsets.right,
             height: screenSize.height - safeAreaInsets.top - safeAreaInsets.bottom
-                - gridTopPadding - gridBottomPadding
+                - gridTopPadding - gridBottomPadding(safeAreaBottom: safeAreaInsets.bottom)
         )
     }
 
