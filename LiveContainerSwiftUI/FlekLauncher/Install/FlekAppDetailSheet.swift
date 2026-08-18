@@ -248,8 +248,11 @@ struct FlekAppDetailSheet: View {
         Button {
             dismiss()
         } label: {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 17, weight: .semibold))
+            Image(systemName: "chevron.compact.down")
+                // Larger than the plain chevron it replaces: the compact glyph
+                // is a wide, shallow stroke, and at the old size it read as a
+                // smudge rather than as a direction to pull the sheet in.
+                .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(Color(.tertiaryLabel))
                 .frame(maxWidth: .infinity)
                 .frame(height: Self.headerStripHeight)
@@ -327,23 +330,15 @@ struct FlekAppDetailSheet: View {
                 onInstall(overrides.isEmpty ? nil : overrides)
             }
         } label: {
-            HStack(spacing: 6) {
-                if installButtonState == .done {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
-                }
-                Text(installButtonTitle)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(installButtonForeground)
+            installButtonLabel
+                .foregroundStyle(installButtonForeground)
             // Sized to its label rather than filling the column: the phase
             // labels ("Downloading…") are longer than "Install", so a minimum
             // width keeps the idle button from looking cramped without letting
             // it stretch the full width of the header.
-            .padding(.horizontal, 20)
-            .frame(minWidth: 118, minHeight: 38, maxHeight: 38)
-            .background(installButtonBackground)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 110, minHeight: 38, maxHeight: 38)
+            .background(Capsule().fill(installButtonFill))
             .clipShape(Capsule())
             .contentShape(Capsule())
         }
@@ -355,13 +350,52 @@ struct FlekAppDetailSheet: View {
                    value: installButtonState)
     }
 
+    /// Every state's label laid out at once, all but the current one invisible,
+    /// so the capsule is as wide as the widest of the three and holds that width
+    /// throughout: a button that resizes under the finger pressing it reads as a
+    /// different button, and the colour and the word have enough to do already.
+    ///
+    /// Measured rather than pinned to a number, because the number would have to
+    /// be the widest label in the widest language — "Installieren" is half again
+    /// "Install", and the finished state carries a checkmark besides — and every
+    /// other language would then sit in a capsule sized for German.
+    private var installButtonLabel: some View {
+        ZStack {
+            ForEach(InstallButtonState.allCases, id: \.self) { state in
+                installButtonContent(state)
+                    .hidden()
+                    .accessibilityHidden(true)
+            }
+            installButtonContent(installButtonState)
+        }
+    }
+
+    private func installButtonContent(_ state: InstallButtonState) -> some View {
+        HStack(spacing: 6) {
+            if state == .done {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .bold))
+                    // Arrives with the green rather than after it.
+                    .transition(reduceMotion ? .opacity
+                                             : .scale.combined(with: .opacity))
+            }
+            Text(installButtonTitle(state))
+                // Uppercased through `textCase` rather than in the string,
+                // so each language is raised by its own rules.
+                .textCase(.uppercase)
+                .font(.system(size: 18, weight: .regular))
+                .lineLimit(1)
+                .interpolatesContentIfAvailable()
+        }
+    }
+
     /// Opens the pre-install customisations. Badged once anything is set, so a
     /// change made here isn't invisible from the page it applies to.
     private var advancedButton: some View {
         Button {
             showAdvanced = true
         } label: {
-            Image(systemName: "gearshape")
+            Image(systemName: "gear")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.primary)
                 .frame(width: 38, height: 38)
@@ -386,7 +420,7 @@ struct FlekAppDetailSheet: View {
         }
     }
 
-    private enum InstallButtonState: Equatable { case idle, active, done }
+    private enum InstallButtonState: Hashable, CaseIterable { case idle, active, done }
 
     private var installButtonState: InstallButtonState {
         if installItem != nil { return .active }
@@ -396,8 +430,8 @@ struct FlekAppDetailSheet: View {
     /// The button carries no progress of its own — that is on the icon. While an
     /// install runs it is simply the way to stop it, which matters here because
     /// the sheet covers the row that would otherwise offer that.
-    private var installButtonTitle: String {
-        switch installButtonState {
+    private func installButtonTitle(_ state: InstallButtonState) -> String {
+        switch state {
         case .idle:   return "lc.common.install".loc
         case .active: return "lc.common.cancel".loc
         case .done:   return "lc.flek.installed".loc
@@ -407,21 +441,26 @@ struct FlekAppDetailSheet: View {
     private var installButtonForeground: Color {
         switch installButtonState {
         case .idle: return Color(.systemBackground)   // inverse of the fill below
-        case .active: return .primary
+        case .active: return .white
         case .done: return .white
         }
     }
 
-    @ViewBuilder
-    private var installButtonBackground: some View {
+    /// One capsule that changes colour, rather than a capsule per state: a
+    /// `switch` in a background builder hands SwiftUI a different view each
+    /// time, which can only cross-dissolve one over the other. A single fill
+    /// interpolates instead, so the button travels through the colours between
+    /// — dark to red on tapping install, red to green on finishing.
+    private var installButtonFill: Color {
         switch installButtonState {
-        case .idle:
-            // The design's white-on-dark pill, mirrored for light mode.
-            Capsule().fill(Color(.label))
-        case .active:
-            Capsule().fill(Color(.secondarySystemGroupedBackground))
-        case .done:
-            Capsule().fill(Color.green)
+        // The design's white-on-dark pill, mirrored for light mode.
+        case .idle: return Color(.label)
+        // Cancelling is the destructive half of this button, so it takes the
+        // system's own destructive red rather than a hand-picked one — it
+        // shifts with the display's appearance and accessibility contrast the
+        // way every other red in iOS does.
+        case .active: return Color(.systemRed)
+        case .done: return .green
         }
     }
 
@@ -714,6 +753,21 @@ private struct FlekScreenshotThumb: View {
         guard !loaded else { return }
         failed = false
         withAnimation(.easeOut(duration: Self.fadeDuration)) { loaded = true }
+    }
+}
+
+private extension View {
+    /// iOS 16+: a label whose text changes morphs into the new one in place —
+    /// the glyphs are interpolated rather than one word being swapped for
+    /// another between frames while the capsule around it is still travelling.
+    /// Below that the text changes on the same beat as the colour, without it.
+    // Erased to AnyView: an opaque return type would bake the iOS 16-only
+    // modifier type into this function's static type, which the runtime
+    // resolves before the availability check runs — the same hazard the
+    // installer's own availability helpers document.
+    func interpolatesContentIfAvailable() -> AnyView {
+        if #available(iOS 16.0, *) { return AnyView(self.contentTransition(.interpolate)) }
+        return AnyView(self)
     }
 }
 
