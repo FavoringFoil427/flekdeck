@@ -19,6 +19,11 @@ API_AVAILABLE(ios(16.0))
 - (void)appSceneVC:(AppSceneViewController*)vc didInitializeWithError:(NSError*)error;
 @optional
 - (void)appSceneVC:(AppSceneViewController*)vc didUpdateFromSettings:(UIMutableApplicationSceneSettings *)settings transitionContext:(id)context;
+/// The guest's scene has been presented — its content is now on screen as fast as
+/// the guest can draw it, which for an app still starting up means its own launch
+/// screen. Unlike a settings update, which only arrives if the guest changes
+/// something, this happens for every guest exactly once.
+- (void)appSceneVCDidPresentScene:(AppSceneViewController*)vc;
 @end
 
 API_AVAILABLE(ios(16.0))

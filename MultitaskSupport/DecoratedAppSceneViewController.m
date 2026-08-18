@@ -40,18 +40,23 @@ void UIKitFixesInit(void) {
 @property(nonatomic) CGRect originalFrame;
 @property(nonatomic) UIBarButtonItem *maximizeButton;
 @property(nonatomic) bool isAppTerminationRequested;
-/// Whether this window has already asked to be shown. It waits for the guest to
-/// have drawn something before making its entrance, and that cue can arrive from
-/// more than one place, so the first one wins and the rest are ignored.
-@property(nonatomic) BOOL didAskToBeShown;
+/// Whether the guest has already been reported as drawing its own content. The
+/// cue can arrive from more than one place, so the first one wins and the rest
+/// are ignored.
+@property(nonatomic) BOOL didReportContentArrived;
 - (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation;
 @end
 
-/// How long a guest is given to draw its first frame before its window is shown
-/// anyway. Most apps put up their launch screen well inside this; one that
-/// crashes on the way up, or simply never reports its scene settings, must not
-/// leave an invisible window and a home screen that swallowed a tap.
-static const NSTimeInterval kAppContentWaitLimit = 1.2;
+/// How long after its scene is presented the window keeps the launch screen it
+/// opened with. The guest is drawing by then — a launch screen of its own if it
+/// is still starting up — so what replaces ours is, for most apps, the same
+/// picture. Long enough for that first frame to land, short enough that a guest
+/// whose picture differs is not sat behind ours.
+static const NSTimeInterval kContentGraceAfterScene = 0.45;
+
+/// The last word, for a guest whose scene never gets presented at all — one that
+/// dies on the way up. Nothing may leave a stand-in covering a window for good.
+static const NSTimeInterval kContentArrivalLimit = 4.0;
 
 @implementation DecoratedAppSceneViewController
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
@@ -65,14 +70,11 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
     
     [MultitaskDockManager.shared addRunningApp:windowName appUUID:dataUUID view:self.view];
 
-    // The window stays out of sight until the guest has drawn something. Opening
-    // it the instant its icon is pressed means growing a black rectangle out of
-    // that icon — the guest process has not rendered yet, so there is nothing in
-    // the window to see, and taking the home screen away to show it is worse than
-    // leaving the home screen there. It comes in when it has content to come in
-    // with; this is the backstop for a guest that never reports having any.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kAppContentWaitLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self askToBeShown];
+    // The window opens immediately, carrying the app's launch screen, and drops
+    // it once the guest is drawing its own. This is the last resort for a guest
+    // that never gets that far.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kContentArrivalLimit * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self reportContentArrived];
     });
 
 
@@ -305,16 +307,15 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
     }];
 }
 
-/// Asks for this window to make its entrance, once. The dock grows it out of the
-/// icon it was launched from; until this runs the window is invisible and the
-/// springboard is what the user is looking at.
-- (void)askToBeShown {
-    if (self.didAskToBeShown) return;
-    self.didAskToBeShown = YES;
+/// Reports, once, that the guest is drawing its own content — the cue to drop the
+/// launch screen the window opened with.
+- (void)reportContentArrived {
+    if (self.didReportContentArrived) return;
+    self.didReportContentArrived = YES;
     // Posted rather than called, the way the bar's visibility travels the other
     // way between these two files — the dock is Swift and this is not, and a
     // notification needs neither side's generated header.
-    [NSNotificationCenter.defaultCenter postNotificationName:@"LCWindowIsReadyToShow" object:self.view];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"LCWindowContentDidArrive" object:self.view];
 }
 
 - (void)finishMinimizeWindow {
@@ -375,9 +376,9 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
 - (void)appSceneVC:(AppSceneViewController*)vc didInitializeWithError:(NSError *)error {
     dispatch_async(dispatch_get_main_queue(), ^{
         if(error) {
-            // Nothing is coming, so stop waiting for it — the window must not be
-            // left invisible with an alert to present from.
-            [self askToBeShown];
+            // Nothing is coming, so take the launch screen down rather than leave
+            // it standing in for an app that failed to start.
+            [self reportContentArrived];
             [vc appTerminationCleanUp];
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"lc.common.error".loc message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"lc.common.ok".loc style:UIAlertActionStyleCancel handler:nil]];
@@ -392,6 +393,16 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
                 self.pidAvailableHandler(@(self.pid), nil);
             }
         }
+    });
+}
+
+- (void)appSceneVCDidPresentScene:(AppSceneViewController*)vc {
+    // The guest's scene is on screen now and it is drawing into it. Give that
+    // first frame a moment to land, then let go of the launch screen this window
+    // opened with. This is the cue that fires for every guest; the settings
+    // update below is merely an earlier one when the guest happens to send it.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kContentGraceAfterScene * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self reportContentArrived];
     });
 }
 
@@ -411,12 +422,11 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
 
     [_appSceneVC.presenter.scene updateSettings:newSettings withTransitionContext:newContext completion:nil];
 
-    // The guest is far enough up to be describing its own scene, which in
-    // practice is around the point its launch screen goes on screen. The nearest
-    // thing to a "first frame" this side of the process boundary: the window's
-    // content is rendered by the guest into a layer the host cannot inspect, so
-    // there is nothing here to watch for directly.
-    [self askToBeShown];
+    // An early cue when it comes, but only that: a settings update arrives when
+    // the guest changes something about its scene, and an app that changes
+    // nothing never sends one. `appSceneVCDidPresentScene:` is what this actually
+    // relies on.
+    [self reportContentArrived];
 }
 
 // Resizes the guest scene's drawable to match the current container view size.
@@ -424,7 +434,15 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
 // otherwise apps that don't push their own settings update keep rendering at the
 // old size and leave a blank strip where the view grew.
 - (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation {
-    CGRect newFrame = CGRectMake(0, 0, self.view.frame.size.width/self.scaleRatio, (self.view.frame.size.height - self.navigationBar.frame.size.height)/self.scaleRatio);
+    // Measured from bounds, never from frame. A window carries a transform while
+    // it is growing out of its icon, and `frame` is undefined under one — the
+    // guest's scene is presented during exactly that stretch, so reading the frame
+    // told it that it was icon-sized. It would lay out for that and stay wrong
+    // until something forced a fresh settings update, which is why toggling the
+    // bar appeared to repair it. Bounds is the size the window really occupies,
+    // transform or no transform.
+    CGSize windowSize = self.view.bounds.size;
+    CGRect newFrame = CGRectMake(0, 0, windowSize.width/self.scaleRatio, (windowSize.height - self.navigationBar.frame.size.height)/self.scaleRatio);
     if(UIInterfaceOrientationIsLandscape(orientation)) {
         settings.frame = CGRectMake(0, 0, newFrame.size.height, newFrame.size.width);
     } else {
@@ -628,8 +646,12 @@ static const NSTimeInterval kAppContentWaitLimit = 1.2;
 - (void)updateOriginalFrame {
     if(_isMaximized) return;
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, self.view.window.safeAreaInsets);
+    // Derived from bounds and centre rather than frame, which is undefined while
+    // the window is animating into or out of its icon.
+    CGSize size = self.view.bounds.size;
+    CGPoint origin = CGPointMake(self.view.center.x - size.width / 2, self.view.center.y - size.height / 2);
     // save origin as normalized coordinates
-    self.originalFrame = CGRectMake(self.view.frame.origin.x / maxFrame.size.width, self.view.frame.origin.y / maxFrame.size.height, self.view.frame.size.width, self.view.frame.size.height);
+    self.originalFrame = CGRectMake(origin.x / maxFrame.size.width, origin.y / maxFrame.size.height, size.width, size.height);
 }
 
 @end

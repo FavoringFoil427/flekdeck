@@ -133,10 +133,13 @@ enum LCMinimizeToIconAnimator {
         return min(max(progress, 0.8), 0.995)
     }
 
-    /// When the cross-fade starts, as a fraction of the way to the handoff. The
-    /// page holds its content through the move and gives way only at the end of
-    /// it — iOS does not dissolve the app halfway there.
-    private static let fadeStartFraction: TimeInterval = 0.58
+    /// The window's opacity crosses its whole range over the whole flight, at an
+    /// even rate: fully opaque down to nothing on the way out, nothing up to
+    /// fully opaque on the way in. Linear rather than on the flight's spring,
+    /// because the spring covers most of its distance early — riding it would put
+    /// nearly all of the fade in the first third and leave the rest of the move at
+    /// a fixed opacity, which is the opposite of fading throughout.
+    private static let fadeCurve: UIView.AnimationCurve = .linear
 
     // MARK: - Shape
 
@@ -445,13 +448,10 @@ enum LCMinimizeToIconAnimator {
             finish()
         }
 
-        // The mirror of the closing cross-fade: the window is transparent while it
-        // is still icon-sized, so the icon shows through where it is going to be,
-        // and opaque by the time it has grown clear of it.
-        let fade = UIViewPropertyAnimator(
-            duration: max(0.05, flightDuration * (1 - fadeStartFraction)),
-            curve: .easeOut
-        ) {
+        // The mirror of the closing fade: fully transparent at icon size, so the
+        // icon shows through where the window is going to be, and fully opaque as
+        // it arrives at full size — coming up evenly across everything in between.
+        let fade = UIViewPropertyAnimator(duration: flightDuration, curve: fadeCurve) {
             view.alpha = 1
         }
 
@@ -563,12 +563,11 @@ enum LCMinimizeToIconAnimator {
             completion()
         }
 
-        // The cross-fade is its own animator so it can finish on the handoff
-        // instead of trailing the spring's long asymptotic tail: the page is gone
-        // the instant it matches the icon, not fading for a further quarter of a
-        // second over the top of it.
-        let fadeStart = flightDuration * fadeStartFraction
-        let fade = UIViewPropertyAnimator(duration: flightDuration - fadeStart, curve: .easeIn) {
+        // Its own animator so it can end on the handoff instead of trailing the
+        // spring's long asymptotic tail: the page is gone the instant it matches
+        // the icon, rather than fading for a further quarter of a second over the
+        // top of it. It goes the whole way down over the whole flight.
+        let fade = UIViewPropertyAnimator(duration: flightDuration, curve: fadeCurve) {
             view.alpha = 0
         }
 
@@ -592,7 +591,7 @@ enum LCMinimizeToIconAnimator {
 
         beginFlight()
         flight.startAnimation()
-        fade.startAnimation(afterDelay: fadeStart)
+        fade.startAnimation()
     }
 
     // MARK: - The home screen's half of it

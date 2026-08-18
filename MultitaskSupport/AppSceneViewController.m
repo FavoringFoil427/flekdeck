@@ -491,6 +491,10 @@ static void LCUnstageAppFromAppGroup(NSString *bundleId, NSString *dataUUID, BOO
     self.contentView.layer.position = CGPointMake(0, 0);
     
     [self.view.window.windowScene _registerSettingsDiffActionArray:@[self] forKey:self.sceneID];
+
+    if([self.delegate respondsToSelector:@selector(appSceneVCDidPresentScene:)]) {
+        [self.delegate appSceneVCDidPresentScene:self];
+    }
 }
 
 - (void)terminate {
