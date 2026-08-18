@@ -361,10 +361,11 @@ class AppInfoProvider {
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
 
-    /// An edge of the screen, or — when it names stored state — an edge of the
-    /// device itself, which is the same set of four sides read in the phone's own
-    /// frame rather than the interface's.
-    private enum NavAssistEdge { case left, right, top, bottom }
+    /// One of the four sides. Which frame it is named in depends on where it is
+    /// used: the layout's own coordinates, or the viewer's — what the user sees
+    /// once the phone has been turned. `viewerRotationSteps` converts between them,
+    /// and both the switcher bar and the floating button go through it.
+    private enum ScreenEdge { case left, right, top, bottom }
 
     /// Where the floating button lives, held in the VIEWER's frame: which side of
     /// what the user is looking at it is parked on, and how far along that side it
@@ -382,11 +383,11 @@ class AppInfoProvider {
     ///    or bottom, depending on which way the phone was turned, and the button has
     ///    to move to that edge to stay where the user left it.
     ///
-    /// `navAssistViewerSteps` is the difference between those two worlds, and is 0
+    /// `viewerRotationSteps` is the difference between those two worlds, and is 0
     /// in the first. `currentScreenPlacement()` resolves the stored position into
     /// the layout edge and offset to draw at; `rememberScreenPlacement(edge:fraction:)`
     /// converts a drag's layout-space landing spot back.
-    private var navAssistViewEdge: NavAssistEdge = .right
+    private var navAssistViewEdge: ScreenEdge = .right
     private var navAssistAlongFraction: CGFloat = 0.5
 
     /// Last device orientation worth acting on, as quarter-turns. `UIDevice` reports
@@ -506,6 +507,22 @@ class AppInfoProvider {
         // return v > 0 ? CGFloat(v) : deviceScreenCornerRadius
     }
 
+    /// The strip the bar occupies, as insets on whichever edge it currently sits
+    /// on — zero when no bar is up. Guest windows inset their maximized frame by
+    /// this so their content sits flush against the bar wherever it is, rather than
+    /// assuming a bottom-or-right edge derived from the interface orientation, which
+    /// is not the same question once the layout and the device part ways.
+    @objc public var barReservedInsets: UIEdgeInsets {
+        guard isSwitcherBarVisible else { return .zero }
+        let thickness = barReservedThickness
+        switch barLayoutEdge {
+        case .bottom: return UIEdgeInsets(top: 0, left: 0, bottom: thickness, right: 0)
+        case .top:    return UIEdgeInsets(top: thickness, left: 0, bottom: 0, right: 0)
+        case .left:   return UIEdgeInsets(top: 0, left: thickness, bottom: 0, right: 0)
+        case .right:  return UIEdgeInsets(top: 0, left: 0, bottom: 0, right: thickness)
+        }
+    }
+
     /// The exact on-screen thickness of the switcher bar strip on its short edge
     /// (matches `updateDockFrame`). App windows reserve this so their content
     /// sits flush against the bar with no background gap showing through.
@@ -539,13 +556,18 @@ class AppInfoProvider {
         // a home button has no such inset, and the bar covered the page's bottom
         // controls.
         let insets = safeAreaInsets
-        if isBarLandscape {
-            controller.additionalSafeAreaInsets.right = reserved ? max(barFlatRegion - insets.right, 0) : 0
-            controller.additionalSafeAreaInsets.bottom = 0
-        } else {
-            controller.additionalSafeAreaInsets.bottom = reserved ? max(barFlatRegion - insets.bottom, 0) : 0
-            controller.additionalSafeAreaInsets.right = 0
+        // Cleared on every edge first: the bar moves between them, and a reservation
+        // left behind on the edge it came from would push content off the other side.
+        var reserve = UIEdgeInsets.zero
+        if reserved {
+            switch barLayoutEdge {
+            case .bottom: reserve.bottom = max(barFlatRegion - insets.bottom, 0)
+            case .top:    reserve.top    = max(barFlatRegion - insets.top, 0)
+            case .right:  reserve.right  = max(barFlatRegion - insets.right, 0)
+            case .left:   reserve.left   = max(barFlatRegion - insets.left, 0)
+            }
         }
+        controller.additionalSafeAreaInsets = reserve
     }
 
     public struct Constants {
@@ -742,27 +764,84 @@ class AppInfoProvider {
 
     // MARK: - Bar Edge / Orientation
 
-    /// Whether the switcher bar should sit on a vertical (short) edge, i.e. the
-    /// device is in landscape. The bar always lives on a *short* edge: the
-    /// bottom in portrait, the right edge in landscape.
-    private var isBarLandscape: Bool {
+    /// The space the bar is laid out in: the pass-through container that holds it,
+    /// which tracks the overlay host it was added to.
+    ///
+    /// Not `UIScreen.main.bounds`. That describes the display, and the two part
+    /// company whenever the overlay host is not turned the same way as the device —
+    /// at which point a bar positioned by screen numbers lands wherever those
+    /// numbers happen to fall in the host's own coordinates, which is nowhere in
+    /// particular. Falls back outward through the hierarchy, and only reaches the
+    /// screen when the bar has no home yet.
+    private var barLayoutBounds: CGRect {
+        let candidates = [
+            barContainer?.bounds,
+            barContainer?.superview?.bounds,
+            hostingController?.view.superview?.bounds,
+            keyWindow?.bounds,
+        ]
+        for case let bounds? in candidates where bounds.width > 0 && bounds.height > 0 {
+            return bounds
+        }
+        return UIScreen.main.bounds
+    }
+
+    /// The bar's space as the user sees it — the layout's own rectangle, turned if
+    /// the layout is not the way up the viewer is.
+    private var barViewerSize: CGSize {
+        let bounds = barLayoutBounds
+        return viewerRotationSteps % 2 == 0
+            ? bounds.size
+            : CGSize(width: bounds.height, height: bounds.width)
+    }
+
+    /// The side of the *user's view* the bar belongs on: its bottom when the view is
+    /// upright, its right when the view is on its side. This is the rule stated in
+    /// the terms the user sees it in, and everything else is derived from it.
+    private var barViewerEdge: ScreenEdge {
         // iPad keeps the bar along the bottom in both orientations. Moving it to the
         // edge is an iPhone accommodation — there a bottom bar in landscape would eat
         // most of the little height available — but iPad has the width for it, and
         // rotating the strip stood the app names on their side.
-        if UIDevice.current.userInterfaceIdiom == .pad { return false }
-        if let orientation = keyWindow?.windowScene?.interfaceOrientation {
-            return orientation.isLandscape
-        }
-        return UIScreen.main.bounds.width > UIScreen.main.bounds.height
+        if UIDevice.current.userInterfaceIdiom == .pad { return .bottom }
+        let size = barViewerSize
+        return size.width > size.height ? .right : .bottom
     }
 
-    /// The resting transform of the bar's hosting view. Identity in portrait;
-    /// rotated -90° in landscape so the (otherwise identical) horizontal pill
-    /// runs vertically along the right edge. Applying this transform to a view
-    /// whose local bounds are a horizontal strip yields the vertical bar.
+    /// The layout edge that currently *is* `barViewerEdge`.
+    ///
+    /// The two are the same edge whenever the layout turns with the phone. When it
+    /// does not — a host that stays put while the device turns — the side the user
+    /// sees as the right of the screen is the layout's top or bottom, depending on
+    /// which way the phone was turned, and the bar has to be drawn along that edge
+    /// to appear where the rule says it should be.
+    private var barLayoutEdge: ScreenEdge {
+        rotateEdge(barViewerEdge, by: -viewerRotationSteps)
+    }
+
+    /// Whether the bar is laid out as a vertical strip, i.e. it sits on a left or
+    /// right *layout* edge. Drives the -90° turn of the strip, the edge the internal
+    /// pages reserve, and the bar content's own edge margins.
+    private var isBarLandscape: Bool {
+        let edge = barLayoutEdge
+        return edge == .left || edge == .right
+    }
+
+    /// The resting transform of the bar's hosting view: the turn that lays the
+    /// strip along its layout edge with its concave top facing into the screen.
+    ///
+    /// The strip is always built the same way — long axis horizontal, ledge along
+    /// its own top — so identity puts it on the bottom edge and each quarter-turn
+    /// walks it round to the next one. Facing the interior is what makes the bar
+    /// read the same to the user on every edge: the content leans into the screen,
+    /// exactly as the landscape bar has always done.
     private var barBaseTransform: CGAffineTransform {
-        isBarLandscape ? CGAffineTransform(rotationAngle: -.pi / 2) : .identity
+        switch barLayoutEdge {
+        case .bottom: return .identity
+        case .right:  return CGAffineTransform(rotationAngle: -.pi / 2)
+        case .left:   return CGAffineTransform(rotationAngle: .pi / 2)
+        case .top:    return CGAffineTransform(rotationAngle: .pi)
+        }
     }
 
     /// The transform used while the bar is hidden/off-screen. The slide offset
@@ -904,7 +983,15 @@ class AppInfoProvider {
         // the move rides the system animation) and from the host's own layout (the
         // authoritative moment, whatever order the rotation callbacks arrive in).
         root.onHostGeometryChange = { [weak self] bounds in
-            guard let self, let button = self.navAssistButton, !self.isNavAssistDragging else { return }
+            guard let self else { return }
+            // The bar is measured against this same host, so it re-lays out here too
+            // rather than waiting on a device notification that may fire before the
+            // host has resized — or, when the host is not the thing turning, never
+            // describe this host at all.
+            if self.isVisible && self.isSwitcherBarVisible {
+                self.updateDockFrame(animated: false)
+            }
+            guard let button = self.navAssistButton, !self.isNavAssistDragging else { return }
             self.placeNavAssist(button, in: bounds, stashed: self.isNavAssistStashed, animated: false)
         }
         window.rootViewController = root
@@ -1065,13 +1152,13 @@ class AppInfoProvider {
             isLandscapeBar = isBarLandscape
         }
 
-        let screenBounds = UIScreen.main.bounds
+        let screenBounds = barLayoutBounds
         var insets = safeAreaInsets
         // On a fast, state-restored launch (after an in-place update) the window's
         // safe area can still be zero when the bar first lays out, which would size
         // the bar without the home-indicator inset. Force a layout pass and re-read
         // so a late-arriving bottom inset is applied instead of baked in as zero.
-        if !isBarLandscape, insets.bottom == 0, let win = keyWindow {
+        if barLayoutEdge == .bottom, insets.bottom == 0, let win = keyWindow {
             win.layoutIfNeeded()
             insets = win.safeAreaInsets
         }
@@ -1084,17 +1171,25 @@ class AppInfoProvider {
         let thickness = barFlatRegion + barCornerRadiusActive
 
 
+        // The strip spans its edge and its thickness reaches inward from it. Local
+        // bounds are always a horizontal strip; `barBaseTransform` turns it onto the
+        // edge, so the length here is the length of that edge.
+        let edge = barLayoutEdge
         let boundsSize: CGSize
         let center: CGPoint
-        if isBarLandscape {
-            // Vertical strip on the right edge. Local strip length spans the
-            // screen height; thickness extends inward from the right edge.
-            boundsSize = CGSize(width: screenBounds.height, height: thickness)
-            center = CGPoint(x: screenBounds.width - thickness / 2, y: screenBounds.height / 2)
-        } else {
-            // Horizontal strip on the bottom edge (unchanged portrait layout).
+        switch edge {
+        case .bottom:
             boundsSize = CGSize(width: screenBounds.width, height: thickness)
-            center = CGPoint(x: screenBounds.width / 2, y: screenBounds.height - thickness / 2)
+            center = CGPoint(x: screenBounds.midX, y: screenBounds.height - thickness / 2)
+        case .top:
+            boundsSize = CGSize(width: screenBounds.width, height: thickness)
+            center = CGPoint(x: screenBounds.midX, y: thickness / 2)
+        case .right:
+            boundsSize = CGSize(width: screenBounds.height, height: thickness)
+            center = CGPoint(x: screenBounds.width - thickness / 2, y: screenBounds.midY)
+        case .left:
+            boundsSize = CGSize(width: screenBounds.height, height: thickness)
+            center = CGPoint(x: thickness / 2, y: screenBounds.midY)
         }
 
         let apply = {
@@ -1723,10 +1818,10 @@ class AppInfoProvider {
         // Every edge is dockable in either orientation. The edge is remembered and
         // carried through rotation, so restricting the set per orientation would
         // mean a button parked on one could not stay there once the device turned.
-        let allowedEdges: [NavAssistEdge] = [.left, .right, .top, .bottom]
+        let allowedEdges: [ScreenEdge] = [.left, .right, .top, .bottom]
 
         // Distance from the button center to a given screen edge.
-        func distance(to edge: NavAssistEdge) -> CGFloat {
+        func distance(to edge: ScreenEdge) -> CGFloat {
             switch edge {
             case .left:   return button.center.x
             case .right:  return screenBounds.width - button.center.x
@@ -1749,17 +1844,17 @@ class AppInfoProvider {
         placeNavAssist(button, in: screenBounds, stashed: distance(to: edge) < stashThreshold, animated: animated)
     }
 
-    // MARK: - Nav Assist Viewer Frame
+    // MARK: - Viewer Frame
 
     /// The four sides in clockwise order, the order a quarter-turn steps through.
-    private static let navAssistEdgesClockwise: [NavAssistEdge] = [.top, .right, .bottom, .left]
+    private static let edgesClockwise: [ScreenEdge] = [.top, .right, .bottom, .left]
 
     /// Quarter-turns the interface has been turned against the phone's own frame.
     /// `.landscapeLeft` is the phone held turned clockwise (home button on the
     /// left — the enum names are inverted against `UIDeviceOrientation`, see
     /// UIOrientation.h), which puts the phone's top side at the picture's right:
     /// one step.
-    private var navAssistInterfaceSteps: Int {
+    private var interfaceRotationSteps: Int {
         let scene = navAssistButton?.window?.windowScene ?? keyWindow?.windowScene
         switch scene?.interfaceOrientation {
         case .landscapeLeft:      return 1
@@ -1776,7 +1871,7 @@ class AppInfoProvider {
     /// Falls back to the interface's own turn when the device won't say (flat on a
     /// table, or orientation notifications not running), which makes the two cancel
     /// out and leaves the button on the layout edge it is already on.
-    private func navAssistDeviceSteps() -> Int {
+    private func deviceRotationSteps() -> Int {
         switch UIDevice.current.orientation {
         case .portrait:           lastKnownDeviceSteps = 0
         case .landscapeRight:     lastKnownDeviceSteps = 1
@@ -1784,7 +1879,7 @@ class AppInfoProvider {
         case .landscapeLeft:      lastKnownDeviceSteps = 3
         default: break
         }
-        return lastKnownDeviceSteps ?? navAssistInterfaceSteps
+        return lastKnownDeviceSteps ?? interfaceRotationSteps
     }
 
     /// Quarter-turns from the layout's frame to the viewer's — how far what the user
@@ -1794,8 +1889,8 @@ class AppInfoProvider {
     /// same frame. Non-zero exactly when the interface has stayed where it was while
     /// the phone turned, which is the case that has to move the button to a
     /// different layout edge to leave it on the same side of the user's view.
-    private var navAssistViewerSteps: Int {
-        ((navAssistDeviceSteps() - navAssistInterfaceSteps) % 4 + 4) % 4
+    private var viewerRotationSteps: Int {
+        ((deviceRotationSteps() - interfaceRotationSteps) % 4 + 4) % 4
     }
 
     /// The turn that keeps the button's symbol upright to the user: the inverse of
@@ -1805,13 +1900,13 @@ class AppInfoProvider {
     /// drawn upright in layout coordinates would otherwise read as lying on its
     /// side. Quarter-turns only, so the square symbol never clips.
     private var navAssistIconTransform: CGAffineTransform {
-        let steps = navAssistViewerSteps
+        let steps = viewerRotationSteps
         guard steps != 0 else { return .identity }
         return CGAffineTransform(rotationAngle: -CGFloat(steps) * .pi / 2)
     }
 
-    private func navAssistRotate(_ edge: NavAssistEdge, by steps: Int) -> NavAssistEdge {
-        let edges = Self.navAssistEdgesClockwise
+    private func rotateEdge(_ edge: ScreenEdge, by steps: Int) -> ScreenEdge {
+        let edges = Self.edgesClockwise
         guard let index = edges.firstIndex(of: edge) else { return edge }
         return edges[(index + steps % 4 + 4) % 4]
     }
@@ -1821,7 +1916,7 @@ class AppInfoProvider {
     /// running the same way and reverses the other; a half-turn reverses both.
     /// Named for the edge as it is in the layout, so the same answer serves both
     /// directions of the conversion.
-    private func navAssistFractionFlips(layoutEdge: NavAssistEdge, steps: Int) -> Bool {
+    private func fractionFlips(layoutEdge: ScreenEdge, steps: Int) -> Bool {
         switch ((steps % 4) + 4) % 4 {
         case 1:  return layoutEdge == .left || layoutEdge == .right
         case 2:  return true
@@ -1832,20 +1927,20 @@ class AppInfoProvider {
 
     /// The stored viewer-frame position resolved into the layout edge that is
     /// currently on that side of the user's view, and the offset to draw it at.
-    private func currentScreenPlacement() -> (edge: NavAssistEdge, fraction: CGFloat) {
-        let steps = navAssistViewerSteps
-        let edge = navAssistRotate(navAssistViewEdge, by: -steps)
-        let flips = navAssistFractionFlips(layoutEdge: edge, steps: steps)
+    private func currentScreenPlacement() -> (edge: ScreenEdge, fraction: CGFloat) {
+        let steps = viewerRotationSteps
+        let edge = rotateEdge(navAssistViewEdge, by: -steps)
+        let flips = fractionFlips(layoutEdge: edge, steps: steps)
         return (edge, flips ? 1 - navAssistAlongFraction : navAssistAlongFraction)
     }
 
     /// Records where a drag left the button — a layout edge and offset — as the side
     /// of the user's view it landed on, so a later turn of the phone can put it back
     /// on that same side rather than that same layout edge.
-    private func rememberScreenPlacement(edge: NavAssistEdge, fraction: CGFloat) {
-        let steps = navAssistViewerSteps
-        navAssistViewEdge = navAssistRotate(edge, by: steps)
-        navAssistAlongFraction = navAssistFractionFlips(layoutEdge: edge, steps: steps)
+    private func rememberScreenPlacement(edge: ScreenEdge, fraction: CGFloat) {
+        let steps = viewerRotationSteps
+        navAssistViewEdge = rotateEdge(edge, by: steps)
+        navAssistAlongFraction = fractionFlips(layoutEdge: edge, steps: steps)
             ? 1 - fraction
             : fraction
     }
@@ -1869,7 +1964,7 @@ class AppInfoProvider {
     /// The span the button's center may travel along `edge` — the free axis (Y for
     /// the side edges, X for the top and bottom), inset by the safe area and the
     /// margin at both ends.
-    private func navAssistAlongRange(for edge: NavAssistEdge, in screenBounds: CGRect, insets safeArea: UIEdgeInsets) -> ClosedRange<CGFloat> {
+    private func navAssistAlongRange(for edge: ScreenEdge, in screenBounds: CGRect, insets safeArea: UIEdgeInsets) -> ClosedRange<CGFloat> {
         let margin = Constants.navAssistMargin
         let halfSize = Constants.navAssistSize / 2
         let lower: CGFloat
@@ -1981,7 +2076,7 @@ class AppInfoProvider {
         }
     }
     
-    private func stashNavAssist(_ button: UIView, in screenBounds: CGRect, edge: NavAssistEdge, along: CGFloat, animated: Bool) {
+    private func stashNavAssist(_ button: UIView, in screenBounds: CGRect, edge: ScreenEdge, along: CGFloat, animated: Bool) {
         let size = Constants.navAssistSize
         // Show half the button off the edge; the chevron is positioned in the
         // visible half (below) so it stays fully on-screen.

@@ -594,19 +594,13 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
 
 - (void)updateMaximizedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
     CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
-    if(MultitaskDockManager.shared.barVisible) {
-        // Reserve exactly the bar's strip thickness so the app sits flush with
-        // it — no background gap showing through. The bar lives on the current
-        // short edge (bottom in portrait, right edge in landscape), so reserve
-        // from the matching dimension. Previously the bottom reserved a larger
-        // fixed value (40) than the bar's real height, leaving an empty strip.
-        CGFloat barThickness = MultitaskDockManager.shared.barReservedThickness;
-        if(UIInterfaceOrientationIsLandscape(UIApplication.sharedApplication.statusBarOrientation)) {
-            maxFrame.size.width -= barThickness;
-        } else {
-            maxFrame.size.height -= barThickness;
-        }
-    }
+    // Reserve exactly the bar's strip thickness so the app sits flush with it — no
+    // background gap showing through. The dock reports the strip as insets on the
+    // edge the bar is actually drawn along, which is the only thing that answers
+    // this correctly once the layout and the device are not turned the same way;
+    // the interface orientation used to be asked instead, and it names an edge the
+    // bar may not be on. Zero insets when no bar is up.
+    maxFrame = UIEdgeInsetsInsetRect(maxFrame, MultitaskDockManager.shared.barReservedInsets);
     [self setWindowFrame:maxFrame];
 }
 
