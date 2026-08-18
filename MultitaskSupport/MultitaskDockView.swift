@@ -200,6 +200,11 @@ class AppInfoProvider {
     /// dock appear in place rather than springing in. A target still travelling
     /// into position is one the window cannot land on cleanly.
     var homeDockShouldSkipEntrance = false
+    /// Identifies the trip to the dock that asked for the entrance to be skipped,
+    /// so the reset belonging to an earlier one cannot clear a later one's — going
+    /// home twice inside the reset's own delay would otherwise leave the second
+    /// dock springing in under an arriving window.
+    private var homeDockEntranceSkipToken = 0
     /// The launch screen each window opened with, until its guest has content of
     /// its own to show behind it.
     private var launchPlaceholders: [ObjectIdentifier: UIView] = [:]
@@ -1179,8 +1184,12 @@ class AppInfoProvider {
 
                 // Every other way the dock appears keeps its entrance.
                 if self.homeDockShouldSkipEntrance {
+                    self.homeDockEntranceSkipToken &+= 1
+                    let token = self.homeDockEntranceSkipToken
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        self.homeDockShouldSkipEntrance = false
+                        if self.homeDockEntranceSkipToken == token {
+                            self.homeDockShouldSkipEntrance = false
+                        }
                     }
                 }
             } else {

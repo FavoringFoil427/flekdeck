@@ -153,7 +153,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// icon it lands on answers with its own bounce either way.
     private var dockEntranceAnimation: Animation? {
         if #available(iOS 16.0, *), MultitaskDockManager.shared.homeDockShouldSkipEntrance {
-            return nil
+            // A single frame rather than no animation at all. The dock is inserted
+            // with a transition, and a transition given nothing to run on is left
+            // to chance: sometimes it lands on its identity, sometimes on the
+            // scaled-down transparent state it was supposed to animate out of —
+            // which is a dock that never appears. One frame is imperceptible and
+            // leaves nothing to chance.
+            return .linear(duration: 0.01)
         }
         return .spring(response: 0.42, dampingFraction: 0.82)
     }
