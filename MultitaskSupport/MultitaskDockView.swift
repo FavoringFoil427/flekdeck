@@ -15,11 +15,11 @@ extension NSNotification.Name {
     /// Posted when the rounded/flat bar design setting is toggled in Settings, so
     /// the visible bar can re-lay out live instead of waiting for the next layout.
     static let multitaskBarDesignChanged = NSNotification.Name("MultitaskBarDesignChanged")
-    /// Posted by a guest window once its app has something on screen, which is
-    /// its cue to grow out of the icon it was launched from. Object is the
-    /// window's view. Until then it stays invisible and the springboard keeps the
-    /// screen. Name is duplicated as a literal in `DecoratedAppSceneViewController`.
-    static let lcWindowIsReadyToShow = NSNotification.Name("LCWindowIsReadyToShow")
+    /// Posted by a guest window once its app is drawing its own content, which is
+    /// the cue to drop the launch screen the window opened with. Object is the
+    /// window's view. Name is duplicated as a literal in
+    /// `DecoratedAppSceneViewController`.
+    static let lcWindowContentDidArrive = NSNotification.Name("LCWindowContentDidArrive")
 }
 
 // MARK: - App Info Provider
@@ -200,6 +200,13 @@ class AppInfoProvider {
     /// dock appear in place rather than springing in. A target still travelling
     /// into position is one the window cannot land on cleanly.
     var homeDockShouldSkipEntrance = false
+    /// The launch screen each window opened with, until its guest has content of
+    /// its own to show behind it.
+    private var launchPlaceholders: [ObjectIdentifier: UIView] = [:]
+    /// Windows whose guest has reported drawing content of its own. Kept apart
+    /// from the placeholders so the report and the placeholder can arrive in
+    /// either order without one being lost.
+    private var windowsWithContent: Set<ObjectIdentifier> = []
     @Published var isAppSwitcherOpen: Bool = false
     /// The interface orientation the switcher overrode, restored when it closes.
     private var orientationBeforeSwitcher: UIInterfaceOrientation?
@@ -694,8 +701,8 @@ class AppInfoProvider {
         // needs neither side's generated header to reach the other.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(windowIsReadyToShow(_:)),
-            name: .lcWindowIsReadyToShow,
+            selector: #selector(windowContentDidArrive(_:)),
+            name: .lcWindowContentDidArrive,
             object: nil
         )
     }
@@ -969,6 +976,12 @@ class AppInfoProvider {
             // Before the app leaves the list, while its controller can still be
             // found: anything it presented goes with it.
             self.dismissPresentation(forAppUUID: appUUID)
+            // Read while the app is still in the list: a window closed before its
+            // app ever drew would otherwise leave its launch screen behind here.
+            if let view = self.apps.first(where: { $0.appUUID == appUUID })?.view {
+                self.launchPlaceholders.removeValue(forKey: ObjectIdentifier(view))
+                self.windowsWithContent.remove(ObjectIdentifier(view))
+            }
             // Animate the list mutation so the remaining switcher cards slide in
             // to fill the gap smoothly instead of snapping into place.
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -1045,6 +1058,7 @@ class AppInfoProvider {
                     self.showNavAssist(in: keyWindow)
                 }
                 self.refreshOrientationLock()
+                NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
                 return
             }
 
@@ -1087,6 +1101,14 @@ class AppInfoProvider {
                     hostingController.view.transform = self.barBaseTransform
                 }
             )
+
+            // Tell the windows the bar is here, now that it has been laid out and
+            // the strip it occupies is known. Hiding and showing the bar announced
+            // itself; its first appearance did not — so a window opened before the
+            // bar existed kept the full-height frame it was given and left its
+            // guest drawing underneath the bar, until some later change happened to
+            // put the frame right. Toggling the bar was that later change.
+            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
         }
     }
 
@@ -1866,17 +1888,28 @@ class AppInfoProvider {
         // enough for one frame of a full-screen window to be drawn before it
         // collapses onto its icon to grow back out of it.
         view?.alpha = 0
+        if let view {
+            self.attachLaunchPlaceholder(to: view, appInfo: appInfo)
+        }
 
         DispatchQueue.main.async {
             self.apps.append(appModel)
             self.frontmostAppUUID = appUUID
             self.isHomeState = false
 
-            // The window is not shown here. A guest has drawn nothing yet, and
-            // growing an empty black rectangle out of the icon takes the home
-            // screen away to show the user precisely nothing. It stays hidden and
-            // asks to be shown once it has content — see `windowIsReadyToShow`.
+            // Opens at once, carrying the app's launch screen. The guest has drawn
+            // nothing yet, but its bundle has been readable all along, so there is
+            // something to open *with* — and nothing has to wait. The placeholder
+            // is dropped once the guest has content behind it.
+            if let view {
+                LCMinimizeToIconAnimator.expand(view, fromItemID: appModel.springboardItemID)
+            }
 
+            // The bar comes up with the window, never ahead of it: it is the
+            // control for a foreground window, and on a screen that still shows
+            // the springboard it is both a lie and — since `goHome` decides by
+            // what is visible — a button that would open the app rather than
+            // leave it.
             if !self.isVisible {
                 self.showDock()
             } else {
@@ -1996,16 +2029,54 @@ class AppInfoProvider {
     /// guest process renders on its own schedule. Growing that out of an icon
     /// replaces the home screen with nothing. The home screen keeps the screen
     /// until the app can take it.
-    @objc private func windowIsReadyToShow(_ note: Notification) {
-        guard isDockEnabled(), let view = note.object as? UIView else { return }
+    @objc private func windowContentDidArrive(_ note: Notification) {
+        guard let view = note.object as? UIView else { return }
         DispatchQueue.main.async {
-            guard let app = self.apps.first(where: { $0.view === view }) else {
-                // Not ours to animate — show it rather than leave it invisible.
-                view.alpha = 1
-                return
-            }
-            LCMinimizeToIconAnimator.expand(view, fromItemID: app.springboardItemID)
+            // Remembered even when there is nothing to drop yet. The guest reports
+            // once and only once, so a report that arrives before the window has
+            // been given its launch screen must not be the report that is lost —
+            // that is a stand-in left covering a running app for good.
+            self.windowsWithContent.insert(ObjectIdentifier(view))
+
+            // Whatever the window opened with has served its purpose: the guest is
+            // drawing its own first frame behind it now, which for most apps is the
+            // very launch screen this was standing in for — so the two crossing
+            // over is not something there is anything to see.
+            guard let placeholder = self.launchPlaceholders.removeValue(forKey: ObjectIdentifier(view)) else { return }
+            self.fadeOutLaunchPlaceholder(placeholder)
         }
+    }
+
+    private func fadeOutLaunchPlaceholder(_ placeholder: UIView) {
+        UIView.animate(withDuration: Constants.standardAnimationDuration, delay: 0,
+                       options: [.curveEaseInOut, .beginFromCurrentState]) {
+            placeholder.alpha = 0
+        } completion: { _ in
+            placeholder.removeFromSuperview()
+        }
+    }
+
+    /// Puts the app's launch screen into a window that has not opened yet, so it
+    /// has something of its own to open with. Kept here rather than on the window
+    /// so that dropping it later does not depend on the guest still being around
+    /// to be asked.
+    private func attachLaunchPlaceholder(to view: UIView, appInfo: LCAppInfo?) {
+        // The guest got there first: it is already drawing, so there is nothing
+        // for a launch screen to stand in for.
+        guard !windowsWithContent.contains(ObjectIdentifier(view)) else { return }
+        guard let placeholder = LCLaunchPlaceholder.view(for: appInfo) else { return }
+        // Pinned rather than framed: the window is handed this while it is still
+        // being assembled, and is given its real size only once the guest's scene
+        // reports in — by which time the placeholder has to have followed it.
+        placeholder.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(placeholder)
+        NSLayoutConstraint.activate([
+            placeholder.topAnchor.constraint(equalTo: view.topAnchor),
+            placeholder.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            placeholder.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            placeholder.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        launchPlaceholders[ObjectIdentifier(view)] = placeholder
     }
 
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
@@ -3271,14 +3342,17 @@ struct AppSwitcherOverlay: View {
             HStack(spacing: switcherActionSpacing) {
                 Button(action: {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    // A spring, not a curve: the symbol replace below takes its
+                    // timing from this transaction, and iOS's own symbol swaps
+                    // settle with a little spring rather than easing flatly.
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                         dockManager.setPrefersFloatingButton(!dockManager.prefersFloatingButton)
                     }
                 }) {
                     Image(systemName: dockManager.prefersFloatingButton ? "chevron.up" : "chevron.down")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
-                        .contentTransition(.opacity)
+                        .modifier(SymbolReplaceTransition())
                         .frame(width: switcherActionSize, height: switcherActionSize)
                         .modifier(GlassCircleBackground())
                         // The whole circle takes the tap, not just the glyph.
@@ -4477,6 +4551,26 @@ struct GlassCapsuleBackground: ViewModifier {
             return AnyView(content.glassEffect(in: .capsule))
         }
         return AnyView(content.background(Capsule().fill(Color.white.opacity(0.15))))
+    }
+}
+
+// MARK: - Symbol Replace Transition
+/// Swaps one SF Symbol for another the way iOS swaps its own: the outgoing glyph
+/// scales away downward as the incoming one rises into its place, rather than
+/// cross-fading. Drives the switcher chevron as it flips between down (hide the
+/// bar) and up (bring it back).
+///
+/// Erased to AnyView — see `DockPillBackground.body` for why. `.symbolEffect` is
+/// an iOS 17 type, and an opaque return type would bake it into the view's Body
+/// metadata, which iOS 16 cannot resolve even though the call itself is guarded.
+@available(iOS 16.0, *)
+struct SymbolReplaceTransition: ViewModifier {
+    func body(content: Content) -> AnyView {
+        if #available(iOS 17.0, *) {
+            return AnyView(content.contentTransition(.symbolEffect(.replace.downUp)))
+        }
+        // No symbol effects before 17: fade one glyph into the other instead.
+        return AnyView(content.contentTransition(.opacity))
     }
 }
 
