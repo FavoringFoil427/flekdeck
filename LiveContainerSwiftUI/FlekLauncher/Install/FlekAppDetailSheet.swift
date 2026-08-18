@@ -170,6 +170,9 @@ struct FlekAppDetailSheet: View {
     /// Tallest the screenshot row is allowed to get. Portrait shots reach it;
     /// landscape ones are limited by width instead.
     private static let maxScreenshotHeight: CGFloat = 380
+    /// Gap between shots, shared with the skeleton row so the two are laid out
+    /// alike and the swap from one to the other moves nothing.
+    private static let gallerySpacing: CGFloat = 10
     private static let hPadding: CGFloat = 20
     /// Height of the pinned dismiss strip the content scrolls beneath.
     private static let headerStripHeight: CGFloat = 44
@@ -203,6 +206,10 @@ struct FlekAppDetailSheet: View {
                     .animation(reduceMotion ? .easeInOut(duration: 0.2)
                                             : .spring(response: 0.4, dampingFraction: 0.9),
                                value: detail?.id)
+                    // The skeleton stands at the portrait height; a landscape
+                    // gallery comes in shorter. Settle into the measured height
+                    // rather than snapping the page to it.
+                    .animation(.easeInOut(duration: 0.25), value: model.galleryAspect)
                 }
 
                 dismissStrip
@@ -507,29 +514,14 @@ struct FlekAppDetailSheet: View {
             if let aspect = model.galleryAspect {
                 let height = galleryHeight(aspect: aspect, containerWidth: containerWidth)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Self.gallerySpacing) {
                         ForEach(Array(photos.enumerated()), id: \.offset) { position, photo in
                             Button {
                                 viewer = ViewerTarget(photos: photos, index: position)
                             } label: {
-                                KFImage(URL(string: photo))
-                                    .placeholder {
-                                        FlekImagePlaceholder(cornerRadius: 14)
-                                            .frame(width: height * aspect)
-                                    }
-                                    // Never written to disk. Screenshots are far
-                                    // larger than icons and Kingfisher's disk
-                                    // cache has no size limit, so browsing app
-                                    // pages would grow it without bound for
-                                    // images that are only worth keeping while
-                                    // the page is open.
-                                    .cacheMemoryOnly()
-                                    .cancelOnDisappear(true)
-                                    .fade(duration: 0.15)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: height)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                FlekScreenshotThumb(photo: photo,
+                                                    slotWidth: height * aspect,
+                                                    height: height)
                             }
                             .buttonStyle(FlekScreenshotPressStyle())
                         }
@@ -540,17 +532,39 @@ struct FlekAppDetailSheet: View {
             } else {
                 // Measuring the first shot. Held at the portrait height so the
                 // page doesn't reflow twice — once here and again on arrival.
-                loadingGallery
+                skeletonGallery(containerWidth: containerWidth)
             }
         } else if isFlekstore && model.isLoading {
-            loadingGallery
+            skeletonGallery(containerWidth: containerWidth)
         }
     }
 
-    private var loadingGallery: some View {
-        ProgressView()
-            .frame(maxWidth: .infinity)
-            .frame(height: Self.maxScreenshotHeight)
+    /// The row before there is anything to put in it — blocks the shape the
+    /// shots will be, rather than a spinner alone in 380pt of empty page.
+    ///
+    /// They are the same blocks each shot then holds its own slot with, laid out
+    /// at the same spacing and inset, so when the real row takes over nothing
+    /// jumps: the images simply arrive on top of the blocks already there.
+    private func skeletonGallery(containerWidth: CGFloat) -> some View {
+        let aspect = FlekAppDetailModel.fallbackAspect
+        let height = galleryHeight(aspect: aspect, containerWidth: containerWidth)
+        let itemWidth = height * aspect
+        // One past what fits, so the row is cut off at the edge the way the real
+        // one is and reads as scrollable before it can be scrolled.
+        let count = max(2, Int((containerWidth / (itemWidth + Self.gallerySpacing)).rounded(.up)) + 1)
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Self.gallerySpacing) {
+                ForEach(Array(0..<count), id: \.self) { _ in
+                    FlekImagePlaceholder(cornerRadius: 14)
+                        .frame(width: itemWidth, height: height)
+                }
+            }
+            .padding(.horizontal, Self.hPadding)
+        }
+        // There is nothing here to scroll to yet, and nothing to tap.
+        .allowsHitTesting(false)
+        .frame(height: height)
     }
 
     // MARK: Description
@@ -636,6 +650,70 @@ struct FlekAppDetailSheet: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
         .padding(.horizontal, Self.hPadding)
+    }
+}
+
+/// One shot in the gallery: a skeleton block the image then fades in over.
+///
+/// The crossfade is held here rather than left to Kingfisher's own placeholder
+/// and `.fade`, which drop the placeholder the frame the image lands and fade
+/// the image up from whatever is behind it — grey, then bare page, then the
+/// shot. Keeping the block underneath gives the image something to arrive on.
+private struct FlekScreenshotThumb: View {
+    let photo: String
+    /// What the skeleton holds: the row's aspect, since this shot's own isn't
+    /// known until it decodes.
+    let slotWidth: CGFloat
+    let height: CGFloat
+
+    /// Deliberately not gated on Reduce Motion: a cross-dissolve is what that
+    /// setting asks for in place of movement, not something it asks to remove.
+    private static let fadeDuration: TimeInterval = 0.28
+
+    @State private var loaded = false
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            // A shot that never arrives keeps its block but stops breathing —
+            // a pulse outlasting the request would read as still loading.
+            FlekImagePlaceholder(cornerRadius: 14, pulses: !failed)
+                // Collapses as the image takes over, so a shot narrower than
+                // the row's slot isn't left padded out to it afterwards.
+                .frame(width: loaded ? 0 : slotWidth, height: height)
+                .opacity(loaded ? 0 : 1)
+
+            KFImage(URL(string: photo))
+                // Kingfisher's own placeholder is left clear — the block above
+                // is the one on show. It still stands in the slot, at the full
+                // size: `scaledToFit` below reads its ratio off whatever is in
+                // here while the shot is loading, and a placeholder with no
+                // height of its own gives it a wild one, which blows the item
+                // up to thousands of points wide and pushes the rest of the row
+                // off the screen.
+                .placeholder { Color.clear.frame(width: slotWidth, height: height) }
+                // Never written to disk. Screenshots are far larger than icons
+                // and Kingfisher's disk cache has no size limit, so browsing app
+                // pages would grow it without bound for images that are only
+                // worth keeping while the page is open.
+                .cacheMemoryOnly()
+                .cancelOnDisappear(true)
+                .onSuccess { _ in reveal() }
+                // Scrolling a shot off the row cancels its request; that isn't a
+                // failure, and it will start again when it comes back.
+                .onFailure { error in failed = !error.isTaskCancelled }
+                .resizable()
+                .scaledToFit()
+                .frame(height: height)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .opacity(loaded ? 1 : 0)
+        }
+    }
+
+    private func reveal() {
+        guard !loaded else { return }
+        failed = false
+        withAnimation(.easeOut(duration: Self.fadeDuration)) { loaded = true }
     }
 }
 
