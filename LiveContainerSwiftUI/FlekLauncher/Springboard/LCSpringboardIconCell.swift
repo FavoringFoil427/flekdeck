@@ -9,24 +9,6 @@
 import UIKit
 import SwiftUI
 
-/// A label that keeps its text at the top of its box instead of centred in it.
-///
-/// The title's box is tall enough for the second line a long app name may need,
-/// but most names take one — and a one-line name has to sit where the design
-/// puts it, not halfway down a box sized for the exception.
-private final class LCIconTitleLabel: UILabel {
-    override func textRect(forBounds bounds: CGRect,
-                           limitedToNumberOfLines numberOfLines: Int) -> CGRect {
-        var rect = super.textRect(forBounds: bounds, limitedToNumberOfLines: numberOfLines)
-        rect.origin.y = bounds.origin.y
-        return rect
-    }
-
-    override func drawText(in rect: CGRect) {
-        super.drawText(in: textRect(forBounds: bounds, limitedToNumberOfLines: numberOfLines))
-    }
-}
-
 final class LCSpringboardIconCell: UICollectionViewCell {
 
     // MARK: - Subviews
@@ -41,13 +23,14 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     /// The font is set in `layoutSubviews`, where the card's width is known.
     let nameLabel: UILabel = {
-        let label = LCIconTitleLabel()
+        let label = UILabel()
         label.textColor = .label
         label.textAlignment = .center
-        label.numberOfLines = 2
+        label.numberOfLines = 1
+        // A name too long for its box is cut short rather than shrunk: the
+        // titles across a page read as one size that way, and an ellipsis says
+        // there is more name plainly enough.
         label.lineBreakMode = .byTruncatingTail
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.8
         return label
     }()
 
@@ -194,11 +177,8 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     private static let labelWidthFraction: CGFloat = 77.0 / 110.0
     private static let labelHeightFraction: CGFloat = 14.0 / 110.0
     private static let labelTopSpacingFraction: CGFloat = 8.0 / 110.0
-    /// 12pt against the design's card, and the same share of a wider one.
-    private static let labelFontFraction: CGFloat = 12.0 / 110.0
-    /// A name too long for one line wraps rather than being cut short. Beyond
-    /// this it is cut short — and shrunk first, by `minimumScaleFactor`.
-    private static let titleMaxLines: Int = 2
+    /// 11pt against the design's card, and the same share of a wider one.
+    private static let labelFontFraction: CGFloat = 11.0 / 110.0
     /// The squircle's corner as a share of its side — the same ratio
     /// `LCMinimizeToIconAnimator` rounds a landing window to.
     private static let iconCornerFraction: CGFloat = 0.2237
@@ -381,18 +361,12 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         // Rotate so stroke starts at top (clockwise)
         ringFillLayer.transform = CATransform3DMakeRotation(-.pi / 2, 0, 0, 1)
 
-        // The box the block above is centred on is the design's one-line title,
-        // so every icon in a row sits at the same height whatever its name is
-        // called. A name that needs the second line grows down into the room
-        // left below it rather than pushing its own icon up out of the row.
         nameLabel.font = Self.labelFont
-        let labelTop = contentY + iconS + labelGap
-        let maxTitleHeight = (nameLabel.font.lineHeight * CGFloat(Self.titleMaxLines)).rounded(.up)
         nameLabel.frame = CGRect(
             x: ((bounds.width - labelS.width) / 2).rounded(),
-            y: labelTop,
+            y: contentY + iconS + labelGap,
             width: labelS.width,
-            height: min(max(labelS.height, maxTitleHeight), bounds.height - labelTop)
+            height: labelS.height
         )
 
         // Single-mode badge (top-right corner of glass card)
