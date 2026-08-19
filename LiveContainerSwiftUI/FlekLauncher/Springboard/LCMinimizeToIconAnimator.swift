@@ -354,10 +354,17 @@ enum LCMinimizeToIconAnimator {
     /// `sourceInWindow` overrides the icon lookup for a caller that knows where the
     /// window is coming from and it is not an icon — the switcher, where the card
     /// the user just pressed is the thing that should become the window.
+    /// `fadesIn` is what a window coming out of an *icon* needs: it is transparent
+    /// at icon size so the icon shows through where the window is going to be, and
+    /// opaque by the time it has grown clear of it. A window coming out of a
+    /// switcher card wants the opposite — the card is already showing that app, so
+    /// fading in over it is fading the app in over a picture of itself. It grows
+    /// opaque instead, and the card simply becomes the window.
     static func expand(
         _ view: UIView,
         fromItemID itemID: String?,
         sourceInWindow: CGRect? = nil,
+        fadesIn: Bool = true,
         completion: (() -> Void)? = nil
     ) {
         guard let container = view.superview,
@@ -417,7 +424,7 @@ enum LCMinimizeToIconAnimator {
             translationX: source.midX - full.midX,
             y: source.midY - full.midY
         ).scaledBy(x: scaleX, y: scaleY)
-        view.alpha = 0
+        view.alpha = fadesIn ? 0 : 1
 
         // The corners unroll from the icon's to the window's own, ending on the
         // radius the window actually rests at rather than on the screen's. Ending
@@ -451,13 +458,13 @@ enum LCMinimizeToIconAnimator {
         // The mirror of the closing fade: fully transparent at icon size, so the
         // icon shows through where the window is going to be, and fully opaque as
         // it arrives at full size — coming up evenly across everything in between.
-        let fade = UIViewPropertyAnimator(duration: flightDuration, curve: fadeCurve) {
-            view.alpha = 1
-        }
+        let fade = fadesIn
+            ? UIViewPropertyAnimator(duration: flightDuration, curve: fadeCurve) { view.alpha = 1 }
+            : nil
 
         beginFlight()
         flight.startAnimation()
-        fade.startAnimation()
+        fade?.startAnimation()
     }
 
     /// An icon-sized source around a point, for a caller that knows where a window

@@ -2152,7 +2152,12 @@ class AppInfoProvider {
     }
     
     // Find and bring corresponding multitask view to front
-    func bringMultitaskViewToFront(uuid: String, from center: CGPoint? = nil) -> Bool {
+    /// `fromRect` is the thing on screen the window should come out of, in window
+    /// coordinates — a switcher card, which is already showing the app at a known
+    /// size and place. `from` is the weaker form for a caller that knows only
+    /// where a finger landed.
+    func bringMultitaskViewToFront(uuid: String, from center: CGPoint? = nil,
+                                   fromRect: CGRect? = nil) -> Bool {
         // Use the same foreground-active resolution as `keyWindow` rather than the
         // unordered `connectedScenes.first`, so a restored/background scene from a
         // previous launch can't be searched instead of the live one.
@@ -2175,7 +2180,12 @@ class AppInfoProvider {
                 for other in self.apps where other.appUUID != uuid {
                     self.dismissPresentation(forAppUUID: other.appUUID)
                 }
-                animateViewAppearance(targetView, from: center, in: window)
+                let source = fromRect ?? center.map(LCMinimizeToIconAnimator.sourceRect(around:))
+                // A card is already showing this app, so the window grows out of it
+                // opaque. Everywhere else it comes out of an icon, which it has to
+                // fade in over.
+                animateViewAppearance(targetView, from: source, fadesIn: fromRect == nil,
+                                      in: window)
                 let wasHomeState = self.isHomeState
                 self.isHomeState = false
                 self.frontmostAppUUID = uuid
@@ -2206,7 +2216,8 @@ class AppInfoProvider {
         }
     }
 
-    private func animateViewAppearance(_ view: UIView, from center: CGPoint?, in window: UIWindow) {
+    private func animateViewAppearance(_ view: UIView, from source: CGRect?,
+                                       fadesIn: Bool = true, in window: UIWindow) {
         let isHidden = view.isHidden || view.alpha < 0.1
         let decoratedVC = view._viewDelegate() as? DecoratedAppSceneViewController
         let isMaximized = decoratedVC?.isMaximized ?? false
@@ -2240,7 +2251,8 @@ class AppInfoProvider {
                 LCMinimizeToIconAnimator.expand(
                     view,
                     fromItemID: self.apps.first { $0.view === view }?.springboardItemID,
-                    sourceInWindow: center.map(LCMinimizeToIconAnimator.sourceRect(around:))
+                    sourceInWindow: source,
+                    fadesIn: fadesIn
                 )
             }
         } else {
@@ -4634,6 +4646,11 @@ struct AppSwitcherCard: View {
     @State private var isVerticalDrag = false
     @State private var hasPassedThreshold = false
     @State private var closeAllOffset: CGFloat = 0
+    /// Where this card sits, so the window it opens can come out of it. Measured
+    /// from the layout rather than from what is drawn: a card is scaled as it
+    /// arrives and offset while it is dragged, and the window should come out of
+    /// where the card sits rather than where it happens to be mid-gesture.
+    @State private var cardFrame: CGRect = .zero
 
     /// Read off the size the card was given rather than from the device, so the
     /// content can never disagree with the frame holding it. iPhone's card is
@@ -4801,10 +4818,22 @@ struct AppSwitcherCard: View {
             // a hosted UIKit button, so on iOS 17.4 a tap meant for the speaker
             // opened the app instead. Only a press long enough to fail this
             // gesture — the volume drag — ever got through.
+            .background(
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { cardFrame = geometry.frame(in: .global) }
+                        .onChange(of: geometry.frame(in: .global)) { cardFrame = $0 }
+                }
+            )
             .onTapGesture {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 dockManager.dismissAppSwitcher()
-                let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
+                // Out of the card rather than out of nowhere: it is already
+                // showing the app, at the size and place the user just pressed.
+                let _ = dockManager.bringMultitaskViewToFront(
+                    uuid: app.appUUID,
+                    fromRect: cardFrame == .zero ? nil : cardFrame
+                )
             }
         }
         .offset(y: dragOffset + closeAllOffset)
