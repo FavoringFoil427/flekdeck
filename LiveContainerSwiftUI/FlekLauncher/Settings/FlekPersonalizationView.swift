@@ -24,7 +24,6 @@ struct FlekPersonalizationView: View {
     @AppStorage("dynamicColors", store: LCUtils.appGroupUserDefault) private var dynamicColors = true
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) private var darkModeIcon = false
     @AppStorage("LCFrameShortcutIcons", store: LCUtils.appGroupUserDefault) private var frameShortIcon = false
-    @AppStorage("LCMultitaskButtonHaptics", store: LCUtils.appGroupUserDefault) private var multitaskButtonHaptics = true
 
     @State private var showCollection = false
     @State private var showPhotoPicker = false
@@ -80,23 +79,6 @@ struct FlekPersonalizationView: View {
                             .padding(.horizontal, 16).padding(.vertical, 12)
                     }
                     .background(card)
-                }
-
-                // MARK: Multitasking
-                if #available(iOS 16.0, *) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        sectionHeader("lc.flek.multitasking".loc)
-                        VStack(spacing: 0) {
-                            Toggle("lc.flek.switcherHaptics".loc, isOn: $multitaskButtonHaptics)
-                                .padding(.horizontal, 16).padding(.vertical, 12)
-                        }
-                        .background(card)
-
-                        Text("lc.flek.switcherHapticsFooter".loc)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                    }
                 }
 
             }

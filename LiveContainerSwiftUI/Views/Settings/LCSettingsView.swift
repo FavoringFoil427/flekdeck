@@ -73,6 +73,7 @@ struct LCSettingsView: View {
     // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
     // Bar rounding amount, 0 (flat) … 100 (fully rounded concave corners).
     @AppStorage("LCMultitaskBarLedgeAmount", store: LCUtils.appGroupUserDefault) var barLedgeAmount: Double = 60
+    @AppStorage("LCMultitaskButtonHaptics", store: LCUtils.appGroupUserDefault) var multitaskButtonHaptics = true
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
@@ -849,6 +850,9 @@ struct LCSettingsView: View {
                             }
                             Toggle(isOn: $redirectURLToHost) {
                                 Text("lc.settings.redirectURLToHost".loc)
+                            }
+                            Toggle(isOn: $multitaskButtonHaptics) {
+                                Text("lc.flek.switcherHaptics".loc)
                             }
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {

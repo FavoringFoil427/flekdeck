@@ -14354,17 +14354,6 @@
         }
       }
     },
-    "lc.flek.multitasking": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Multitasking"
-          }
-        }
-      }
-    },
     "lc.flek.switcherHaptics": {
       "extractionState": "manual",
       "localizations": {
@@ -14372,17 +14361,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Switcher Button Haptics"
-          }
-        }
-      }
-    },
-    "lc.flek.switcherHapticsFooter": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Taps back when you press the buttons on the switcher bar and in the app switcher."
           }
         }
       }
