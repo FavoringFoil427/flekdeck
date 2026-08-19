@@ -1422,7 +1422,7 @@ class AppInfoProvider {
                 // Minimize ALL visible windows and hide the dock bar. This is the
                 // way home, so a built-in page shrinks into its own icon on the
                 // way rather than simply going out.
-                self.minimizeAllWindows(intoIcons: true)
+                self.minimizeAllWindows(style: .intoIcons)
                 self.updateFrontmostApp()
                 self.isHomeState = true
                 self.hideDock()
@@ -2213,7 +2213,10 @@ class AppInfoProvider {
         
         // when a fullscreen multitask app is brought to front, optionally hide other windows
         if UserDefaults.lcShared().bool(forKey: "LCMaxOneAppOnStage") && isMaximized {
-            MultitaskDockManager.shared.minimizeAllWindows(except: decoratedVC)
+            // They are making way rather than going home, so the one on top fades
+            // and the rest simply go. Every window fading at once read as the stack
+            // being scattered by an app being opened.
+            MultitaskDockManager.shared.minimizeAllWindows(except: decoratedVC, style: .fade)
         }
         
         if isHidden {
@@ -2495,15 +2498,30 @@ class AppInfoProvider {
         launchPlaceholders[ObjectIdentifier(view)] = placeholder
     }
 
+    /// How windows leave when several are put away at once. Whichever it is, at
+    /// most one of them moves: several windows animating together reads as the
+    /// stack being scattered rather than an app being put away.
+    enum WindowExit {
+        /// Going home. The window on top shrinks into its own icon.
+        case intoIcons
+        /// Making way for a window being brought forward. The one on top fades;
+        /// there is no icon it is going to.
+        case fade
+        /// Underneath somebody else's choreography — the switcher's own way home,
+        /// where the overlay is clearing to reveal the springboard. Any movement
+        /// of ours would be seen through it, so there is none.
+        case immediate
+    }
+
     @objc public func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil) {
-        minimizeAllWindows(except: except, intoIcons: false)
+        minimizeAllWindows(except: except, style: .fade)
     }
 
     /// `intoIcons` is the home button's path: a built-in page shrinks into its
     /// own springboard icon on the way out. Every other caller — switching apps,
     /// the switcher's own way back — has its own choreography over the top of
     /// this, so there the page just goes.
-    func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil, intoIcons: Bool) {
+    func minimizeAllWindows(except: DecoratedAppSceneViewController? = nil, style: WindowExit) {
         DispatchQueue.main.async {
             // Capture snapshots of visible windows before minimizing them
             for app in self.apps {
@@ -2516,7 +2534,7 @@ class AppInfoProvider {
             // button that scatters the whole stack instead of putting away the app
             // in front of you. The rest go without a move of their own, so what the
             // flying window uncovers is the springboard.
-            let flying = intoIcons ? self.frontmostVisibleWindow() : nil
+            let flying = style == .immediate ? nil : self.frontmostVisibleWindow()
             // What the flying window actually covers. A maximized window covers the
             // whole stack, which is the usual case; a windowed guest covers little
             // or nothing, and those windows are genuinely on screen beside it, so
@@ -2529,7 +2547,8 @@ class AppInfoProvider {
                     // page leaves from the window rather than from inside the
                     // presentation it was hosted in.
                     self.dismissPresentation(forAppUUID: app.appUUID) {
-                        if pageView === flying, let itemID = app.springboardItemID {
+                        if style == .intoIcons, pageView === flying,
+                           let itemID = app.springboardItemID {
                             LCMinimizeToIconAnimator.minimize(pageView, toItemID: itemID)
                         } else {
                             pageView.isHidden = true
@@ -2544,16 +2563,18 @@ class AppInfoProvider {
                         // server, which this process cannot snapshot — and then be left
                         // in the resting state the window class expects, which is what
                         // `finishMinimizeWindow` is for.
-                        if let guestView = app.view, guestView === flying,
-                           let itemID = app.springboardItemID {
+                        if style == .intoIcons, let guestView = app.view,
+                           guestView === flying, let itemID = app.springboardItemID {
                             LCMinimizeToIconAnimator.minimize(guestView, toItemID: itemID) {
                                 vc.finishMinimizeWindow()
                             }
-                        } else if intoIcons, let guestView = app.view,
+                        } else if style == .immediate {
+                            vc.finishMinimizeWindow()
+                        } else if let guestView = app.view, guestView !== flying,
                                   covered.contains(guestView.frame) {
-                            // Out of sight behind the window that is flying, so it
+                            // Out of sight behind the window that is leaving, so it
                             // needs no exit of its own — and must not draw one, or it
-                            // is seen shrinking as that window uncovers it.
+                            // is seen moving as that window uncovers it.
                             vc.finishMinimizeWindow()
                         } else {
                             vc.minimizeWindow()
@@ -2907,7 +2928,9 @@ class AppInfoProvider {
     func goToSpringboardFromSwitcher() {
         guard isAppSwitcherOpen else { return }
         isAppSwitcherOpen = false
-        minimizeAllWindows()
+        // The overlay above is already clearing to reveal the springboard, and a
+        // window moving underneath it is seen through it. They go without a move.
+        minimizeAllWindows(style: .immediate)
         updateFrontmostApp()
         isHomeState = true
         hideDock()
