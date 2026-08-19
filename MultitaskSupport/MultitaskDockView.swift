@@ -1204,7 +1204,10 @@ class AppInfoProvider {
                 delay: 0,
                 usingSpringWithDamping: Constants.standardSpringDamping,
                 initialSpringVelocity: Constants.standardSpringVelocity,
-                options: .curveEaseOut
+                // The bar carries the buttons that leave an app, and a view being
+                // animated by UIKit takes no touches unless it is asked to. Without
+                // this it is dead to the touch for the length of every re-layout.
+                options: [.curveEaseOut, .allowUserInteraction]
             ) {
                 apply()
             }
@@ -1727,7 +1730,8 @@ class AppInfoProvider {
             delay: 0.03,
             usingSpringWithDamping: Constants.showHideSpringDamping,
             initialSpringVelocity: 0,
-            options: .curveEaseOut
+            // Tappable as it arrives, rather than only once it has settled.
+            options: [.curveEaseOut, .allowUserInteraction]
         ) {
             button.alpha = 1
             button.transform = .identity
@@ -2064,7 +2068,9 @@ class AppInfoProvider {
                 delay: 0,
                 usingSpringWithDamping: Constants.standardSpringDamping,
                 initialSpringVelocity: Constants.standardSpringVelocity,
-                options: .curveEaseOut
+                // Still a button while it is settling against the edge it was
+                // thrown at, not a picture of one.
+                options: [.curveEaseOut, .allowUserInteraction]
             ) {
                 button.center = center
                 button.alpha = alpha
@@ -2922,7 +2928,11 @@ class AppInfoProvider {
             delay: 0,
             usingSpringWithDamping: 0.85,
             initialSpringVelocity: 0,
-            options: .curveEaseOut
+            // A view being animated by UIKit does not receive touches unless it is
+            // asked to. Without this the overlay ignores everything for the length
+            // of its own entrance: the switcher is fully drawn and plainly there,
+            // and the first tap or swipe onto a card does nothing.
+            options: [.curveEaseOut, .allowUserInteraction]
         ) {
             hc.view.alpha = 1
         } completion: { _ in
