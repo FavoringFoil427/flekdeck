@@ -1412,9 +1412,10 @@ class AppInfoProvider {
                 // Whether anything is headed for the dock has to be settled before
                 // the home state flips, since that is what puts the dock on screen:
                 // decided any later and its entrance has already begun.
+                let flying = self.frontmostVisibleWindow()
                 self.homeDockShouldSkipEntrance = self.apps.contains { app in
-                    guard let itemID = app.springboardItemID,
-                          let view = app.view, !view.isHidden else { return false }
+                    guard let view = app.view, view === flying,
+                          let itemID = app.springboardItemID else { return false }
                     return LCMinimizeToIconAnimator.willUseHomeDock(forItemID: itemID)
                 }
 
@@ -2508,6 +2509,19 @@ class AppInfoProvider {
             for app in self.apps {
                 self.captureSnapshot(for: app.appUUID)
             }
+            // Only the window on top flies home. Hopping between apps in the
+            // switcher leaves the ones behind visible but covered — nothing hides
+            // them, they are simply underneath — and flying those as well sends
+            // several windows shrinking out from under the top one at once, a home
+            // button that scatters the whole stack instead of putting away the app
+            // in front of you. The rest go without a move of their own, so what the
+            // flying window uncovers is the springboard.
+            let flying = intoIcons ? self.frontmostVisibleWindow() : nil
+            // What the flying window actually covers. A maximized window covers the
+            // whole stack, which is the usual case; a windowed guest covers little
+            // or nothing, and those windows are genuinely on screen beside it, so
+            // they keep an exit of their own rather than blinking out.
+            let covered = flying?.frame ?? .null
             self.apps.forEach { app in
                 if app.isInternalPage {
                     guard let pageView = app.view else { return }
@@ -2515,7 +2529,7 @@ class AppInfoProvider {
                     // page leaves from the window rather than from inside the
                     // presentation it was hosted in.
                     self.dismissPresentation(forAppUUID: app.appUUID) {
-                        if intoIcons, !pageView.isHidden, let itemID = app.springboardItemID {
+                        if pageView === flying, let itemID = app.springboardItemID {
                             LCMinimizeToIconAnimator.minimize(pageView, toItemID: itemID)
                         } else {
                             pageView.isHidden = true
@@ -2530,17 +2544,34 @@ class AppInfoProvider {
                         // server, which this process cannot snapshot — and then be left
                         // in the resting state the window class expects, which is what
                         // `finishMinimizeWindow` is for.
-                        if intoIcons, let guestView = app.view, !guestView.isHidden,
+                        if let guestView = app.view, guestView === flying,
                            let itemID = app.springboardItemID {
                             LCMinimizeToIconAnimator.minimize(guestView, toItemID: itemID) {
                                 vc.finishMinimizeWindow()
                             }
+                        } else if intoIcons, let guestView = app.view,
+                                  covered.contains(guestView.frame) {
+                            // Out of sight behind the window that is flying, so it
+                            // needs no exit of its own — and must not draw one, or it
+                            // is seen shrinking as that window uncovers it.
+                            vc.finishMinimizeWindow()
                         } else {
                             vc.minimizeWindow()
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// The window the user is actually looking at: the topmost of the host's
+    /// stack that is neither hidden nor transparent. Read from the view order
+    /// rather than from `frontmostAppUUID`, which records what was last brought
+    /// forward and not what is on top of the screen now.
+    private func frontmostVisibleWindow() -> UIView? {
+        let windows = Set(apps.compactMap { $0.view }.map(ObjectIdentifier.init))
+        return windowHostingView.subviews.last {
+            windows.contains(ObjectIdentifier($0)) && !$0.isHidden && $0.alpha > 0.1
         }
     }
     
