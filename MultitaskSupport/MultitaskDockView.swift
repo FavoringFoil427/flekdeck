@@ -513,14 +513,39 @@ class AppInfoProvider {
     /// assuming a bottom-or-right edge derived from the interface orientation, which
     /// is not the same question once the layout and the device part ways.
     @objc public var barReservedInsets: UIEdgeInsets {
-        guard isSwitcherBarVisible else { return .zero }
+        guard isSwitcherBarVisible,
+              let barView = hostingController?.view,
+              let window = keyWindow else { return .zero }
+
+        // Measured from where the bar physically is, converted into the window the
+        // guest lives in — not derived a second time from the rotation maths.
+        //
+        // The bar is laid out inside its own container, in a separate overlay
+        // window, and its edge is chosen in THAT rectangle. The guest window lives
+        // in the app's window. While the two rectangles agree the edge name means
+        // the same thing in both, and everything lines up. When they do not — the
+        // app's window upright, the bar's container turned with the viewer — the
+        // same name points at different sides, and the guest gets trimmed on an
+        // edge the bar is nowhere near: content pushed inward, its far end left
+        // under the bar, and the host's black backdrop showing in the gap.
+        //
+        // A rect converted between them cannot disagree with itself, whatever the
+        // two spaces are doing.
+        let strip = barView.convert(barView.bounds, to: window).intersection(window.bounds)
+        guard !strip.isNull, strip.width > 0, strip.height > 0 else { return .zero }
+
+        // The visible flat region only. The strip also carries the concave corner
+        // overhang, which is transparent and deliberately overlaps the app.
         let thickness = barReservedThickness
-        switch barLayoutEdge {
-        case .bottom: return UIEdgeInsets(top: 0, left: 0, bottom: thickness, right: 0)
-        case .top:    return UIEdgeInsets(top: thickness, left: 0, bottom: 0, right: 0)
-        case .left:   return UIEdgeInsets(top: 0, left: thickness, bottom: 0, right: 0)
-        case .right:  return UIEdgeInsets(top: 0, left: 0, bottom: 0, right: thickness)
+        let bounds = window.bounds
+        if strip.width >= strip.height {
+            return strip.midY < bounds.midY
+                ? UIEdgeInsets(top: thickness, left: 0, bottom: 0, right: 0)
+                : UIEdgeInsets(top: 0, left: 0, bottom: thickness, right: 0)
         }
+        return strip.midX < bounds.midX
+            ? UIEdgeInsets(top: 0, left: thickness, bottom: 0, right: 0)
+            : UIEdgeInsets(top: 0, left: 0, bottom: 0, right: thickness)
     }
 
     /// The exact on-screen thickness of the switcher bar strip on its short edge
@@ -819,6 +844,12 @@ class AppInfoProvider {
         rotateEdge(barViewerEdge, by: -viewerRotationSteps)
     }
 
+    /// The edge `updateDockFrame` last actually drew the bar along. Everything that
+    /// has to agree with where the bar *is* — rather than re-derive where it should
+    /// be — reads this, so a device reading taken at a different moment cannot put
+    /// the bar and a guest window's reserved strip on two different edges.
+    private var lastPlacedBarEdge: ScreenEdge?
+
     /// Whether the bar is laid out as a vertical strip, i.e. it sits on a left or
     /// right *layout* edge. Drives the -90° turn of the strip, the edge the internal
     /// pages reserve, and the bar content's own edge margins.
@@ -1056,6 +1087,19 @@ class AppInfoProvider {
                 // spin from animating our -90° transform at the same time.
                 self.updateDockFrame(animated: false)
             }
+            // Every open guest re-measures on a turn, whatever the bar decided to do.
+            //
+            // `updateDockFrame` only tells them when the bar changes edge — and it
+            // does not change edge in one of the two landscape directions, because
+            // the viewer's right lands on the layout's bottom both when the phone is
+            // upright and when it is turned that way. So in that direction nothing
+            // recomputed a guest's insets at all and it kept the ones it was handed
+            // upright, which is a clearance sitting on an edge that turned away from
+            // what it was clearing. Posted from here rather than from inside
+            // `updateDockFrame` for a second reason: the post there runs before the
+            // bar has actually moved, so the reservation would still measure the old
+            // strip.
+            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             // Put the floating button back on the edge it was already on, measured
             // in its host's bounds. Not gated on `isVisible` (that tracks the bar)
             // and deliberately outside it: the button is its own control, and this
@@ -1175,6 +1219,11 @@ class AppInfoProvider {
         // bounds are always a horizontal strip; `barBaseTransform` turns it onto the
         // edge, so the length here is the length of that edge.
         let edge = barLayoutEdge
+        // Remembered for `barReservedInsets`, so what a guest window trims is the
+        // edge the bar is on right now rather than a recomputed guess. Guests are
+        // told when it moves, below.
+        let edgeChanged = lastPlacedBarEdge != edge
+        lastPlacedBarEdge = edge
         let boundsSize: CGSize
         let center: CGPoint
         switch edge {
@@ -1196,6 +1245,14 @@ class AppInfoProvider {
             hostingController.view.bounds = CGRect(origin: .zero, size: boundsSize)
             hostingController.view.transform = self.barBaseTransform
             hostingController.view.center = center
+        }
+
+        // A guest window reserves the bar's strip on whichever edge it is on, so a
+        // bar that moves to another edge leaves every open guest trimmed against
+        // the old one. This is the same notification the show/hide path posts, and
+        // it re-frames each maximized window and resizes its drawable.
+        if edgeChanged {
+            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
         }
 
         if animated {

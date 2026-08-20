@@ -9,7 +9,11 @@
 
 static void *kBackdropObservationContext = &kBackdropObservationContext;
 
-@interface VirtualWindowsHostView()
+@interface VirtualWindowsHostView() {
+    /// The size the windows were last laid out against, so a layout pass that
+    /// changes nothing costs nothing.
+    CGRect _lastLaidOutBounds;
+}
 /// Opaque black filler shown behind the app windows. Guest windows don't always
 /// cover the screen — a landscape-only app on a portrait device is laid out as a
 /// scaled landscape strip, and even a maximized one leaves slivers outside its
@@ -100,6 +104,32 @@ static void *kBackdropObservationContext = &kBackdropObservationContext;
         }
     }
     _backdropView.hidden = !anyWindowVisible;
+}
+
+#pragma mark Layout
+
+/// Rotation is the case that matters: the host resizes with the window, but a
+/// guest window is framed explicitly and a guest's drawable is sized from a
+/// scene settings update. Neither happens on its own when the device turns —
+/// the only thing that used to refresh them was a settings update pushed by the
+/// guest itself, so an app that pushes none kept the shape it had and the black
+/// backdrop showed along the edge that grew.
+///
+/// Driven from layout rather than from an orientation notification because this
+/// fires when the geometry has actually changed — the notification can arrive
+/// before the window has resized, and it says nothing at all about a Split View
+/// or Slide Over resize, which needs exactly the same repair.
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if(CGRectEqualToRect(self.bounds, _lastLaidOutBounds)) return;
+    _lastLaidOutBounds = self.bounds;
+    for(UIView *subview in self.subviews) {
+        if(subview == _backdropView) continue;
+        DecoratedAppSceneViewController *decoratedVC = (id)subview._viewDelegate;
+        if([decoratedVC isKindOfClass:DecoratedAppSceneViewController.class]) {
+            [decoratedVC refreshMaximizedLayout];
+        }
+    }
 }
 
 #pragma mark Touch handling

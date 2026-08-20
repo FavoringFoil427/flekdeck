@@ -22,6 +22,12 @@ API_AVAILABLE(ios(16.0))
 - (void)minimizeWindowPiP;
 - (void)unminimizeWindowPiP;
 - (void)updateVerticalConstraints;
+/// Re-frames a maximized window to the host's current size and resizes the
+/// guest's drawable to match. Call after anything that changes the space the
+/// window has to fill — a rotation, a Split View resize — since a guest that
+/// pushes no settings update of its own would otherwise keep drawing at the
+/// old size, leaving the host's black backdrop showing along the edge that grew.
+- (void)refreshMaximizedLayout;
 /// Menu for the switcher card's Customize button: copy PID, toggle PiP, and a live
 /// UI-scale slider. Built here because it's a real `UIMenu` — the slider goes in via
 /// `UICustomViewMenuElement`, which is private UIKit and only visible to this target.

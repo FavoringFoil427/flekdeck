@@ -58,6 +58,64 @@ static const NSTimeInterval kContentGraceAfterScene = 0.45;
 /// dies on the way up. Nothing may leave a stand-in covering a window for good.
 static const NSTimeInterval kContentArrivalLimit = 4.0;
 
+/// Quarter-turns clockwise from upright, in the same sense the dock manager
+/// counts them.
+static NSInteger LCInterfaceSteps(UIInterfaceOrientation orientation) {
+    switch(orientation) {
+        case UIInterfaceOrientationLandscapeLeft:      return 1;
+        case UIInterfaceOrientationPortraitUpsideDown: return 2;
+        case UIInterfaceOrientationLandscapeRight:     return 3;
+        default:                                       return 0;
+    }
+}
+
+static NSInteger LCDeviceSteps(UIDeviceOrientation orientation) {
+    switch(orientation) {
+        case UIDeviceOrientationLandscapeRight:        return 1;
+        case UIDeviceOrientationPortraitUpsideDown:    return 2;
+        case UIDeviceOrientationLandscapeLeft:         return 3;
+        default:                                       return 0;
+    }
+}
+
+/// Rolls a set of insets `steps` quarter-turns clockwise: what sat along the left
+/// edge ends up along the top, and so on round.
+static UIEdgeInsets LCInsetsRotated(UIEdgeInsets insets, NSInteger steps) {
+    for(NSInteger i = 0; i < ((steps % 4) + 4) % 4; i++) {
+        insets = UIEdgeInsetsMake(insets.left, insets.bottom, insets.right, insets.top);
+    }
+    return insets;
+}
+
+/// The orientation the guest's scene is actually in, which is not always the
+/// host's. A landscape-only guest runs sideways inside a portrait host — its
+/// scene carries its own orientation, and every piece of geometry we hand it
+/// (its frame, and the insets it is told to keep clear) is expressed in that
+/// orientation, not in ours. Asking `statusBarOrientation` describes the bar
+/// and the launcher, not the app being laid out.
+///
+/// Falls back to the host's while a scene is still coming up and has yet to say
+/// which way it is facing.
+static UIInterfaceOrientation LCGuestSceneOrientation(UIMutableApplicationSceneSettings *settings) {
+    UIInterfaceOrientation orientation = settings.interfaceOrientation;
+    if(orientation == UIInterfaceOrientationUnknown) {
+        return UIApplication.sharedApplication.statusBarOrientation;
+    }
+    return orientation;
+}
+
+/// How far the guest has turned its own content against the scene it lives in.
+///
+/// A guest autorotates on `deviceOrientation`. When this host is pinned upright
+/// the scene never follows, so the guest is turned inside a window that is not —
+/// and anything expressed in the guest's own frame is carried around with it.
+static NSInteger LCGuestSelfRotationSteps(UIMutableApplicationSceneSettings *settings) {
+    UIDeviceOrientation device = UIDevice.currentDevice.orientation;
+    if(!UIDeviceOrientationIsValidInterfaceOrientation(device)) return 0;
+    NSInteger steps = LCDeviceSteps(device) - LCInterfaceSteps(LCGuestSceneOrientation(settings));
+    return ((steps % 4) + 4) % 4;
+}
+
 @implementation DecoratedAppSceneViewController
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
     self = [super initWithNibName:nil bundle:nil];
@@ -541,8 +599,20 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
             [self updateMaximizedFrameWithSettings:settings];
             // Keep the guest drawable in sync with the resized container so no
             // blank strip is left when the bar hides and the view grows.
-            [self applySceneFrameToSettings:settings orientation:UIApplication.sharedApplication.statusBarOrientation];
+            [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
         }];
+    }];
+}
+
+- (void)refreshMaximizedLayout {
+    if(!_isMaximized) return;
+    if(!self.appSceneVC.presenter.scene) return;
+    [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+        [self updateMaximizedFrameWithSettings:settings];
+        // The window is only half of it: the guest's drawable has to be resized
+        // to match, or the picture stays the shape it was and the backdrop shows
+        // through where the window grew.
+        [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
     }];
 }
 
@@ -550,9 +620,17 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
     BOOL bottomWindowBar = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCMultitaskBottomWindowBar"];
     UIEdgeInsets safeAreaInsets = self.view.window.safeAreaInsets;
     if(self.navigationBar.hidden) {
-        if(MultitaskDockManager.shared.barVisible) {
-            safeAreaInsets.bottom = 0; // App window doesn't extend to bottom; switcher bar handles it
-        }
+        // Whatever the bar already covers is not the guest's to keep clear a second
+        // time — but the edge it covers is not always the bottom. It is the viewer's
+        // right in landscape, which is the window's top or its bottom depending on
+        // which way the phone was turned, so the reservation comes off every edge
+        // rather than being assumed onto one. Portrait is unchanged by arithmetic:
+        // the reservation there is larger than the home-indicator inset it cancels.
+        UIEdgeInsets barInsets = MultitaskDockManager.shared.barReservedInsets;
+        safeAreaInsets.top    = MAX(safeAreaInsets.top    - barInsets.top,    0);
+        safeAreaInsets.left   = MAX(safeAreaInsets.left   - barInsets.left,   0);
+        safeAreaInsets.bottom = MAX(safeAreaInsets.bottom - barInsets.bottom, 0);
+        safeAreaInsets.right  = MAX(safeAreaInsets.right  - barInsets.right,  0);
         settings.peripheryInsets = safeAreaInsets;
         safeAreaInsets = UIEdgeInsetsZero;
     } else if(bottomWindowBar) {
@@ -568,7 +646,7 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
     // scale peripheryInsets to match the scale ratio
     settings.peripheryInsets = UIEdgeInsetsMake(settings.peripheryInsets.top/_scaleRatio, settings.peripheryInsets.left/_scaleRatio, settings.peripheryInsets.bottom/_scaleRatio, settings.peripheryInsets.right/_scaleRatio);
     if(UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPad) {
-        UIInterfaceOrientation currentOrientation = UIApplication.sharedApplication.statusBarOrientation;
+        UIInterfaceOrientation currentOrientation = LCGuestSceneOrientation(settings);
         if(UIInterfaceOrientationIsLandscape(currentOrientation)) {
             safeAreaInsets.top = 0;
         }
@@ -587,7 +665,22 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
     } else {
         settings.safeAreaInsetsPortrait = UIEdgeInsetsMake(settings.peripheryInsets.top, settings.peripheryInsets.left, settings.peripheryInsets.bottom, settings.peripheryInsets.right);
     }
+
+    // Rolled the same way the guest turned its content, not the other way.
+    //
+    // Everything above names the screen's edges in the scene's frame: the island
+    // along the top. The guest reads them in its own frame, and its own frame is
+    // the scene's turned by `selfRotation` — a guest that has turned one step
+    // clockwise calls the scene's top edge its right. Landing the island's
+    // clearance back on the island therefore means rolling by `selfRotation`, not
+    // by its inverse; the inverse puts it on the edge diametrically opposite and
+    // the guest draws under the island. Unconditional: a roll of zero is the
+    // identity, which is exactly what an un-turned guest should get.
+    NSInteger selfRotation = LCGuestSelfRotationSteps(settings);
+    settings.peripheryInsets = LCInsetsRotated(settings.peripheryInsets, selfRotation);
+    settings.safeAreaInsetsPortrait = LCInsetsRotated(settings.safeAreaInsetsPortrait, selfRotation);
     
+
     safeAreaInsets.bottom = 0;
     return safeAreaInsets;
 }
@@ -600,7 +693,8 @@ static const NSTimeInterval kContentArrivalLimit = 4.0;
     // this correctly once the layout and the device are not turned the same way;
     // the interface orientation used to be asked instead, and it names an edge the
     // bar may not be on. Zero insets when no bar is up.
-    maxFrame = UIEdgeInsetsInsetRect(maxFrame, MultitaskDockManager.shared.barReservedInsets);
+    UIEdgeInsets barInsets = MultitaskDockManager.shared.barReservedInsets;
+    maxFrame = UIEdgeInsetsInsetRect(maxFrame, barInsets);
     [self setWindowFrame:maxFrame];
 }
 
