@@ -1099,7 +1099,13 @@ class AppInfoProvider {
             // `updateDockFrame` for a second reason: the post there runs before the
             // bar has actually moved, so the reservation would still measure the old
             // strip.
-            NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+            // Only for a turn that means something. `UIDevice` reports face-up and
+            // face-down alongside the four real orientations, and neither changes
+            // any geometry — re-framing every guest window on them is work nobody
+            // asked for, inside an animation the user can see.
+            if UIDevice.current.orientation.isValidInterfaceOrientation {
+                NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
+            }
             // Put the floating button back on the edge it was already on, measured
             // in its host's bounds. Not gated on `isVisible` (that tracks the bar)
             // and deliberately outside it: the button is its own control, and this
