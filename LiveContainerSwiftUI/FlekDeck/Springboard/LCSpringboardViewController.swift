@@ -285,7 +285,7 @@ final class LCSpringboardViewController: UIViewController {
         }
         while sizes.last == 0 { sizes.removeLast() }
         if !sizes.isEmpty {
-            LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+            LCUtils.appGroupUserDefault.set(sizes, forKey: FlekDeckKeys.homeScreenPageSizes)
         }
         onReorder?(flatItems)
     }
@@ -302,7 +302,7 @@ final class LCSpringboardViewController: UIViewController {
         guard itemsPerPage > 0 else { return }
 
         let storedSizes = LCUtils.appGroupUserDefault.array(
-            forKey: FlekLauncherKeys.homeScreenPageSizes
+            forKey: FlekDeckKeys.homeScreenPageSizes
         ) as? [Int]
 
         var newPages: [[FlekHomeItem]] = []
@@ -481,7 +481,7 @@ final class LCSpringboardViewController: UIViewController {
         guard itemsPerPage > 0 else { return 0 }
 
         let sizes = LCUtils.appGroupUserDefault.array(
-            forKey: FlekLauncherKeys.homeScreenPageSizes
+            forKey: FlekDeckKeys.homeScreenPageSizes
         ) as? [Int] ?? []
 
         if !sizes.isEmpty {

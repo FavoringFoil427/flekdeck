@@ -14,11 +14,11 @@ struct FlekPersonalizationView: View {
     @AppStorage("LCBetaBannerOverride", store: LCUtils.appGroupUserDefault) private var betaBannerOverride: Int = 0
     // 0 = auto (show on beta), 1 = force on, 2 = force off
 
-    @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
     private var wallpaperDescriptor: String = FlekWallpaper.defaultDescriptor
-    @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
     private var wallpaperPhoto: String = ""
-    @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.homeLayout, store: LCUtils.appGroupUserDefault)
     private var homeLayout: String = FlekHomeLayout.grid.rawValue
 
     @AppStorage("dynamicColors", store: LCUtils.appGroupUserDefault) private var dynamicColors = true

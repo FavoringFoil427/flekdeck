@@ -9,7 +9,7 @@
 //  swaps mainBundle to the guest bundle, but +bundleForClass:, +allBundles,
 //  +bundleWithIdentifier: and anything that captured Bundle.main before the swap
 //  all still resolve to the process's real bundle. In single mode that is
-//  FlekLauncher.app, whose Info.plist carries encryptedUdid because the signing
+//  FlekDeck.app, whose Info.plist carries encryptedUdid because the signing
 //  service injects it there. In multitask mode it is PlugIns/LiveProcess.appex,
 //  which never had the key, so those checks quietly failed in parallel and
 //  nowhere else.

@@ -21,7 +21,7 @@ private struct LaunchPriorityLC: Identifiable, Hashable {
 }
 
 private let knownLiveContainers = [
-    LaunchPriorityLC(scheme: "livecontainer", displayName: "FlekLauncher"),
+    LaunchPriorityLC(scheme: "livecontainer", displayName: "FlekDeck"),
     LaunchPriorityLC(scheme: "livecontainer2", displayName: "LiveContainer2"),
     LaunchPriorityLC(scheme: "livecontainer3", displayName: "LiveContainer3")
 ]

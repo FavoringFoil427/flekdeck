@@ -1,15 +1,15 @@
 //
-//  FlekLauncherModel.swift
+//  FlekDeckModel.swift
 //  LiveContainerSwiftUI
 //
-//  Shared model + value types for the FlekLauncher springboard.
+//  Shared model + value types for the FlekDeck springboard.
 //
 
 import SwiftUI
 
 /// AppStorage keys used by the launcher. Stored in the app group so they are
 /// shared across LiveContainer instances, matching the rest of the app.
-enum FlekLauncherKeys {
+enum FlekDeckKeys {
     static let wallpaperName = "FlekWallpaperName"   // bundled wallpaper asset name
     static let wallpaperPhoto = "FlekWallpaperPhoto" // file name of a user-picked photo wallpaper
     static let homeLayout = "FlekHomeLayout"         // "grid" | "list"
@@ -26,7 +26,7 @@ enum FlekHomeLayout: String {
 }
 
 /// The three built-in "apps" pinned at the start of the home screen.
-/// They open internal FlekLauncher pages instead of a guest app.
+/// They open internal FlekDeck pages instead of a guest app.
 enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
     case flekstore
     case settings
@@ -209,15 +209,15 @@ final class FlekLaunchTracker {
 
     /// In-memory cache so isNew() doesn't read UserDefaults and rebuild a Set for
     /// every row on every render. Seeded lazily from disk; updated on write.
-    private lazy var cache: Set<String> = Set(store.stringArray(forKey: FlekLauncherKeys.launchedApps) ?? [])
+    private lazy var cache: Set<String> = Set(store.stringArray(forKey: FlekDeckKeys.launchedApps) ?? [])
 
     private func persist() {
-        store.set(Array(cache), forKey: FlekLauncherKeys.launchedApps)
+        store.set(Array(cache), forKey: FlekDeckKeys.launchedApps)
     }
 
     /// Reload from disk (e.g. if another LiveContainer instance changed it).
     func refresh() {
-        cache = Set(store.stringArray(forKey: FlekLauncherKeys.launchedApps) ?? [])
+        cache = Set(store.stringArray(forKey: FlekDeckKeys.launchedApps) ?? [])
     }
 
     func isNew(_ app: LCAppModel) -> Bool {

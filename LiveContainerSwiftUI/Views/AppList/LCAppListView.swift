@@ -100,7 +100,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     
     @State private var customSortViewPresent = false
 
-    // FlekLauncher springboard state
+    // FlekDeck springboard state
     @State private var isEditing = false
     @State private var showSettingsCover = false
     @State private var showInstallerCover = false
@@ -108,7 +108,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var installerPreselectFlekstore = false
     @State private var installerPreselectRepoURL: String?
     @AppStorage("darkModeIcon", store: LCUtils.appGroupUserDefault) var darkModeIcon = false
-    @AppStorage(FlekLauncherKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
+    @AppStorage(FlekDeckKeys.homeLayout, store: LCUtils.appGroupUserDefault) var homeLayout: String = FlekHomeLayout.grid.rawValue
 
 
     @State private var homeSaveIconExporterShow = false
@@ -712,7 +712,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         )
     }
 
-    // MARK: - FlekLauncher springboard
+    // MARK: - FlekDeck springboard
 
     /// Extracted to a separate computed property to help the Swift type-checker
     /// with the complex view body expression.
@@ -762,7 +762,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     /// (i.e. the user has manually dragged cards). For other sort types, the
     /// default-app positions fall back to the front of the list.
     func rebuildOrderedHomeItems() {
-        let storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekLauncherKeys.homeScreenOrder) ?? []
+        let storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekDeckKeys.homeScreenOrder) ?? []
         let useStoredOrder = !storedOrder.isEmpty && sharedAppSortManager.appSortType == .custom
 
         // Build a lookup of all available items by ID
@@ -873,7 +873,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 return false
             }
 
-            var sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
+            var sizes = LCUtils.appGroupUserDefault.array(forKey: FlekDeckKeys.homeScreenPageSizes) as? [Int] ?? []
             if !sizes.isEmpty {
                 // Remove deleted placeholders page-by-page
                 var offset = 0
@@ -911,7 +911,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                         break
                     }
                 }
-                LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+                LCUtils.appGroupUserDefault.set(sizes, forKey: FlekDeckKeys.homeScreenPageSizes)
             } else {
                 // No page sizes stored — just remove deleted placeholders
                 result.removeAll(where: isDeletedPlaceholder)
@@ -997,7 +997,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if item.isPlaceholder { return "__empty__" }
             return item.id
         }
-        LCUtils.appGroupUserDefault.set(ids, forKey: FlekLauncherKeys.homeScreenOrder)
+        LCUtils.appGroupUserDefault.set(ids, forKey: FlekDeckKeys.homeScreenOrder)
         // Also update the app sort manager for installed app order
         let appIds = orderedHomeItems.compactMap { item -> String? in
             guard case .installed(let app) = item else { return nil }
@@ -1029,7 +1029,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         let ipp = LCSpringboardPageCell.itemsPerPage(forPageSize: pageSize)
 
-        let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int] ?? []
+        let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekDeckKeys.homeScreenPageSizes) as? [Int] ?? []
         if !sizes.isEmpty {
             var offset = 0
             for (page, size) in sizes.enumerated() {
@@ -1236,7 +1236,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     func presentSharedAppNotRemovableHint() {
         let alert = UIAlertController(
             title: "Shared App",
-            message: "This app is stored in the shared folder, so every FlekLauncher on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
+            message: "This app is stored in the shared folder, so every FlekDeck on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         var top = UIApplication.shared.connectedScenes
@@ -2218,10 +2218,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             FlekLaunchTracker.shared.forget(app)
 
             let itemId = FlekHomeItem.installed(app).id
-            var storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekLauncherKeys.homeScreenOrder) ?? []
+            var storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekDeckKeys.homeScreenOrder) ?? []
             if storedOrder.contains(itemId) {
                 storedOrder.removeAll { $0 == itemId }
-                LCUtils.appGroupUserDefault.set(storedOrder, forKey: FlekLauncherKeys.homeScreenOrder)
+                LCUtils.appGroupUserDefault.set(storedOrder, forKey: FlekDeckKeys.homeScreenOrder)
             }
             if let uniqueId = sharedAppSortManager.getUniqueIdentifier(for: app) {
                 sharedAppSortManager.customSortOrder.removeAll { $0 == uniqueId }

@@ -2,7 +2,7 @@
 //  FlekInternalPage.swift
 //  LiveContainerSwiftUI
 //
-//  Hosts a built-in FlekLauncher page (Settings / Installer) as a full-screen
+//  Hosts a built-in FlekDeck page (Settings / Installer) as a full-screen
 //  cover, on the paths where multitasking is not available. A single glass
 //  "back to home" chevron at the bottom returns to the springboard, shrinking
 //  the page into its own icon on the way — the same trip the multitask home

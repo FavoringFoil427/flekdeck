@@ -22,9 +22,9 @@ enum JITEnablerType : Int, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .StikJIT: "StikDebug"
-        case .StikJITLC: "StikDebug (Another FlekLauncher)"
+        case .StikJITLC: "StikDebug (Another FlekDeck)"
         case .StosDebug: "StosDebug"
-        case .StosDebugLC: "StosDebug (Another FlekLauncher)"
+        case .StosDebugLC: "StosDebug (Another FlekDeck)"
         case .SideStore: "SideStore"
         case .JITStreamerEBLegacy: "JitStreamer-EB (Relaunch)"
         case .SideJITServer: "SideJITServer/JITStreamer 2.0"
@@ -932,7 +932,7 @@ struct LCSettingsView: View {
                     Picker(selection: $JITEnabler) {
                         Text("SideJITServer/JITStreamer 2.0").tag(JITEnablerType.SideJITServer)
                         Text("StikDebug").tag(JITEnablerType.StikJIT)
-                        Text("StikDebug (Another FlekLauncher)").tag(JITEnablerType.StikJITLC)
+                        Text("StikDebug (Another FlekDeck)").tag(JITEnablerType.StikJITLC)
                         Text("SideStore").tag(JITEnablerType.SideStore)
                         Text("JitStreamer-EB (Relaunch)").tag(JITEnablerType.JITStreamerEBLegacy)
                     } label: {

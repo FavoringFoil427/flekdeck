@@ -19,7 +19,7 @@
 
 #pragma mark - App group staging
 
-// A private app's bundle and data container live in FlekLauncher's own
+// A private app's bundle and data container live in FlekDeck's own
 // container, which LiveProcess cannot read, so both are staged into the app
 // group before the guest starts and the container is brought back when it
 // exits.

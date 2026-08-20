@@ -166,7 +166,7 @@
 		174140D52D9C176700F3F928 /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk/usr/lib/libarchive.tbd; sourceTree = DEVELOPER_DIR; };
 		17554B712DA16988004C6D90 /* OpenSSL.xcframework */ = {isa = PBXFileReference; expectedSignature = "AppleDeveloperProgram:67RAULRX93:Marcin Krzyzanowski"; lastKnownFileType = wrapper.xcframework; name = OpenSSL.xcframework; path = OpenSSL/Frameworks/OpenSSL.xcframework; sourceTree = "<group>"; };
 		17CAE6172F230449008B1977 /* LaunchAppExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = LaunchAppExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		17DCE99D2C7067EC00731D42 /* FlekLauncher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlekLauncher.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		17DCE99D2C7067EC00731D42 /* FlekDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlekDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LaunchAppExtensionHelper.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E11884B82EF7A15F009C6FA6 /* dyld_bypass_validation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dyld_bypass_validation.h; sourceTree = "<group>"; };
 		E12928C92DCA38380065E12D /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
@@ -493,7 +493,7 @@
 		17DCE99E2C7067EC00731D42 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				17DCE99D2C7067EC00731D42 /* FlekLauncher.app */,
+				17DCE99D2C7067EC00731D42 /* FlekDeck.app */,
 				17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */,
 				1741403A2D9C0D0000F3F928 /* TweakLoader.dylib */,
 				174140542D9C0D6D00F3F928 /* ZSign.dylib */,
@@ -715,7 +715,7 @@
 			);
 			name = LiveContainer;
 			productName = jump;
-			productReference = 17DCE99D2C7067EC00731D42 /* FlekLauncher.app */;
+			productReference = 17DCE99D2C7067EC00731D42 /* FlekDeck.app */;
 			productType = "com.apple.product-type.application";
 		};
 		17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */ = {
@@ -1123,7 +1123,7 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.SideStore;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.SideStore;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1166,7 +1166,7 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.SideStore;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.SideStore;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1424,8 +1424,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LaunchAppExtension;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LaunchAppExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtension;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1460,8 +1460,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LaunchAppExtension;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LaunchAppExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtension;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1534,7 +1534,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
-				LIVECONTAINER_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
+				LIVECONTAINER_BUNDLE_IDENTIFIER = com.fs.flekdeck;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LOCALIZED_STRING_SWIFTUI_SUPPORT = NO;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -1600,7 +1600,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.5;
-				LIVECONTAINER_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
+				LIVECONTAINER_BUNDLE_IDENTIFIER = com.fs.flekdeck;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LOCALIZED_STRING_SWIFTUI_SUPPORT = NO;
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -1634,7 +1634,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = FlekLauncher;
+				INFOPLIST_KEY_CFBundleDisplayName = FlekDeck;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -1648,8 +1648,8 @@
 				MARKETING_VERSION = 3.3.55;
 				NEW_SETTING = "";
 				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
-				PRODUCT_NAME = FlekLauncher;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck;
+				PRODUCT_NAME = FlekDeck;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1680,7 +1680,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = FlekLauncher;
+				INFOPLIST_KEY_CFBundleDisplayName = FlekDeck;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = Main;
@@ -1697,9 +1697,9 @@
 					"-e",
 					_LiveContainerMainC,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher;
-				PRODUCT_NAME = FlekLauncher;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck;
+				PRODUCT_NAME = FlekDeck;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1730,8 +1730,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LaunchAppExtensionHelper;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LaunchAppExtensionHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtensionHelper;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtensionHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1769,8 +1769,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LaunchAppExtensionHelper;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LaunchAppExtensionHelper;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtensionHelper;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtensionHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1844,8 +1844,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LiveProcess;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LiveProcess;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LiveProcess;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LiveProcess;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1915,8 +1915,8 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LiveProcess;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.fleklauncher.LiveProcess;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LiveProcess;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LiveProcess;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1954,7 +1954,7 @@
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				OTHER_CFLAGS = "-fcommon";
 				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LiveContainerShared;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LiveContainerShared;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
@@ -1997,7 +1997,7 @@
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				OTHER_CFLAGS = "-fcommon";
 				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.fleklauncher.LiveContainerShared;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LiveContainerShared;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;

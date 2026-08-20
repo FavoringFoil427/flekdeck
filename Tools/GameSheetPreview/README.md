@@ -1,7 +1,7 @@
 # GameSheetPreview
 
 A throwaway simulator app for eyeballing the "Recommended for games" sheet
-([FlekGameWarningView.swift](../../LiveContainerSwiftUI/FlekLauncher/Home/FlekGameWarningView.swift))
+([FlekGameWarningView.swift](../../LiveContainerSwiftUI/FlekDeck/Home/FlekGameWarningView.swift))
 on different iOS runtimes, without building all of LiveContainer.
 
 ```bash

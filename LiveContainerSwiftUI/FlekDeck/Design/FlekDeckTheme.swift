@@ -1,8 +1,8 @@
 //
-//  FlekLauncherTheme.swift
+//  FlekDeckTheme.swift
 //  LiveContainerSwiftUI
 //
-//  Design tokens and reusable glass building blocks for the FlekLauncher
+//  Design tokens and reusable glass building blocks for the FlekDeck
 //  springboard home screen. Values are taken from the FlekSign Figma design
 //  (file paCG8NHeIWaCsxJ8ThkcEw).
 //
@@ -167,7 +167,7 @@ extension View {
     // resolves that type before the availability check runs — which traps on
     // iOS 17.x, where the type is absent from the system SwiftUI.
     func flekGlassCard(cornerRadius: CGFloat = FlekTheme.cardCorner, tint: Double = 0.22) -> AnyView {
-        let useGlass = LCUtils.appGroupUserDefault.object(forKey: FlekLauncherKeys.cardStyleGlass) as? Bool ?? true
+        let useGlass = LCUtils.appGroupUserDefault.object(forKey: FlekDeckKeys.cardStyleGlass) as? Bool ?? true
         if #available(iOS 26, *), useGlass {
             return AnyView(self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
         }

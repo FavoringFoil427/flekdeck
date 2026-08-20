@@ -13,7 +13,7 @@ import CoreImage.CIFilterBuiltins
 /// A selectable wallpaper. Persisted as a single string descriptor:
 ///   - "asset:<name>"     bundled image asset
 ///   - "gradient:<id>"    built-in gradient preset
-/// Photo wallpapers are tracked separately via `FlekLauncherKeys.wallpaperPhoto`.
+/// Photo wallpapers are tracked separately via `FlekDeckKeys.wallpaperPhoto`.
 enum FlekWallpaper: Identifiable, Equatable {
     case asset(String)
     case gradient(String, [Color])
@@ -69,9 +69,9 @@ enum FlekWallpaper: Identifiable, Equatable {
 }
 
 struct FlekWallpaperView: View {
-    @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
     private var wallpaperDescriptor: String = FlekWallpaper.defaultDescriptor
-    @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
     private var wallpaperPhoto: String = ""
 
     var body: some View {
@@ -160,9 +160,9 @@ private func renderGradient(colors: [Color], size: CGSize) -> UIImage? {
 
 /// Bottom gradient blur overlay using CIGaussianBlur — pure blur, no tint.
 struct FlekBlurredWallpaperOverlay: View {
-    @AppStorage(FlekLauncherKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperName, store: LCUtils.appGroupUserDefault)
     private var wallpaperDescriptor: String = FlekWallpaper.defaultDescriptor
-    @AppStorage(FlekLauncherKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
+    @AppStorage(FlekDeckKeys.wallpaperPhoto, store: LCUtils.appGroupUserDefault)
     private var wallpaperPhoto: String = ""
 
     var radius: CGFloat = 20

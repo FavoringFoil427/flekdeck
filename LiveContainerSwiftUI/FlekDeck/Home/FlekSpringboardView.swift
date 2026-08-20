@@ -525,12 +525,12 @@ struct FlekSpringboardView<Menu: View>: View {
         var sizes = pages.map { $0.count }
         while sizes.last == 0 { sizes.removeLast() }
         customPageSizes = sizes
-        LCUtils.appGroupUserDefault.set(sizes, forKey: FlekLauncherKeys.homeScreenPageSizes)
+        LCUtils.appGroupUserDefault.set(sizes, forKey: FlekDeckKeys.homeScreenPageSizes)
     }
 
     /// Loads page sizes from UserDefaults.
     private func loadPageSizes() {
-        if let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekLauncherKeys.homeScreenPageSizes) as? [Int],
+        if let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekDeckKeys.homeScreenPageSizes) as? [Int],
            !sizes.isEmpty {
             customPageSizes = sizes
         }

@@ -28,7 +28,7 @@ struct FlekAppCard<Icon: View>: View {
     @State private var wigglePhase = false
     /// Random delay so each card wiggles at a different phase, like real iOS.
     @State private var wiggleDelay: Double = 0
-    @AppStorage(FlekLauncherKeys.cardStyleGlass, store: LCUtils.appGroupUserDefault) private var cardStyleGlass: Bool = true
+    @AppStorage(FlekDeckKeys.cardStyleGlass, store: LCUtils.appGroupUserDefault) private var cardStyleGlass: Bool = true
     @Environment(\.colorScheme) private var colorScheme
 
     private var scale: CGFloat { cardHeight / FlekTheme.cardHeight }

@@ -299,7 +299,7 @@ extern NSBundle *lcMainBundle;
     
     // something went wrong with app group
     if(!appGroupFolder && sharedDataFoldersToMove.count > 0) {
-        [lcUserDefaults setObject:@"FlekLauncher was unable to move the data of shared app back because FlekLauncher cannot access app group. Please check JITLess diagnose page in FlekLauncher settings for more information." forKey:@"error"];
+        [lcUserDefaults setObject:@"FlekDeck was unable to move the data of shared app back because FlekDeck cannot access app group. Please check JITLess diagnose page in FlekDeck settings for more information." forKey:@"error"];
         return;
     }
     

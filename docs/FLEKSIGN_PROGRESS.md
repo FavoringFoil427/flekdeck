@@ -1,11 +1,11 @@
 # FlekSign Redesign — Progress
 
-Reworking LiveContainer into the **FlekLauncher** springboard design from the
+Reworking LiveContainer into the **FlekDeck** springboard design from the
 Figma file `FlekSign` (`paCG8NHeIWaCsxJ8ThkcEw`). Multitasking is intentionally
 **out of scope** for this pass (switcher bar, navigation assist, multitasking
 menu, switcher dock — not touched).
 
-New launcher code lives under `LiveContainerSwiftUI/FlekLauncher/`.
+New launcher code lives under `LiveContainerSwiftUI/FlekDeck/`.
 
 ## Design decisions (confirmed with user)
 - **FlekSt0re** home icon → opens the Installer with the FlekSt0re source pre-selected.

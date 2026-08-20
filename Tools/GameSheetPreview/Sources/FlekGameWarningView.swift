@@ -23,7 +23,7 @@ extension String {
     var loc: String {
         switch self {
         case "lc.flek.game.title":       return "Recommended for games"
-        case "lc.flek.game.desc":        return "Games usually run better in Single Mode. Single Mode gives the game more resources, but you'll need to close FlekLauncher to exit it."
+        case "lc.flek.game.desc":        return "Games usually run better in Single Mode. Single Mode gives the game more resources, but you'll need to close FlekDeck to exit it."
         case "lc.flek.game.remember":    return "Remember my choice for this app"
         case "lc.flek.game.runSingle":   return "Run Single"
         case "lc.flek.game.runParallel": return "Run Parallel Anyway"
