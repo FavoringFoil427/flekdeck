@@ -45,6 +45,8 @@ void UIKitFixesInit(void) {
 /// are ignored.
 @property(nonatomic) BOOL didReportContentArrived;
 - (void)applySceneFrameToSettings:(UIMutableApplicationSceneSettings *)settings orientation:(UIInterfaceOrientation)orientation;
+- (void)applyMaximizedLayout;
+- (void)applyMaximizedGeometryToSettings:(UIMutableApplicationSceneSettings *)settings;
 @end
 
 /// How long after its scene is presented the window keeps the launch screen it
@@ -485,6 +487,14 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     });
 }
 
+- (void)appSceneVC:(AppSceneViewController*)vc willPresentSceneWithSettings:(UIMutableApplicationSceneSettings *)settings {
+    if(!_isMaximized) return;
+    // Re-derived rather than trusted: these settings were filled in when the
+    // window was built, and the switcher bar may have been laid out — and taken
+    // its strip — at any point since.
+    [self applyMaximizedGeometryToSettings:settings];
+}
+
 - (void)appSceneVCDidPresentScene:(AppSceneViewController*)vc {
     // The guest's scene is on screen now and it is drawing into it. Give that
     // first frame a moment to land, then let go of the launch screen this window
@@ -531,7 +541,15 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     // bar appeared to repair it. Bounds is the size the window really occupies,
     // transform or no transform.
     CGSize windowSize = self.view.bounds.size;
-    CGRect newFrame = CGRectMake(0, 0, windowSize.width/self.scaleRatio, (windowSize.height - self.navigationBar.frame.size.height)/self.scaleRatio);
+    // A hidden bar takes up none of the window, whatever its own frame still
+    // says. It is built at its full height and collapsed to nothing by a
+    // constraint, and a stack view does not lay out an arranged subview it is not
+    // showing — so early on, before anything has laid it out, the frame still
+    // reads its full height. Taking that off the guest's drawable leaves the
+    // picture short of the window it is drawn into, centred, with a strip of the
+    // black backdrop above and below it.
+    CGFloat barHeight = self.navigationBar.hidden ? 0 : self.navigationBar.frame.size.height;
+    CGRect newFrame = CGRectMake(0, 0, windowSize.width/self.scaleRatio, (windowSize.height - barHeight)/self.scaleRatio);
     if(UIInterfaceOrientationIsLandscape(orientation)) {
         settings.frame = CGRectMake(0, 0, newFrame.size.height, newFrame.size.width);
     } else {
@@ -624,27 +642,53 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 }
 
 - (void)switcherBarVisibilityChanged {
-    if(!_isMaximized) return;
     [UIView animateWithDuration:0.3 animations:^{
-        [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-            [self updateMaximizedFrameWithSettings:settings];
-            // Keep the guest drawable in sync with the resized container so no
-            // blank strip is left when the bar hides and the view grows.
-            [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
-        }];
+        [self applyMaximizedLayout];
     }];
 }
 
 - (void)refreshMaximizedLayout {
+    [self applyMaximizedLayout];
+}
+
+/// Re-derives everything about a maximized window's geometry from the screen, the
+/// switcher bar and the orientation as they are now, and gets it to the guest.
+///
+/// Safe to call before the guest's scene exists, which is most of a window's
+/// opening. A window is built, framed and told the bar has arrived long before
+/// its guest has started, and pushing settings into a scene that is not there yet
+/// is a silent no-op — which is how a freshly opened app came up laid out for the
+/// screen the window was given at construction, from before the bar had been laid
+/// out and so had no strip to reserve. It drew underneath the bar until something
+/// later pushed settings of its own and put the frame right; toggling the bar was
+/// that something, which is why it looked like a repair. With no scene yet the
+/// same answer is written into the settings the scene will be created from, so
+/// the guest is laid out for the window it is really going into from its first
+/// frame.
+- (void)applyMaximizedLayout {
     if(!_isMaximized) return;
-    if(!self.appSceneVC.presenter.scene) return;
-    [self.appSceneVC.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-        [self updateMaximizedFrameWithSettings:settings];
-        // The window is only half of it: the guest's drawable has to be resized
-        // to match, or the picture stays the shape it was and the backdrop shows
-        // through where the window grew.
-        [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
-    }];
+    FBScene *scene = self.appSceneVC.presenter.scene;
+    if(scene) {
+        [scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+            [self applyMaximizedGeometryToSettings:settings];
+        }];
+    } else {
+        [self applyMaximizedGeometryToSettings:self.appSceneVC.settings];
+    }
+}
+
+/// The window's own frame and the insets the guest keeps clear, then the guest's
+/// drawable. In that order: the drawable is measured from the frame set above it,
+/// and resizing the window without resizing the picture inside it is what leaves
+/// the backdrop showing wherever the two disagree.
+- (void)applyMaximizedGeometryToSettings:(UIMutableApplicationSceneSettings *)settings {
+    // Everything below is measured from the screen this window is on, so there is
+    // nothing to derive while it is not on one. A closed window's controller
+    // outlives the view being taken out of the hierarchy, and answering that with
+    // zeroes would collapse it rather than leave it be.
+    if(!self.view.window) return;
+    [self updateMaximizedFrameWithSettings:settings];
+    [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
 }
 
 - (UIEdgeInsets)updateMaximizedSafeAreaWithSettings:(UIMutableApplicationSceneSettings *)settings {

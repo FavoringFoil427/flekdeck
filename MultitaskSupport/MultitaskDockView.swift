@@ -513,7 +513,14 @@ class AppInfoProvider {
     /// assuming a bottom-or-right edge derived from the interface orientation, which
     /// is not the same question once the layout and the device part ways.
     @objc public var barReservedInsets: UIEdgeInsets {
+        // `lastPlacedBarEdge` is the proof that the bar has been laid out at least
+        // once. Until it has, its hosting view's rectangle is whatever the view was
+        // born with and says nothing about where the bar is going to be — and a
+        // window opening before the first bar of the session was placed would trim
+        // itself against that. Nothing is reserved for a bar that has yet to take
+        // its place; `showDock` tells the windows once it has.
         guard isSwitcherBarVisible,
+              lastPlacedBarEdge != nil,
               let barView = hostingController?.view,
               let window = keyWindow else { return .zero }
 

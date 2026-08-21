@@ -453,6 +453,19 @@ static void LCUnstageAppFromAppGroup(NSString *bundleId, NSString *dataUUID, BOO
     settings.statusBarDisabled = !self.isNativeWindow;
     //settings.previewMaximumSize =
     //settings.deviceOrientationEventsEnabled = YES;
+
+    // The window has the last word on geometry. This settings object was filled
+    // in when the window was built, which is long before the guest gets here —
+    // early enough that the switcher bar may not have been laid out yet and so
+    // had no strip to reserve. Nothing between then and now pushes settings into
+    // a scene that does not exist, so whatever was stale then would be baked into
+    // the scene as it is created and the guest would lay out for a screen it is
+    // not in: drawing underneath the bar until something later happened to put it
+    // right.
+    if([self.delegate respondsToSelector:@selector(appSceneVC:willPresentSceneWithSettings:)]) {
+        [self.delegate appSceneVC:self willPresentSceneWithSettings:settings];
+    }
+
     parameters.settings = settings;
     
     UIMutableApplicationSceneClientSettings *clientSettings = [UIMutableApplicationSceneClientSettings new];

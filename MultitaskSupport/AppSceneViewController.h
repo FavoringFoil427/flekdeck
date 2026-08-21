@@ -19,6 +19,12 @@ API_AVAILABLE(ios(16.0))
 - (void)appSceneVC:(AppSceneViewController*)vc didInitializeWithError:(NSError*)error;
 @optional
 - (void)appSceneVC:(AppSceneViewController*)vc didUpdateFromSettings:(UIMutableApplicationSceneSettings *)settings transitionContext:(id)context;
+/// The guest's scene is about to be created from these settings. The window owns
+/// the geometry they carry — its own frame, the drawable the guest is handed and
+/// the insets the guest keeps clear — and this is the last moment to put the
+/// current answer in. A window is built long before its guest starts, and what was
+/// true then is not always still true now.
+- (void)appSceneVC:(AppSceneViewController*)vc willPresentSceneWithSettings:(UIMutableApplicationSceneSettings *)settings;
 /// The guest's scene has been presented — its content is now on screen as fast as
 /// the guest can draw it, which for an app still starting up means its own launch
 /// screen. Unlike a settings update, which only arrives if the guest changes
