@@ -15,6 +15,13 @@ extension LCUtils {
             return
         }
         let fm = FileManager.default
+        // a disabled folder is renamed to .disabled; skip it, it gets signed again once re-enabled
+        if !fm.fileExists(atPath: tweakFolderUrl.path) {
+            let disabledUrl = tweakFolderUrl.deletingLastPathComponent().appendingPathComponent(tweakFolderUrl.lastPathComponent + ".disabled")
+            if fm.fileExists(atPath: disabledUrl.path) {
+                return
+            }
+        }
         var isFolder :ObjCBool = false
         if(fm.fileExists(atPath: tweakFolderUrl.path, isDirectory: &isFolder) && !isFolder.boolValue) {
             return
@@ -33,15 +40,17 @@ extension LCUtils {
             if(fileType != FileAttributeType.typeDirectory && fileType != FileAttributeType.typeRegular) {
                 continue
             }
+            let name = fileURL.lastPathComponent
+            let baseName = name.hasSuffix(".disabled") ? String(name.dropLast(".disabled".count)) : name
             if(fileType == FileAttributeType.typeDirectory) {
-                if(!fileURL.lastPathComponent.hasSuffix(".framework")) {
+                if(!baseName.hasSuffix(".framework")) {
                     continue
                 }
                 guard let frameworkBundle = Bundle(url: fileURL), let executableURL = frameworkBundle.executableURL else {
                     continue
                 }
                 fileURL = executableURL
-            } else if (fileType == FileAttributeType.typeRegular && !fileURL.lastPathComponent.hasSuffix(".dylib")) {
+            } else if (fileType == FileAttributeType.typeRegular && !baseName.hasSuffix(".dylib")) {
                 continue
             }
 
@@ -198,11 +207,11 @@ extension LCUtils {
         }
     }
     
-    public static func askForJIT(withScript script: String? = nil, appName: String? = nil, onServerMessage: ((String) -> Void)? = nil) async -> Bool {
+    public static func askForJIT(withScript script: String? = nil, appName: String? = nil, classicMode: UInt = 0, onServerMessage: ((String) -> Void)? = nil) async -> Bool {
         // if LiveContainer is installed by TrollStore
         let tsPath = "\(Bundle.main.bundlePath)/../_TrollStore"
         if (access((tsPath as NSString).utf8String, 0) == 0) {
-            LCSharedUtils.launchToGuestApp()
+            LCSharedUtils.launchToGuestApp(withClassicMode: classicMode)
             return true
         }
         
@@ -548,7 +557,7 @@ extension LCUtils {
     }
     
     static func openSideStore(delegate: LCAppModelDelegate? = nil, urlStr: String? = nil) {
-        let sideStoreApp = LCAppModel(appInfo: BuiltInSideStoreAppInfo(), delegate: delegate)
+        let sideStoreApp = LCAppModel(appInfo: BuiltInSideStoreAppInfo.shared, delegate: delegate)
         
         Task {
             try await sideStoreApp.runApp(bundleIdOverride: "builtinSideStore", urlStr: urlStr)

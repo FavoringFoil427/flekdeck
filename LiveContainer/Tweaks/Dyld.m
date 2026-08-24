@@ -44,6 +44,18 @@ uint32_t guestAppSdkVersionSet = 0;
 bool (*orig_dyld_program_sdk_at_least)(void* dyldPtr, dyld_build_version_t version);
 uint32_t (*orig_dyld_get_program_sdk_version)(void* dyldPtr);
 
+mach_port_t excPort;
+void *exception_handler(void *unused);
+
+static void ensureBreakpointExceptionHandler(void) {
+    if (excPort) return;
+
+    mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &excPort);
+    mach_port_insert_right(mach_task_self(), excPort, excPort, MACH_MSG_TYPE_MAKE_SEND);
+    pthread_t thread;
+    pthread_create(&thread, NULL, exception_handler, NULL);
+}
+
 static void overwriteAppExecutableFileType(void) {
     struct mach_header_64* appImageMachOHeader = (struct mach_header_64*) orig_dyld_get_image_header(appMainImageIndex);
     kern_return_t kret = builtin_vm_protect(mach_task_self(), (vm_address_t)appImageMachOHeader, sizeof(appImageMachOHeader), false, PROT_READ | PROT_WRITE | VM_PROT_COPY);
@@ -172,7 +184,7 @@ bool hook_dyld_program_sdk_at_least(void* dyldApiInstancePtr, dyld_build_version
     // we are targeting ios, so we hard code 2
     if(version.platform == 0xffffffff){
         return version.version <= guestAppSdkVersionSet;
-    } else if (version.platform == 2){
+    } else if (version.platform != 1){
         return version.version <= guestAppSdkVersion;
     } else {
         return false;
@@ -263,19 +275,19 @@ bool initGuestSDKVersionInfo(void) {
     void* dyldBase = getDyldBase();
     // it seems Apple is constantly changing findVersionSetEquivalent's signature so we directly search sVersionMap instead
     uint32_t* versionMapPtr = getCachedSymbol(@"__ZN5dyld3L11sVersionMapE", dyldBase);
-    if(!versionMapPtr) {
+    // check if the cached pointer is valid in case dyld is swapped by Dopamine. #1454
+    if(!versionMapPtr || versionMapPtr[0] != 0x07db0901) {
 #if !TARGET_OS_SIMULATOR
         const char* dyldPath = "/usr/lib/dyld";
+#else
+        const char* dyldPath = "/usr/lib/dyld_sim";
+#endif
         uint64_t offset = 0;
         if(@available(iOS 27.0, *)) {
             offset = LCFindSymbolOffset(dyldPath, "__ZN5dyld311sVersionMapE");
         } else {
             offset = LCFindSymbolOffset(dyldPath, "__ZN5dyld3L11sVersionMapE");
         }
-#else
-        void *result = litehook_find_symbol(dyldBase, "__ZN5dyld3L11sVersionMapE");
-        uint64_t offset = (uint64_t)result - (uint64_t)dyldBase;
-#endif
         assert(offset);
         versionMapPtr = dyldBase + offset;
         saveCachedSymbol(@"__ZN5dyld3L11sVersionMapE", dyldBase, offset);
@@ -419,6 +431,21 @@ bool hook_libdyld_os_unfair_recursive_lock_trylock(HOOK_LOCK_1ST_ARG void* lock)
     return true;
 }
 
+static void* findDyldSymbolWithCache(NSString* symbolName, void** ptrStorage) {
+    if(*ptrStorage) {
+        return *ptrStorage;
+    }
+    void *dyldBase = getDyldBase();
+    *ptrStorage = getCachedSymbol(symbolName, dyldBase);
+    if(!*ptrStorage) {
+        void *dyldBase = getDyldBase();
+        uint64_t offset = LCFindSymbolOffset("/usr/lib/dyld", symbolName.UTF8String);
+        *ptrStorage = dyldBase + offset;
+        saveCachedSymbol(symbolName, dyldBase, offset);
+    }
+    return *ptrStorage;
+}
+
 // return index of that function in vtable
 int searchVtable(void** vtable, void *func) {
     for(int i = 0; i < 100; ++i) {
@@ -539,19 +566,15 @@ void *dlopen_nolock(const char *path, int mode) {
 
 #pragma mark - Workaround `file system sandbox blocked mmap()`
 // when using multitask app in private container, we need to temporarily hook dyld's mmap
-mach_port_t excPort;
 void *exception_handler(void *unused) {
     mach_msg_server(mach_exc_server, sizeof(union __RequestUnion__catch_mach_exc_subsystem), excPort, MACH_MSG_OPTION_NONE);
     abort();
 }
 
 void *jitless_hook_dlopen(const char *path, int mode) {
+    searchDyldFunctions();
     if (!excPort) {
-        searchDyldFunctions();
-        mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &excPort);
-        mach_port_insert_right(mach_task_self(), excPort, excPort, MACH_MSG_TYPE_MAKE_SEND);
-        pthread_t thread;
-        pthread_create(&thread, NULL, exception_handler, NULL);
+        ensureBreakpointExceptionHandler();
     }
     
     // save old thread states
@@ -567,10 +590,9 @@ void *jitless_hook_dlopen(const char *path, int mode) {
     assert(masksCnt == 1);
     
     // hook dyld's mmap
-    arm_debug_state64_t hookDebugState = {
-        .__bvr = {(uint64_t)orig_dyld_mmap},
-        .__bcr = {0x1e5},
-    };
+    arm_debug_state64_t hookDebugState = origDebugState;
+    hookDebugState.__bvr[0] = (uint64_t)orig_dyld_mmap;
+    hookDebugState.__bcr[0] = 0x1e5;
     thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&hookDebugState, ARM_DEBUG_STATE64_COUNT);
     
     // fixup @loader_path since we cannot use musttail here
@@ -609,6 +631,76 @@ void* jitless_hook_mmap(void *addr, size_t len, int prot, int flags, int fd, off
     return map;
 }
 
+static void *machOChainedFixupsValidLinkedit;
+static void *machoErrorCtor;
+
+void bypass_seg_count_check(void (^block)(void)) {
+    void *validLinkedit = findDyldSymbolWithCache(@"__ZNK6mach_o13ChainedFixups13validLinkeditEybNSt3__14spanIKNS_13MappedSegmentELm18446744073709551615EEEb", &machOChainedFixupsValidLinkedit);
+    arm_debug_state64_t origValidLinkeditDebugState = {0};
+    exception_mask_t validLinkeditMask = EXC_MASK_BREAKPOINT;
+    mach_msg_type_number_t validLinkeditMasksCnt = 1;
+    exception_handler_t validLinkeditHandler = excPort;
+    exception_behavior_t validLinkeditBehavior = EXCEPTION_STATE | MACH_EXCEPTION_CODES;
+    thread_state_flavor_t validLinkeditFlavor = ARM_THREAD_STATE64;
+    mach_port_t thread = mach_thread_self();
+    if(validLinkedit) {
+        ensureBreakpointExceptionHandler();
+        validLinkeditHandler = excPort;
+        thread_get_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&origValidLinkeditDebugState, &(mach_msg_type_number_t){ARM_DEBUG_STATE64_COUNT});
+        thread_swap_exception_ports(thread, validLinkeditMask, validLinkeditHandler, validLinkeditBehavior, validLinkeditFlavor, &validLinkeditMask, &validLinkeditMasksCnt, &validLinkeditHandler, &validLinkeditBehavior, &validLinkeditFlavor);
+        assert(validLinkeditMasksCnt == 1);
+
+        arm_debug_state64_t hookDebugState = origValidLinkeditDebugState;
+        hookDebugState.__bvr[1] = (uint64_t)validLinkedit;
+        hookDebugState.__bcr[1] = 0x1e5;
+        thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&hookDebugState, ARM_DEBUG_STATE64_COUNT);
+    }
+
+    block();
+    
+    if(validLinkedit) {
+        thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&origValidLinkeditDebugState, ARM_DEBUG_STATE64_COUNT);
+        thread_swap_exception_ports(thread, validLinkeditMask, validLinkeditHandler, validLinkeditBehavior, validLinkeditFlavor, &validLinkeditMask, &validLinkeditMasksCnt, &validLinkeditHandler, &validLinkeditBehavior, &validLinkeditFlavor);
+    }
+}
+
+
+static void* hasInternalContent = 0;
+
+bool hook_os_variant_has_internal_content(const char* subsystem) {
+     return true;
+}
+
+void bypass_os_variant_has_internal_content(void (^block)(void)) {
+    hasInternalContent = dlsym(RTLD_DEFAULT, "os_variant_has_internal_content");
+    arm_debug_state64_t origHasInternalContentDebugState = {0};
+    exception_mask_t hasInternalContentMask = EXC_MASK_BREAKPOINT;
+    mach_msg_type_number_t hasInternalContentMasksCnt = 1;
+    exception_handler_t hasInternalContentHandler = excPort;
+    exception_behavior_t hasInternalContentBehavior = EXCEPTION_STATE | MACH_EXCEPTION_CODES;
+    thread_state_flavor_t hasInternalContentFlavor = ARM_THREAD_STATE64;
+    mach_port_t thread = mach_thread_self();
+    if(hasInternalContent) {
+        ensureBreakpointExceptionHandler();
+        hasInternalContentHandler = excPort;
+        thread_get_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&origHasInternalContentDebugState, &(mach_msg_type_number_t){ARM_DEBUG_STATE64_COUNT});
+        thread_swap_exception_ports(thread, hasInternalContentMask, hasInternalContentHandler, hasInternalContentBehavior, hasInternalContentFlavor, &hasInternalContentMask, &hasInternalContentMasksCnt, &hasInternalContentHandler, &hasInternalContentBehavior, &hasInternalContentFlavor);
+        assert(hasInternalContentMasksCnt == 1);
+
+        arm_debug_state64_t hookDebugState = origHasInternalContentDebugState;
+        hookDebugState.__bvr[1] = (uint64_t)hasInternalContent;
+        hookDebugState.__bcr[1] = 0x1e5;
+        thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&hookDebugState, ARM_DEBUG_STATE64_COUNT);
+    }
+
+    block();
+    
+    if(hasInternalContent) {
+        thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&origHasInternalContentDebugState, ARM_DEBUG_STATE64_COUNT);
+        thread_swap_exception_ports(thread, hasInternalContentMask, hasInternalContentHandler, hasInternalContentBehavior, hasInternalContentFlavor, &hasInternalContentMask, &hasInternalContentMasksCnt, &hasInternalContentHandler, &hasInternalContentBehavior, &hasInternalContentFlavor);
+    }
+}
+
 kern_return_t catch_mach_exception_raise_state( mach_port_t exception_port, exception_type_t exception, const mach_exception_data_t code, mach_msg_type_number_t codeCnt, int *flavor, const thread_state_t old_state, mach_msg_type_number_t old_stateCnt, thread_state_t new_state, mach_msg_type_number_t *new_stateCnt) {
     arm_thread_state64_t *old = (arm_thread_state64_t *)old_state;
     arm_thread_state64_t *new = (arm_thread_state64_t *)new_state;
@@ -618,6 +710,21 @@ kern_return_t catch_mach_exception_raise_state( mach_port_t exception_port, exce
         *new = *old;
         *new_stateCnt = old_stateCnt;
         arm_thread_state64_set_pc_fptr(*new, jitless_hook_mmap);
+        return KERN_SUCCESS;
+    } else if (pc == (uint64_t)machOChainedFixupsValidLinkedit) {
+        *new = *old;
+        *new_stateCnt = old_stateCnt;
+        static char emptyValidLinkeditBuffer[100] = "Create an issue on LiveContainer GitHub if you see this.";
+        void (*ctor)(void* self, char* msg) = (void (*)(void*, char*))findDyldSymbolWithCache(@"__ZN6mach_o5ErrorC1EPKcz", &machoErrorCtor);
+        ctor((void *)old->__x[8], emptyValidLinkeditBuffer);
+        // not sure if this offset will change again
+        *(uint8_t *)(((void *)old->__x[8]) + 0xa0) = 0;
+        arm_thread_state64_set_pc_presigned_fptr(*new, arm_thread_state64_get_lr_fptr(*old) ?: (void *)arm_thread_state64_get_lr(*old));
+        return KERN_SUCCESS;
+    } else if (pc == (uint64_t)hasInternalContent) {
+        *new = *old;
+        *new_stateCnt = old_stateCnt;
+        arm_thread_state64_set_pc_fptr(*new, hook_os_variant_has_internal_content);
         return KERN_SUCCESS;
     }
     NSLog(@"[DyldLVBypass] Unknown breakpoint at pc: %p", (void*)pc);

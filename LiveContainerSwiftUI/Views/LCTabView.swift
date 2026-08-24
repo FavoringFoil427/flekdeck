@@ -10,9 +10,6 @@ import SwiftUI
 import ObjectiveC
 
 struct LCTabView: View {
-    @Binding var appDataFolderNames: [String]
-    @Binding var tweakFolderNames: [String]
-    
     @State var errorShow = false
     @State var crashReportShow = false
     @State var errorInfo = ""
@@ -62,7 +59,7 @@ struct LCTabView: View {
                 // FlekDeck: the springboard home screen replaces the old tab bar.
                 // Settings and the Installer are now opened as full-screen pages from
                 // the home screen instead of being separate tabs.
-                LCAppListView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames, searchContext: searchContextAppList)
+                LCAppListView(searchContext: searchContextAppList)
             }
         }
         .modifier(DeferBottomHomeGestureModifier())
@@ -244,7 +241,12 @@ struct LCTabView: View {
         UserDefaults.standard.set(currentTeamId, forKey: "LCCertificateTeamId")
     }
     
-    func checkBundleId() {
+    func checkAndSaveBundleId() {
+        if DataManager.shared.model.multiLCStatus == 2 {
+            let scheme = UserDefaults.lcAppUrlScheme() ?? ""
+            LCUtils.appGroupUserDefault.set(Bundle.main.bundleIdentifier, forKey: "LCBundleID.\(scheme)")
+        }
+        
         if UserDefaults.standard.bool(forKey: "LCBundleIdChecked") {
             return
         }
@@ -469,7 +471,7 @@ struct LCTabView: View {
         closeDuplicatedWindow()
         checkLastLaunchError()
         checkTeamId()
-        checkBundleId()
+        checkAndSaveBundleId()
         checkGetTaskAllow()
         checkPrivateContainerBookmark()
         checkiOSBeta()

@@ -16,7 +16,8 @@
 //
 
 #import <mach-o/dyld.h>
-#import "utils.h"
+#import "../LiveContainer/utils.h"
+#import "GuestCallbackQueue.h"
 
 // Declared in FoundationPrivate.h; repeated here so this file stays free of
 // the private UIKit headers that come with it.

@@ -31,6 +31,30 @@ struct dyld_all_image_infos *_alt_dyld_get_all_image_infos(void) {
     return result;
 }
 
+static uint32_t get_chained_fixups_seg_count(void *macho, struct linkedit_data_command *fixups) {
+    printf("[*] Found DYLD_CHAINED_FIXUPS!\n");
+    
+    if (fixups->dataoff == 0 || fixups->datasize < sizeof(struct dyld_chained_fixups_header)) {
+        printf("\t\t[!] Invalid chained fixups payload\n");
+        return 0;
+    }
+    
+    off_t fixups_offset = fixups->dataoff;
+    struct dyld_chained_fixups_header *header = (struct dyld_chained_fixups_header *)(macho+fixups_offset);
+    
+    if (header->starts_offset == 0 || header->starts_offset + sizeof(struct dyld_chained_starts_in_image) > fixups->datasize) {
+        printf("\t\t[!] No chained starts to patch\n");
+
+        return 0;
+    }
+    
+    off_t starts_offset = fixups_offset + header->starts_offset;
+    uint32_t *seg_count = (uint32_t *)(macho+starts_offset);
+
+    return *seg_count;
+}
+
+
 static void insertDylibCommand(uint32_t cmd, const char *path, struct mach_header_64 *header) {
     const char *name = cmd==LC_ID_DYLIB ? basename((char *)path) : path;
     struct dylib_command *dylib;
@@ -112,6 +136,7 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
     struct load_command *command = (struct load_command *)imageHeaderPtr;
     struct dylinker_command* dylinkerCommand = 0;
     bool codeSignatureCommandFound = false;
+    uint32_t loadCommandSegCount = 0;
     for(int i = 0; i < header->ncmds; i++) {
         if(command->cmd == LC_ID_DYLIB) {
             hasDylibCommand = YES;
@@ -125,6 +150,7 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
             dylibLoaderCommand = (struct dylib_command *)command;
         } else if(command->cmd == LC_SEGMENT_64) {
             struct segment_command_64* seglc = (struct segment_command_64*)command;
+            loadCommandSegCount++;
             if (strcmp("__TEXT", seglc->segname) == 0) {
                 for (uint32_t j = 0; j < seglc->nsects; j++) {
                     struct section_64* sect = (struct section_64*)(((void*)command + sizeof(struct segment_command_64) + sizeof(struct section_64) * j));
@@ -137,6 +163,10 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
             codeSignatureCommandFound = true;
         } else if (command->cmd == LC_LOAD_DYLINKER) {
             dylinkerCommand = (struct dylinker_command*)command;
+        } else if (command->cmd == LC_DYLD_CHAINED_FIXUPS) {
+            if(loadCommandSegCount != get_chained_fixups_seg_count((void*)header, (struct linkedit_data_command *)command)) {
+                ans |= PATCH_EXEC_RESULT_SEG_COUNT_MISMATCH;
+            }
         }
         
         command = (struct load_command *)((void *)command + command->cmdsize);
@@ -228,7 +258,8 @@ NSString *LCParseMachO(const char *path, bool readOnly, LCParseMachOCallback cal
         struct fat_header *header = (struct fat_header *)map;
         struct fat_arch *arch = (struct fat_arch *)(map + sizeof(struct fat_header));
         for (int i = 0; i < OSSwapInt32(header->nfat_arch); i++) {
-            if (OSSwapInt32(arch->cputype) == CPU_TYPE_ARM64) {
+            int cputype = OSSwapInt32(arch->cputype);
+            if (cputype == CPU_TYPE_ARM64 || cputype == CPU_TYPE_ARM) {
                 callback(path, (struct mach_header_64 *)(map + OSSwapInt32(arch->offset)), fd, map);
             }
             arch = (struct fat_arch *)((void *)arch + sizeof(struct fat_arch));
@@ -334,7 +365,8 @@ const uint8_t* LCGetMachOUUID(struct mach_header_64 *header) {
 }
 
 bool LCIsMachOEncrypted(struct mach_header_64 *header) {
-    struct load_command *command = (struct load_command *)(header + 1);
+    size_t size = header->cputype==CPU_TYPE_ARM64 ? sizeof(struct mach_header_64) : sizeof(struct mach_header);
+    struct load_command *command = (struct load_command *)((uint64_t)header + size);
     for(int i = 0; i < header->ncmds; i++) {
         if(command->cmd == LC_ENCRYPTION_INFO || command->cmd == LC_ENCRYPTION_INFO_64) {
             return ((struct encryption_info_command *)command)->cryptid != 0;
@@ -380,7 +412,11 @@ mach_header_u *LCGetLoadedImageHeader(int i0, const char* name) {
 __attribute__((constructor))
 #endif
 void *getDyldBase(void) {
-    void *dyldBase = (void *)_alt_dyld_get_all_image_infos()->dyldImageLoadAddress;
+    static void *dyldBase = 0;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dyldBase = (void *)_alt_dyld_get_all_image_infos()->dyldImageLoadAddress;
+    });
 #if !TARGET_OS_SIMULATOR
     return dyldBase;
 #else
@@ -397,6 +433,9 @@ void *getDyldBase(void) {
             uintptr_t addrValue = addr.unsignedLongLongValue;
             if(addrValue < (uintptr_t)dyldBase || addrValue >= (uintptr_t)dyldBase + textSize) {
                 dyldSimBase = (void *)(addrValue & ~PAGE_MASK);
+                while (((mach_header_u *)dyldSimBase)->magic != MH_MAGIC_64) {
+                    dyldSimBase -= PAGE_SIZE;
+                }
                 break;
             }
         }

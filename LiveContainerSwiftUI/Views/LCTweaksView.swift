@@ -14,13 +14,21 @@ struct LCTweakItem : Hashable {
     let isFolder: Bool
     let isFramework: Bool
     let isTweak: Bool
+    let isEnabled: Bool
+
+    var displayName: String {
+        let name = fileUrl.lastPathComponent
+        return isEnabled ? name : String(name.dropLast(LCTweakItem.disabledSuffix.count))
+    }
+
+    static let disabledSuffix = ".disabled"
 }
 
 struct LCTweakFolderView : View {
     @State var baseUrl : URL
     @State var tweakItems : [LCTweakItem]
     private var isRoot : Bool
-    @Binding var tweakFolders : [String]
+    @EnvironmentObject private var sharedModel: SharedModel
     
     @State private var errorShow = false
     @State private var errorInfo = ""
@@ -33,24 +41,22 @@ struct LCTweakFolderView : View {
     
     @State private var isTweakSigning = false
     
-    init(baseUrl: URL, isRoot: Bool = false, tweakFolders: Binding<[String]>) {
+    init(baseUrl: URL, isRoot: Bool = false) {
         _baseUrl = State(initialValue: baseUrl)
-        _tweakFolders = tweakFolders
         self.isRoot = isRoot
         var tmpTweakItems : [LCTweakItem] = []
         let fm = FileManager()
         do {
             let files = try fm.contentsOfDirectory(atPath: baseUrl.path)
             for fileName in files {
-                if(fileName == "TweakInfo.plist"){
-                    continue
-                }
                 let fileUrl = baseUrl.appendingPathComponent(fileName)
                 var isFolder : ObjCBool = false
                 fm.fileExists(atPath: fileUrl.path, isDirectory: &isFolder)
-                let isFramework = isFolder.boolValue && fileUrl.lastPathComponent.hasSuffix(".framework")
-                let isTweak = !isFolder.boolValue && fileUrl.lastPathComponent.hasSuffix(".dylib")
-                tmpTweakItems.append(LCTweakItem(fileUrl: fileUrl, isFolder: isFolder.boolValue, isFramework: isFramework, isTweak: isTweak))
+                let isEnabled = !fileName.hasSuffix(LCTweakItem.disabledSuffix)
+                let baseName = isEnabled ? fileName : String(fileName.dropLast(LCTweakItem.disabledSuffix.count))
+                let isFramework = isFolder.boolValue && baseName.hasSuffix(".framework")
+                let isTweak = !isFolder.boolValue && baseName.hasSuffix(".dylib")
+                tmpTweakItems.append(LCTweakItem(fileUrl: fileUrl, isFolder: isFolder.boolValue, isFramework: isFramework, isTweak: isTweak, isEnabled: isEnabled))
             }
             _tweakItems = State(initialValue: tmpTweakItems)
         } catch {
@@ -59,27 +65,49 @@ struct LCTweakFolderView : View {
             _errorInfo = State(initialValue: error.localizedDescription)
             _tweakItems = State(initialValue: [])
         }
-
     }
-    
+
     var body: some View {
         List {
             Section {
-                ForEach($tweakItems, id:\.self) { tweakItem in
-                    let tweakItem = tweakItem.wrappedValue
-                    VStack {
-                        if tweakItem.isFramework {
-                            Label(tweakItem.fileUrl.lastPathComponent, systemImage: "shippingbox.fill")
-                        } else if tweakItem.isFolder {
-                            NavigationLink {
-                                LCTweakFolderView(baseUrl: tweakItem.fileUrl, isRoot: false, tweakFolders: $tweakFolders)
-                            } label: {
-                                Label(tweakItem.fileUrl.lastPathComponent, systemImage: "folder.fill")
+                ForEach(tweakItems, id:\.self) { tweakItem in
+                    HStack {
+                        Group {
+                            if tweakItem.isFolder && !tweakItem.isFramework {
+                                // hidden link so the row navigates without the toggle triggering it
+                                ZStack {
+                                    NavigationLink {
+                                        LCTweakFolderView(baseUrl: tweakItem.fileUrl, isRoot: false)
+                                    } label: {
+                                        EmptyView()
+                                    }
+                                    .opacity(0)
+                                    HStack {
+                                        Label(tweakItem.displayName, systemImage: "folder.fill")
+                                        Spacer()
+                                        Image(systemName: "chevron.forward")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            } else if tweakItem.isFramework {
+                                Label(tweakItem.displayName, systemImage: "shippingbox.fill")
+                                Spacer()
+                            } else if tweakItem.isTweak {
+                                Label(tweakItem.displayName, systemImage: "building.columns.fill")
+                                Spacer()
+                            } else {
+                                Label(tweakItem.displayName, systemImage: FlekSymbol.document)
+                                Spacer()
                             }
-                        } else if tweakItem.isTweak {
-                            Label(tweakItem.fileUrl.lastPathComponent, systemImage: "building.columns.fill")
-                        } else {
-                            Label(tweakItem.fileUrl.lastPathComponent, systemImage: FlekSymbol.document)
+                        }
+                        .opacity(tweakItem.isEnabled ? 1 : 0.4)
+                        if tweakItem.displayName != "TweakLoader.dylib" {
+                            Toggle("", isOn: Binding(
+                                get: { tweakItem.isEnabled },
+                                set: { setTweakEnabled(tweakItem: tweakItem, enabled: $0) }
+                            ))
+                            .labelsHidden()
                         }
                     }
                     .contextMenu {
@@ -88,7 +116,7 @@ struct LCTweakFolderView : View {
                         } label: {
                             Label("lc.common.rename".loc, systemImage: "pencil")
                         }
-                        
+
                         Button(role: .destructive) {
                             deleteTweakItem(tweakItem: tweakItem)
                         } label: {
@@ -99,25 +127,17 @@ struct LCTweakFolderView : View {
                 }.onDelete { indexSet in
                     deleteTweakItem(indexSet: indexSet)
                 }
-            }
-            Section {
-                VStack{
-                    if isRoot {
-                        Text("lc.tweakView.globalFolderDesc".loc)
-                            .foregroundStyle(.gray)
-                            .font(.system(size: 12))
-                    } else {
-                        Text("lc.tweakView.appFolderDesc".loc)
-                            .foregroundStyle(.gray)
-                            .font(.system(size: 12))
-                    }
-
+            } footer: {
+                if isRoot {
+                    Text("lc.tweakView.globalFolderDesc".loc)
+                        .foregroundStyle(.gray)
+                        .font(.system(size: 12))
+                } else {
+                    Text("lc.tweakView.appFolderDesc".loc)
+                        .foregroundStyle(.gray)
+                        .font(.system(size: 12))
                 }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    .background(Color(UIColor.systemGroupedBackground))
-                    .listRowInsets(EdgeInsets())
             }
-
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -201,6 +221,27 @@ struct LCTweakFolderView : View {
         })
     }
     
+    func setTweakEnabled(tweakItem: LCTweakItem, enabled: Bool) {
+        if tweakItem.isEnabled == enabled {
+            return
+        }
+        let displayName = tweakItem.displayName
+        let newName = enabled ? displayName : displayName + LCTweakItem.disabledSuffix
+        let newUrl = baseUrl.appendingPathComponent(newName)
+        let fm = FileManager()
+        do {
+            try fm.moveItem(at: tweakItem.fileUrl, to: newUrl)
+        } catch {
+            errorShow = true
+            errorInfo = error.localizedDescription
+            return
+        }
+        guard let index = tweakItems.firstIndex(of: tweakItem) else {
+            return
+        }
+        tweakItems[index] = LCTweakItem(fileUrl: newUrl, isFolder: tweakItem.isFolder, isFramework: tweakItem.isFramework, isTweak: tweakItem.isTweak, isEnabled: enabled)
+    }
+
     func deleteTweakItem(indexSet: IndexSet) {
         var indexToRemove : [Int] = []
         let fm = FileManager()
@@ -217,15 +258,15 @@ struct LCTweakFolderView : View {
         }
         if isRoot {
             for iToRemove in indexToRemove {
-                tweakFolders.removeAll(where: { s in
-                    return s == tweakItems[iToRemove].fileUrl.lastPathComponent
+                sharedModel.tweakFolderNames.removeAll(where: { s in
+                    return s == tweakItems[iToRemove].displayName
                 })
             }
         }
 
         tweakItems.remove(atOffsets: IndexSet(indexToRemove))
     }
-    
+
     func deleteTweakItem(tweakItem: LCTweakItem) {
         var indexToRemove : Int?
         let fm = FileManager()
@@ -240,31 +281,32 @@ struct LCTweakFolderView : View {
             errorInfo = error.localizedDescription
             return
         }
-        
+
         guard let indexToRemove = indexToRemove else {
             return
         }
         tweakItems.remove(at: indexToRemove)
         if isRoot {
-            tweakFolders.removeAll(where: { s in
-                return s == tweakItem.fileUrl.lastPathComponent
+            sharedModel.tweakFolderNames.removeAll(where: { s in
+                return s == tweakItem.displayName
             })
         }
     }
     
     func renameTweakItem(tweakItem: LCTweakItem) async {
-        guard let newName = await renameFileInput.open(initVal: tweakItem.fileUrl.lastPathComponent), newName != "" else {
+        guard let newName = await renameFileInput.open(initVal: tweakItem.displayName), newName != "" else {
             return
         }
-        
+
         let indexToRename = tweakItems.firstIndex(where: { s in
             return s == tweakItem
         })
         guard let indexToRename = indexToRename else {
             return
         }
-        let newUrl = self.baseUrl.appendingPathComponent(newName)
-        
+        let newFileName = tweakItem.isEnabled ? newName : newName + LCTweakItem.disabledSuffix
+        let newUrl = self.baseUrl.appendingPathComponent(newFileName)
+
         let fm = FileManager()
         do {
             try fm.moveItem(at: tweakItem.fileUrl, to: newUrl)
@@ -274,17 +316,17 @@ struct LCTweakFolderView : View {
             return
         }
         tweakItems.remove(at: indexToRename)
-        let newTweakItem = LCTweakItem(fileUrl: newUrl, isFolder: tweakItem.isFolder, isFramework: tweakItem.isFramework, isTweak: tweakItem.isTweak)
+        let newTweakItem = LCTweakItem(fileUrl: newUrl, isFolder: tweakItem.isFolder, isFramework: tweakItem.isFramework, isTweak: tweakItem.isTweak, isEnabled: tweakItem.isEnabled)
         tweakItems.insert(newTweakItem, at: indexToRename)
-        
+
         if isRoot {
-            let indexToRename2 = tweakFolders.firstIndex(of: tweakItem.fileUrl.lastPathComponent)
+            let indexToRename2 = sharedModel.tweakFolderNames.firstIndex(of: tweakItem.displayName)
             guard let indexToRename2 = indexToRename2 else {
                 return
             }
-            tweakFolders.remove(at: indexToRename2)
-            tweakFolders.insert(newName, at: indexToRename2)
-            
+            sharedModel.tweakFolderNames.remove(at: indexToRename2)
+            sharedModel.tweakFolderNames.insert(newName, at: indexToRename2)
+
         }
     }
     
@@ -318,9 +360,9 @@ struct LCTweakFolderView : View {
             errorInfo = error.localizedDescription
             return
         }
-        tweakItems.append(LCTweakItem(fileUrl: dest, isFolder: true, isFramework: false, isTweak: false))
+        tweakItems.append(LCTweakItem(fileUrl: dest, isFolder: true, isFramework: false, isTweak: false, isEnabled: true))
         if isRoot {
-            tweakFolders.append(newName)
+            sharedModel.tweakFolderNames.append(newName)
         }
     }
     
@@ -342,7 +384,7 @@ struct LCTweakFolderView : View {
 
                 let isFramework = toPath.lastPathComponent.hasSuffix(".framework")
                 let isTweak = toPath.lastPathComponent.hasSuffix(".dylib")
-                self.tweakItems.append(LCTweakItem(fileUrl: toPath, isFolder: false, isFramework: isFramework, isTweak: isTweak))
+                self.tweakItems.append(LCTweakItem(fileUrl: toPath, isFolder: false, isFramework: isFramework, isTweak: isTweak, isEnabled: true))
             }
         } catch {
             errorInfo = error.localizedDescription
@@ -353,13 +395,11 @@ struct LCTweakFolderView : View {
 }
 
 struct LCTweaksView: View {
-    @Binding var tweakFolders : [String]
-    
     var body: some View {
         // Rendered inside the Settings navigation stack (pushed via NavigationLink),
         // so it must not introduce its own NavigationView — otherwise the "Tweaks"
         // principal title lands in a nested nav bar instead of the shared one used
         // by the other Settings sections.
-        LCTweakFolderView(baseUrl: LCPath.tweakPath, isRoot: true, tweakFolders: $tweakFolders)
+        LCTweakFolderView(baseUrl: LCPath.tweakPath, isRoot: true)
     }
 }

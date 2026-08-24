@@ -9,17 +9,19 @@
 /* Begin PBXBuildFile section */
 		0759AEE12F29384E00301332 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 0759AEE02F29384E00301332 /* Kingfisher */; };
 		07BB58BF2F293760003E7410 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 07BB58BE2F293760003E7410 /* Kingfisher */; };
-		173545AF2E2C7913001B3B4C /* SideStore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 173545A82E2C7913001B3B4C /* SideStore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		173545AF2E2C7913001B3B4C /* SideStoreSupport.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 173545A82E2C7913001B3B4C /* SideStoreSupport.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		17413FBC2D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		174140902D9C0E8200F3F928 /* TweakLoader.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1741403A2D9C0D0000F3F928 /* TweakLoader.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		174140942D9C0E8200F3F928 /* ZSign.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 174140542D9C0D6D00F3F928 /* ZSign.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		174140BA2D9C0F9100F3F928 /* TestJITLess.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 174140AD2D9C0F4100F3F928 /* TestJITLess.dylib */; };
 		174140D62D9C176F00F3F928 /* libarchive.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 174140D52D9C176700F3F928 /* libarchive.tbd */; };
+		17442EF63024306800E3F88A /* LiveContainerShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E1292BD62DCA3B660065E12D /* LiveContainerShared.framework */; };
 		17554B732DA16988004C6D90 /* OpenSSL.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 17554B712DA16988004C6D90 /* OpenSSL.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		17554B742DA169AA004C6D90 /* OpenSSL.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 17554B712DA16988004C6D90 /* OpenSSL.xcframework */; };
 		17CAE6262F230548008B1977 /* LiveContainerShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E1292BD62DCA3B660065E12D /* LiveContainerShared.framework */; };
 		17CAED2C2F234814008B1977 /* LaunchAppExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 17CAE6172F230449008B1977 /* LaunchAppExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		17E23DE92F443A9300C55733 /* LaunchAppExtensionHelper.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		17E23DE92F443A9300C55733 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 17E23DDF2F443A9300C55733 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		17E23DF02F443A9300C55733 /* LiveContainerShared.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E1292BD62DCA3B660065E12D /* LiveContainerShared.framework */; };
 		E11884B92EF7A164009C6FA6 /* dyld_bypass_validation.h in Headers */ = {isa = PBXBuildFile; fileRef = E11884B82EF7A15F009C6FA6 /* dyld_bypass_validation.h */; };
 		E1292AF32DCA3A660065E12D /* LiveProcess.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E1292AE52DCA3A660065E12D /* LiveProcess.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E1292BEC2DCA3B670065E12D /* LiveContainerShared.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = E1292BD62DCA3B660065E12D /* LiveContainerShared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -40,7 +42,7 @@
 			containerPortal = 17DCE9952C7067EC00731D42 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 173545A72E2C7913001B3B4C;
-			remoteInfo = SideStore;
+			remoteInfo = SideStoreSupport;
 		};
 		174140F92D9C1EDA00F3F928 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -75,7 +77,14 @@
 			containerPortal = 17DCE9952C7067EC00731D42 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 17E23DDE2F443A9300C55733;
-			remoteInfo = LaunchAppExtensionHelper;
+			remoteInfo = ShareExtension;
+		};
+		17E23DF12F443A9300C55733 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 17DCE9952C7067EC00731D42 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E1292BD52DCA3B660065E12D;
+			remoteInfo = LiveContainerShared;
 		};
 		E1292AF12DCA3A660065E12D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -101,7 +110,7 @@
 			dstSubfolderSpec = 10;
 			files = (
 				174140902D9C0E8200F3F928 /* TweakLoader.dylib in Embed Frameworks */,
-				173545AF2E2C7913001B3B4C /* SideStore.framework in Embed Frameworks */,
+				173545AF2E2C7913001B3B4C /* SideStoreSupport.framework in Embed Frameworks */,
 				174140BA2D9C0F9100F3F928 /* TestJITLess.dylib in Embed Frameworks */,
 				17554B732DA16988004C6D90 /* OpenSSL.xcframework in Embed Frameworks */,
 				E1292BEC2DCA3B670065E12D /* LiveContainerShared.framework in Embed Frameworks */,
@@ -137,7 +146,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				17E23DE92F443A9300C55733 /* LaunchAppExtensionHelper.appex in Embed Foundation Extensions */,
+				17E23DE92F443A9300C55733 /* ShareExtension.appex in Embed Foundation Extensions */,
 				17CAED2C2F234814008B1977 /* LaunchAppExtension.appex in Embed Foundation Extensions */,
 				E1292AF32DCA3A660065E12D /* LiveProcess.appex in Embed Foundation Extensions */,
 			);
@@ -147,6 +156,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		172978E8302EAF07004A3E78 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		172CA8542D9D721700CF6989 /* dyld_bypass_validation.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = dyld_bypass_validation.m; sourceTree = "<group>"; };
 		172CA8552D9D721700CF6989 /* FoundationPrivate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FoundationPrivate.h; sourceTree = "<group>"; };
 		172CA8562D9D721700CF6989 /* LCSharedUtils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LCSharedUtils.h; sourceTree = "<group>"; };
@@ -158,7 +168,7 @@
 		172CA85D2D9D721700CF6989 /* utils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
 		172CA85E2D9D721700CF6989 /* utils.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = utils.m; sourceTree = "<group>"; };
 		172CA8652D9D723200CF6989 /* entitlements.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = entitlements.xml; sourceTree = "<group>"; };
-		173545A82E2C7913001B3B4C /* SideStore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SideStore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		173545A82E2C7913001B3B4C /* SideStoreSupport.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = SideStoreSupport.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		17413FB52D9C0BAE00F3F928 /* LiveContainerSwiftUI.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LiveContainerSwiftUI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1741403A2D9C0D0000F3F928 /* TweakLoader.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = TweakLoader.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		174140542D9C0D6D00F3F928 /* ZSign.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = ZSign.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -167,7 +177,7 @@
 		17554B712DA16988004C6D90 /* OpenSSL.xcframework */ = {isa = PBXFileReference; expectedSignature = "AppleDeveloperProgram:67RAULRX93:Marcin Krzyzanowski"; lastKnownFileType = wrapper.xcframework; name = OpenSSL.xcframework; path = OpenSSL/Frameworks/OpenSSL.xcframework; sourceTree = "<group>"; };
 		17CAE6172F230449008B1977 /* LaunchAppExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = LaunchAppExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		17DCE99D2C7067EC00731D42 /* FlekDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlekDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LaunchAppExtensionHelper.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		17E23DDF2F443A9300C55733 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E11884B82EF7A15F009C6FA6 /* dyld_bypass_validation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dyld_bypass_validation.h; sourceTree = "<group>"; };
 		E12928C92DCA38380065E12D /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		E1292AE52DCA3A660065E12D /* LiveProcess.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LiveProcess.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -213,7 +223,7 @@
 				"SideStore-Bridging-Header.h",
 				XPCServer.h,
 			);
-			target = 173545A72E2C7913001B3B4C /* SideStore */;
+			target = 173545A72E2C7913001B3B4C /* SideStoreSupport */;
 		};
 		174140F52D9C1C9B00F3F928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -222,11 +232,11 @@
 				DocumentPicker.m,
 				"FlekStore+GuestHooks.m",
 				"GameKit+GuestHooks.m",
+				GuestCallbackQueue.m,
 				Notification.m,
 				"ODR+GuestHooks.m",
 				TweakLoader.m,
 				"UIKit+GuestHooks.m",
-				utils.m,
 			);
 			target = 174140392D9C0D0000F3F928 /* TweakLoader */;
 		};
@@ -249,7 +259,7 @@
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = 17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */;
+			target = 17E23DDE2F443A9300C55733 /* ShareExtension */;
 		};
 		E1292AF72DCA3A660065E12D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -283,6 +293,7 @@
 				PiPManager.m,
 				ResizeHandleView.h,
 				ResizeHandleView.m,
+				UIKitHooks.m,
 				"UIKitPrivate+MultitaskSupport.h",
 				VirtualWindowsHostView.h,
 				VirtualWindowsHostView.m,
@@ -312,13 +323,6 @@
 				"SideStore-Bridging-Header.h",
 			);
 		};
-		174140F62D9C1C9B00F3F928 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 174140372D9C0D0000F3F928 /* Sources */;
-			membershipExceptions = (
-				utils.h,
-			);
-		};
 		176614FC2E2C851800B1F478 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = 173545A42E2C7913001B3B4C /* Sources */;
@@ -339,15 +343,15 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		076354DC2E8EC56100516854 /* build */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = build; sourceTree = "<group>"; };
 		172CA8992D9D72C300CF6989 /* Resources */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (172CA8BD2D9D74B700CF6989 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 172CA8C32D9D76AD00CF6989 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Resources; sourceTree = "<group>"; };
-		173545A92E2C7913001B3B4C /* SideStore */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (173546D32E2C82AE001B3B4C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 176614FC2E2C851800B1F478 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, 173546D42E2C82AE001B3B4C /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = SideStore; sourceTree = "<group>"; };
+		173545A92E2C7913001B3B4C /* SideStoreSupport */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (173546D32E2C82AE001B3B4C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 176614FC2E2C851800B1F478 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, 173546D42E2C82AE001B3B4C /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = SideStoreSupport; sourceTree = "<group>"; };
 		17413FB62D9C0BAE00F3F928 /* LiveContainerSwiftUI */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (074A45B92E8B3AE800263918 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LiveContainerSwiftUI; sourceTree = "<group>"; };
-		174140162D9C0C1B00F3F928 /* TweakLoader */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (174140F52D9C1C9B00F3F928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 174140F62D9C1C9B00F3F928 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = TweakLoader; sourceTree = "<group>"; };
+		174140162D9C0C1B00F3F928 /* TweakLoader */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (174140F52D9C1C9B00F3F928 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = TweakLoader; sourceTree = "<group>"; };
 		174140552D9C0D6D00F3F928 /* ZSign */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ZSign; sourceTree = "<group>"; };
 		174140AE2D9C0F4100F3F928 /* TestJITLess */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = TestJITLess; sourceTree = "<group>"; };
 		17780D3B2E1C02420077E636 /* litehook */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (17780E512E1C039D0077E636 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = litehook; sourceTree = "<group>"; };
 		17B0F8452DE16FE4008110EA /* xcconfigs */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = xcconfigs; sourceTree = "<group>"; };
 		17CAE6182F230449008B1977 /* LaunchAppExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (17CAE6252F230449008B1977 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LaunchAppExtension; sourceTree = "<group>"; };
-		17E23DE02F443A9300C55733 /* LaunchAppExtensionHelper */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (17E23DED2F443A9300C55733 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LaunchAppExtensionHelper; sourceTree = "<group>"; };
+		17E23DE02F443A9300C55733 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (17E23DED2F443A9300C55733 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
 		E1292AE72DCA3A660065E12D /* LiveProcess */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E1292AF72DCA3A660065E12D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LiveProcess; sourceTree = "<group>"; };
 		E1292C1A2DCA48F00065E12D /* Tweaks */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E1292C202DCA48F00065E12D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Tweaks; sourceTree = "<group>"; };
 		E1292C242DCA4E6F0065E12D /* MultitaskSupport */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (E1292C2D2DCA4E800065E12D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, E1D5EDC02F48AA25004AF1E9 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = MultitaskSupport; sourceTree = "<group>"; };
@@ -358,6 +362,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17442EF63024306800E3F88A /* LiveContainerShared.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -413,6 +418,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17E23DF02F443A9300C55733 /* LiveContainerShared.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,6 +458,7 @@
 				172CA85C2D9D721700CF6989 /* UIKitPrivate.h */,
 				172CA85D2D9D721700CF6989 /* utils.h */,
 				172CA85E2D9D721700CF6989 /* utils.m */,
+				172978E8302EAF07004A3E78 /* Info.plist */,
 			);
 			path = LiveContainer;
 			sourceTree = "<group>";
@@ -481,9 +488,9 @@
 				174140552D9C0D6D00F3F928 /* ZSign */,
 				174140AE2D9C0F4100F3F928 /* TestJITLess */,
 				E1292AE72DCA3A660065E12D /* LiveProcess */,
-				173545A92E2C7913001B3B4C /* SideStore */,
+				173545A92E2C7913001B3B4C /* SideStoreSupport */,
 				17CAE6182F230449008B1977 /* LaunchAppExtension */,
-				17E23DE02F443A9300C55733 /* LaunchAppExtensionHelper */,
+				17E23DE02F443A9300C55733 /* ShareExtension */,
 				174140B82D9C0F9100F3F928 /* Frameworks */,
 				17DCE99E2C7067EC00731D42 /* Products */,
 				17780D3B2E1C02420077E636 /* litehook */,
@@ -500,9 +507,9 @@
 				174140AD2D9C0F4100F3F928 /* TestJITLess.dylib */,
 				E1292AE52DCA3A660065E12D /* LiveProcess.appex */,
 				E1292BD62DCA3B660065E12D /* LiveContainerShared.framework */,
-				173545A82E2C7913001B3B4C /* SideStore.framework */,
+				173545A82E2C7913001B3B4C /* SideStoreSupport.framework */,
 				17CAE6172F230449008B1977 /* LaunchAppExtension.appex */,
-				17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */,
+				17E23DDF2F443A9300C55733 /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -556,9 +563,9 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		173545A72E2C7913001B3B4C /* SideStore */ = {
+		173545A72E2C7913001B3B4C /* SideStoreSupport */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 173545B02E2C7913001B3B4C /* Build configuration list for PBXNativeTarget "SideStore" */;
+			buildConfigurationList = 173545B02E2C7913001B3B4C /* Build configuration list for PBXNativeTarget "SideStoreSupport" */;
 			buildPhases = (
 				173545A32E2C7913001B3B4C /* Headers */,
 				173545A42E2C7913001B3B4C /* Sources */,
@@ -570,13 +577,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				173545A92E2C7913001B3B4C /* SideStore */,
+				173545A92E2C7913001B3B4C /* SideStoreSupport */,
 			);
-			name = SideStore;
+			name = SideStoreSupport;
 			packageProductDependencies = (
 			);
-			productName = SideStore;
-			productReference = 173545A82E2C7913001B3B4C /* SideStore.framework */;
+			productName = SideStoreSupport;
+			productReference = 173545A82E2C7913001B3B4C /* SideStoreSupport.framework */;
 			productType = "com.apple.product-type.framework";
 		};
 		17413FB42D9C0BAE00F3F928 /* LiveContainerSwiftUI */ = {
@@ -718,9 +725,9 @@
 			productReference = 17DCE99D2C7067EC00731D42 /* FlekDeck.app */;
 			productType = "com.apple.product-type.application";
 		};
-		17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */ = {
+		17E23DDE2F443A9300C55733 /* ShareExtension */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 17E23DEA2F443A9300C55733 /* Build configuration list for PBXNativeTarget "LaunchAppExtensionHelper" */;
+			buildConfigurationList = 17E23DEA2F443A9300C55733 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
 			buildPhases = (
 				17E23DDB2F443A9300C55733 /* Sources */,
 				17E23DDC2F443A9300C55733 /* Frameworks */,
@@ -729,15 +736,16 @@
 			buildRules = (
 			);
 			dependencies = (
+				17E23DF22F443A9300C55733 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				17E23DE02F443A9300C55733 /* LaunchAppExtensionHelper */,
+				17E23DE02F443A9300C55733 /* ShareExtension */,
 			);
-			name = LaunchAppExtensionHelper;
+			name = ShareExtension;
 			packageProductDependencies = (
 			);
-			productName = LaunchAppExtensionHelper;
-			productReference = 17E23DDF2F443A9300C55733 /* LaunchAppExtensionHelper.appex */;
+			productName = ShareExtension;
+			productReference = 17E23DDF2F443A9300C55733 /* ShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		E1292AE42DCA3A660065E12D /* LiveProcess */ = {
@@ -894,9 +902,9 @@
 				174140AC2D9C0F4100F3F928 /* TestJITLess */,
 				E1292AE42DCA3A660065E12D /* LiveProcess */,
 				E1292BD52DCA3B660065E12D /* LiveContainerShared */,
-				173545A72E2C7913001B3B4C /* SideStore */,
+				173545A72E2C7913001B3B4C /* SideStoreSupport */,
 				17CAE6162F230449008B1977 /* LaunchAppExtension */,
-				17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */,
+				17E23DDE2F443A9300C55733 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -1057,7 +1065,7 @@
 /* Begin PBXTargetDependency section */
 		173545AD2E2C7913001B3B4C /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 173545A72E2C7913001B3B4C /* SideStore */;
+			target = 173545A72E2C7913001B3B4C /* SideStoreSupport */;
 			targetProxy = 173545AC2E2C7913001B3B4C /* PBXContainerItemProxy */;
 		};
 		174140FA2D9C1EDA00F3F928 /* PBXTargetDependency */ = {
@@ -1082,8 +1090,13 @@
 		};
 		17E23DE82F443A9300C55733 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 17E23DDE2F443A9300C55733 /* LaunchAppExtensionHelper */;
+			target = 17E23DDE2F443A9300C55733 /* ShareExtension */;
 			targetProxy = 17E23DE72F443A9300C55733 /* PBXContainerItemProxy */;
+		};
+		17E23DF22F443A9300C55733 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E1292BD52DCA3B660065E12D /* LiveContainerShared */;
+			targetProxy = 17E23DF12F443A9300C55733 /* PBXContainerItemProxy */;
 		};
 		E1292AF22DCA3A660065E12D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1132,7 +1145,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_INSTALL_MODULE = YES;
 				SWIFT_INSTALL_OBJC_HEADER = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "SideStore/SideStore-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "SideStoreSupport/SideStore-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1175,7 +1188,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_INSTALL_MODULE = YES;
 				SWIFT_INSTALL_OBJC_HEADER = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "SideStore/SideStore-Bridging-Header.h";
+				SWIFT_OBJC_BRIDGING_HEADER = "SideStoreSupport/SideStore-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1424,6 +1437,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtension;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1460,6 +1474,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtension;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1633,7 +1648,7 @@
 					"$(PROJECT_DIR)/OpenSSL/Frameworks/iphoneos",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Resources/Info.plist;
+				INFOPLIST_FILE = LiveContainer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FlekDeck;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -1679,7 +1694,7 @@
 					"$(PROJECT_DIR)/OpenSSL/Frameworks/iphoneos",
 				);
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Resources/Info.plist;
+				INFOPLIST_FILE = LiveContainer/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FlekDeck;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -1710,18 +1725,18 @@
 		17E23DEB2F443A9300C55733 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 17B0F8452DE16FE4008110EA /* xcconfigs */;
-			baseConfigurationReferenceRelativePath = LaunchAppExtensionHelper.xcconfig;
+			baseConfigurationReferenceRelativePath = ShareExtension.xcconfig;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = LaunchAppExtensionHelper/LaunchAppExtensionHelper.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3.7.11;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				DEVELOPMENT_TEAM = 2V7F92VA47;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = LaunchAppExtensionHelper/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LaunchAppExtensionHelper;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1729,16 +1744,17 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtensionHelper;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtensionHelper;
+				MARKETING_VERSION = 3.7.11;
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.ShareExtension;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "ShareExtension/ShareExtension-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -1749,18 +1765,18 @@
 		17E23DEC2F443A9300C55733 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 17B0F8452DE16FE4008110EA /* xcconfigs */;
-			baseConfigurationReferenceRelativePath = LaunchAppExtensionHelper.xcconfig;
+			baseConfigurationReferenceRelativePath = ShareExtension.xcconfig;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = LaunchAppExtensionHelper/LaunchAppExtensionHelper.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3.7.11;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				DEVELOPMENT_TEAM = 2V7F92VA47;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = LaunchAppExtensionHelper/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LaunchAppExtensionHelper;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ShareExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1768,16 +1784,17 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.LaunchAppExtensionHelper;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.LaunchAppExtensionHelper;
+				MARKETING_VERSION = 3.7.11;
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.fs.flekdeck.ShareExtension;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.fs.flekdeck.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "ShareExtension/ShareExtension-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2013,7 +2030,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		173545B02E2C7913001B3B4C /* Build configuration list for PBXNativeTarget "SideStore" */ = {
+		173545B02E2C7913001B3B4C /* Build configuration list for PBXNativeTarget "SideStoreSupport" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				173545B12E2C7913001B3B4C /* Debug */,
@@ -2085,7 +2102,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		17E23DEA2F443A9300C55733 /* Build configuration list for PBXNativeTarget "LaunchAppExtensionHelper" */ = {
+		17E23DEA2F443A9300C55733 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				17E23DEB2F443A9300C55733 /* Debug */,

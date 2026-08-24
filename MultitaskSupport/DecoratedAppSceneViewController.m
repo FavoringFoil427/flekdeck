@@ -8,34 +8,10 @@
 #import "../LiveContainer/Localization.h"
 #import "utils.h"
 
-@implementation RBSTarget(hook)
-+ (instancetype)hook_targetWithPid:(pid_t)pid environmentIdentifier:(NSString *)environmentIdentifier {
-    if([environmentIdentifier containsString:@"LiveProcess"]) {
-        environmentIdentifier = [NSString stringWithFormat:@"LiveProcess:%d", pid];
-    }
-    return [self hook_targetWithPid:pid environmentIdentifier:environmentIdentifier];
-}
-@end
-static int hook_return_2(void) {
-    return 2;
-}
-__attribute__((constructor))
-void UIKitFixesInit(void) {
-    // Fix _UIPrototypingMenuSlider not continually updating its value on iOS 17+
-    Class _UIFluidSliderInteraction = objc_getClass("_UIFluidSliderInteraction");
-    if(_UIFluidSliderInteraction) {
-        method_setImplementation(class_getInstanceMethod(_UIFluidSliderInteraction, @selector(_state)), (IMP)hook_return_2);
-    }
-    // Fix physical keyboard focus on iOS 17+
-    if(@available(iOS 17.0, *)) {
-        method_exchangeImplementations(class_getClassMethod(RBSTarget.class, @selector(targetWithPid:environmentIdentifier:)), class_getClassMethod(RBSTarget.class, @selector(hook_targetWithPid:environmentIdentifier:)));
-    }
-}
-
 @interface DecoratedAppSceneViewController()
 @property(nonatomic) NSArray* activatedVerticalConstraints;
-@property(nonatomic) NSString* dataUUID;
 @property(nonatomic) NSString* windowName;
+@property(nonatomic) NSString* dataUUID;
 @property(nonatomic) int pid;
 @property(nonatomic) CGRect originalFrame;
 @property(nonatomic) UIBarButtonItem *maximizeButton;
@@ -152,11 +128,17 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 @implementation DecoratedAppSceneViewController
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
     self = [super initWithNibName:nil bundle:nil];
+    self.view = [[UIStackView alloc] initWithFrame:self.view.frame];
+    [MultitaskDockManager.shared.windowHostingView addSubview:self.view];
+    [rootVC addChildViewController:self];
+    
+    _dataUUID = dataUUID;
     _scaleRatio = 1.0;
     _isMaximized = YES;
     [rootVC addChildViewController:self];
     [MultitaskDockManager.shared.windowHostingView addSubview:self.view];
     _appSceneVC = [[AppSceneViewController alloc] initWithBundleId:bundleId dataUUID:dataUUID delegate:self];
+    self.title = windowName;
     [self setupDecoratedView];
     
     [MultitaskDockManager.shared addRunningApp:windowName appUUID:dataUUID view:self.view];
@@ -183,8 +165,7 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 
 - (void)setupDecoratedView {
     CGFloat navBarHeight = 44;
-    self.view = [UIStackView new];
-    BOOL isLandscape = UIInterfaceOrientationIsLandscape(UIApplication.sharedApplication.statusBarOrientation);
+    BOOL isLandscape = UIInterfaceOrientationIsLandscape(UIApp.statusBarOrientation);
     CGRect frame = CGRectMake(0, 0, isLandscape ? 480 : 320, (isLandscape ? 320 : 480) + navBarHeight);
     CGPoint rootViewCenter = self.view.superview.center;
     frame.origin = CGPointMake(rootViewCenter.x - frame.size.width / 2, rootViewCenter.y - frame.size.height / 2);
@@ -204,7 +185,7 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     // Navigation bar
     UINavigationBar *navigationBar = [[UINavigationBar alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, navBarHeight)];
     navigationBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    UINavigationItem *navigationItem = [[UINavigationItem alloc] initWithTitle:@"Unnamed window"];
+    UINavigationItem *navigationItem = [[UINavigationItem alloc] initWithTitle:self.title];
     navigationBar.items = @[navigationItem];
     
     self.view.axis = UILayoutConstraintAxisVertical;
@@ -353,10 +334,14 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 - (void)applyScaleRatio:(CGFloat)newValue {
     self.scaleRatio = newValue;
     self.appSceneVC.scaleRatio = _scaleRatio;
-    self.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(_scaleRatio, _scaleRatio, 1.0);
+    if(self.appSceneVC.usesHostingControllerAPI) {
+        self.appSceneVC.contentView.transform = CGAffineTransformMakeScale(_scaleRatio, _scaleRatio);
+    } else {
+        self.appSceneVC.contentView.layer.sublayerTransform = CATransform3DMakeScale(_scaleRatio, _scaleRatio, 1.0);
+    }
     __weak typeof(self) weakSelf = self;
     [self.appSceneVC updateFrameWithSettingsBlock:^(UIMutableApplicationSceneSettings *settings) {
-        if(_isMaximized) {
+        if(weakSelf.isMaximized) {
             [weakSelf updateMaximizedSafeAreaWithSettings:settings];
         } else {
             // it seems some apps don't honor these settings so we don't cover the top of the app
@@ -505,7 +490,12 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     });
 }
 
-- (void)appSceneVC:(AppSceneViewController*)vc didUpdateFromSettings:(UIMutableApplicationSceneSettings *)baseSettings transitionContext:(id)newContext {
+- (void)appSceneVCWillActivateScene:(AppSceneViewController *)vc {
+    // Set up initial settings such as frame, safe area, etc
+    [self appSceneVC:vc didUpdateFromSettings:vc.presenter.scene.settings.mutableCopy transitionContext:nil lifecycleActionType:0];
+}
+
+- (void)appSceneVC:(AppSceneViewController*)vc didUpdateFromSettings:(UIMutableApplicationSceneSettings *)baseSettings transitionContext:(id)newContext lifecycleActionType:(uint32_t)actionType {
     UIMutableApplicationSceneSettings *newSettings = [vc.presenter.scene.settings mutableCopy];
     newSettings.userInterfaceStyle = baseSettings.userInterfaceStyle;
     newSettings.interfaceOrientation = baseSettings.interfaceOrientation;
@@ -742,17 +732,7 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         if(UIInterfaceOrientationIsLandscape(currentOrientation)) {
             safeAreaInsets.top = 0;
         }
-        switch(currentOrientation) {
-            case UIInterfaceOrientationLandscapeLeft:
-                settings.safeAreaInsetsPortrait = UIEdgeInsetsMake(settings.peripheryInsets.left, 0, settings.peripheryInsets.right, settings.peripheryInsets.bottom);
-                break;
-            case UIInterfaceOrientationLandscapeRight:
-                settings.safeAreaInsetsPortrait = UIEdgeInsetsMake(settings.peripheryInsets.left, settings.peripheryInsets.bottom, settings.peripheryInsets.right, 0);
-                break;
-            default:
-                settings.safeAreaInsetsPortrait = UIEdgeInsetsMake(settings.peripheryInsets.top, settings.peripheryInsets.left, settings.peripheryInsets.bottom, settings.peripheryInsets.right);
-                break;
-        }
+        settings.safeAreaInsetsPortrait = LCUIEdgeInsetsRotateToOrientation(settings.peripheryInsets, currentOrientation);
 
     } else {
         settings.safeAreaInsetsPortrait = UIEdgeInsetsMake(settings.peripheryInsets.top, settings.peripheryInsets.left, settings.peripheryInsets.bottom, settings.peripheryInsets.right);

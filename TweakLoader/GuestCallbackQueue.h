@@ -1,8 +1,4 @@
-@import Foundation;
-@import ObjectiveC;
-
-void swizzle(Class class, SEL originalAction, SEL swizzledAction);
-void swizzleClassMethod(Class class, SEL originalAction, SEL swizzledAction);
+#import <Foundation/Foundation.h>
 
 /// The queue guest-facing API stubs deliver their callbacks on.
 ///
@@ -16,21 +12,9 @@ void swizzleClassMethod(Class class, SEL originalAction, SEL swizzledAction);
 /// Serial rather than a global concurrent queue, so that several stubbed replies
 /// still reach the app in the order it asked for them — which is what it got
 /// while these all went through the main queue.
+///
+/// Kept here rather than in utils.h, which upstream consolidated into
+/// LiveContainer/utils.h: everything left there is static inline, so TweakLoader
+/// does not link that file's implementation, and a definition placed in it would
+/// not resolve for this target.
 dispatch_queue_t lcGuestCallbackQueue(void);
-
-// Exported from the main executable
-@interface NSUserDefaults(LiveContainer)
-+ (instancetype)lcUserDefaults;
-+ (instancetype)lcSharedDefaults;
-+ (NSString *)lcAppGroupPath;
-+ (NSString *)lcAppUrlScheme;
-+ (NSBundle *)lcMainBundle;
-+ (NSDictionary *)guestAppInfo;
-+ (NSDictionary *)guestContainerInfo;
-+ (bool)isLiveProcess;
-+ (bool)isSharedApp;
-+ (NSString*)lcGuestAppId;
-+ (bool)isSideStore;
-+ (bool)sideStoreExist;
-+ (NSString*)lcLaunchURL;
-@end

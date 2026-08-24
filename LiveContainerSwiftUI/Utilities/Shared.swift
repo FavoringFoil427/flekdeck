@@ -92,6 +92,9 @@ class SharedModel: ObservableObject {
     @Published var isJITModalOpen = false
     
     @Published var enableMultipleWindow = false
+
+    @Published var appDataFolderNames: [String] = []
+    @Published var tweakFolderNames: [String] = []
     
     @Published var apps : [LCAppModel] = []
     @Published var hiddenApps : [LCAppModel] = []
@@ -111,10 +114,6 @@ class SharedModel: ObservableObject {
             return true
         }
         return false
-    }()
-    
-    static let isLiquidGlassSearchEnabled = {
-            return isLiquidGlassEnabled && UIDevice.current.userInterfaceIdiom == .phone
     }()
     
     var mainWindowOpened = false

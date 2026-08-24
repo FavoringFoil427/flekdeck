@@ -14,7 +14,8 @@
 //  request fail on its own terms rather than reporting a success the app can't use.
 //
 
-#import "utils.h"
+#import "../LiveContainer/utils.h"
+#import "GuestCallbackQueue.h"
 
 static NSString* odrResourceDirectory = nil;
 static NSDictionary<NSString*, NSArray<NSString*>*>* odrFilesForTag = nil;

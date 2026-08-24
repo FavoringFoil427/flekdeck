@@ -10,9 +10,10 @@ import SwiftUI
 struct LiveContainerSwiftUIApp : SwiftUI.App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
-    @State var appDataFolderNames: [String]
-    @State var tweakFolderNames: [String]
-    
+    // appDataFolderNames and tweakFolderNames used to be @State here and were
+    // threaded down as bindings. Upstream moved them onto DataManager's shared
+    // model, which is populated at the end of init() below, so the views read
+    // them from the environment instead.
     @StateObject private var flekstoreSharedModel = FlekstoreSharedModel()
     
     init() {
@@ -100,7 +101,8 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
                 if !tweakDirUrl.hasDirectoryPath {
                     continue
                 }
-                tempTweakFolderNames.append(tweakDir)
+                let folderName = tweakDir.hasSuffix(".disabled") ? String(tweakDir.dropLast(".disabled".count)) : tweakDir
+                tempTweakFolderNames.append(folderName)
             }
         } catch {
             NSLog("[LC] error:\(error)")
@@ -108,17 +110,16 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
         
         DataManager.shared.model.apps = tempApps
         DataManager.shared.model.hiddenApps = tempHiddenApps
+        DataManager.shared.model.appDataFolderNames = tempAppDataFolderNames
+        DataManager.shared.model.tweakFolderNames = tempTweakFolderNames
         if let tempURLSchemes {
             UserDefaults.lcShared().set(Array(tempURLSchemes), forKey: "LCGuestURLSchemes")
         }
-        
-        _appDataFolderNames = State(initialValue: tempAppDataFolderNames)
-        _tweakFolderNames = State(initialValue: tempTweakFolderNames)
     }
     
     var body: some Scene {
         WindowGroup(id: "Main") {
-            LCTabView(appDataFolderNames: $appDataFolderNames, tweakFolderNames: $tweakFolderNames)
+            LCTabView()
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .environmentObject(DataManager.shared.model)
                 .environmentObject(LCAppSortManager.shared)

@@ -3,8 +3,8 @@ import Foundation
 protocol LCAppModelDelegate {
     func closeNavigationView()
     func changeAppVisibility(app : LCAppModel)
-    func jitLaunch(appName: String) async
-    func jitLaunch(withScript script: String, appName: String) async
+    func jitLaunch(appName: String, classicMode: UInt) async
+    func jitLaunch(withScript script: String, appName: String, classicMode: UInt) async
     func jitLaunch(withPID pid: Int, withScript script: String?, appName: String) async
     func showRunWhenMultitaskAlert() async -> Bool?
 }
@@ -21,6 +21,11 @@ class LCAppModel: ObservableObject, Hashable {
     @Published var uiIsJITNeeded : Bool {
         didSet {
             appInfo.isJITNeeded = uiIsJITNeeded
+        }
+    }
+    @Published var uiClassicMode : Bool {
+        didSet {
+            appInfo.classicMode = uiClassicMode
         }
     }
     @Published var uiIsHidden : Bool
@@ -175,6 +180,7 @@ class LCAppModel: ObservableObject, Hashable {
         }
         
         self.uiIsJITNeeded = appInfo.isJITNeeded
+        self.uiClassicMode = appInfo.classicMode
         self.uiIsHidden = appInfo.isHidden
         self.uiIsLocked = appInfo.isLocked
         self.uiIsShared = appInfo.isShared
@@ -238,12 +244,15 @@ class LCAppModel: ObservableObject, Hashable {
         }
         let currentDataFolder = containerFolderName ?? uiSelectedContainer?.folderName
         
-        let multitask = multitask ?? shouldLaunchInMultitaskMode;
+        let classicMode = appInfo.defaultClassicMode
+        let multitask = classicMode == 0 ? (multitask ?? shouldLaunchInMultitaskMode) : false
         
-        if multitask,
-           let currentDataFolder,
-           await bringExistingMultitaskWindowIfNeeded(dataUUID: currentDataFolder) {
-            return
+        if MultitaskManager.isMultitasking() || multitask,
+           let currentDataFolder {
+            if await bringExistingMultitaskWindowIfNeeded(dataUUID: currentDataFolder, urlScheme: urlStr) {
+                return
+            }
+            
         }
         
         // this is rerouted to bringing app to front, so not needed here?
@@ -274,11 +283,6 @@ class LCAppModel: ObservableObject, Hashable {
         
         // find a free lc to run non-multitasking shared app. If none, ask user if they want to terminate all multitasking apps
         if MultitaskManager.isMultitasking() && !multitask {
-            if let currentDataFolder,
-               await bringExistingMultitaskWindowIfNeeded(dataUUID: currentDataFolder) {
-                return
-            }
-            
             if self.uiIsShared {
                 var freeScheme: String? = nil
                 LCUtils.forEachInstalledLC(isFree: true) { scheme, shouldBreak in
@@ -373,9 +377,9 @@ class LCAppModel: ObservableObject, Hashable {
             } else {
                 // Non-multitask JIT flow remains unchanged
                 if let scriptData = jitLaunchScriptJs, !scriptData.isEmpty {
-                    await delegate?.jitLaunch(withScript: scriptData, appName: self.appInfo.displayName())
+                    await delegate?.jitLaunch(withScript: scriptData, appName: self.appInfo.displayName(), classicMode: classicMode)
                 } else {
-                    await delegate?.jitLaunch(appName: self.appInfo.displayName())
+                    await delegate?.jitLaunch(appName: self.appInfo.displayName(), classicMode: classicMode)
                 }
             }
         } else if multitask, #available(iOS 16.0, *) {
@@ -386,7 +390,7 @@ class LCAppModel: ObservableObject, Hashable {
                 let fileURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("preloadLibraries.txt")
                 try fileContents?.write(to: fileURL)
             }
-            LCSharedUtils.launchToGuestApp()
+            LCSharedUtils.launchToGuestApp(withClassicMode: classicMode)
         }
         
         // Record the launch time
@@ -526,15 +530,21 @@ class LCAppModel: ObservableObject, Hashable {
         
     }
     
-    private func bringExistingMultitaskWindowIfNeeded(dataUUID: String) async -> Bool {
+    private func bringExistingMultitaskWindowIfNeeded(dataUUID: String, urlScheme: String?) async -> Bool {
         guard #available(iOS 16.0, *) else { return false }
         return await MainActor.run {
+            if let urlScheme {
+                UserDefaults.standard.setValue(urlScheme, forKey: "launchAppUrlScheme")
+            }
             var found = false
             if #available(iOS 16.1, *) {
                 found = MultitaskWindowManager.openExistingAppWindow(dataUUID: dataUUID)
             }
             if !found {
                 found = MultitaskDockManager.shared.bringMultitaskViewToFront(uuid: dataUUID)
+            }
+            if let urlScheme, !found  {
+                UserDefaults.standard.removeObject(forKey: "launchAppUrlScheme")
             }
             return found
         }

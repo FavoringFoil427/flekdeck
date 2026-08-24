@@ -31,7 +31,7 @@
 @import Foundation;
 #import <objc/runtime.h>
 #import <mach-o/dyld.h>
-#import "utils.h"
+#import "../LiveContainer/utils.h"
 
 static BOOL flekstoreShimInstalled = NO;
 

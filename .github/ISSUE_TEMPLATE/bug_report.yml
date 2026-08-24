@@ -1,5 +1,5 @@
-name: Bug Report
-description: Report a bug
+name: LiveContainer UI / Extension Bug Report
+description: Report a bug when using LiveContainer's own UI or extension.
 title: "[BUG] "
 labels: ["bug"]
 body:

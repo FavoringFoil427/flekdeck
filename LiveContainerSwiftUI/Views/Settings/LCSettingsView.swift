@@ -45,8 +45,6 @@ struct LCSettingsView: View {
     @State private var hasSubscription: Bool = false
     @State private var isSubscriptionLoading: Bool = false
     
-    @Binding var appDataFolderNames: [String]
-    @Binding var tweakFolderNames: [String]
     
     
     @StateObject private var installLC2Alert = AlertHelper<Int>()
@@ -90,7 +88,7 @@ struct LCSettingsView: View {
     @AppStorage("LCLoadTweaksToSelf") var injectToLCItelf = false
     @AppStorage("LCIgnoreJITOnLaunch") var ignoreJITOnLaunch = false
     #if is32BitSupported
-    @AppStorage("selected32BitLayer") var liveExec32Path : String = ""
+    @AppStorage("selected32BitLayer", store: LCUtils.appGroupUserDefault) var liveExec32Path : String = ""
     #endif
     @AppStorage("LCKeepSelectedWhenQuit") var keepSelectedWhenQuit = false
     @AppStorage("LCWaitForDebugger") var waitForDebugger = false
@@ -153,12 +151,9 @@ struct LCSettingsView: View {
     
     let storeName = LCUtils.getStoreName()
     
-    init(appDataFolderNames: Binding<[String]>, tweakFolderNames: Binding<[String]>) {
+    init() {
         _certificateDataFound = State(initialValue: LCSharedUtils.certificatePassword() != nil)
         _store = State(initialValue: LCUtils.store())
-
-        _appDataFolderNames = appDataFolderNames
-        _tweakFolderNames = tweakFolderNames
     }
     
     let fsPassword: String = {
@@ -478,7 +473,7 @@ struct LCSettingsView: View {
                     NavigationLink { signingPage } label: {
                         categoryRow("lc.flek.cat.signing".loc, "signature", .mint, iconSize: 15)
                     }
-                    NavigationLink { LCTweaksView(tweakFolders: $tweakFolderNames) } label: {
+                    NavigationLink { LCTweaksView() } label: {
                         categoryRow("Tweaks", "wrench.and.screwdriver.fill", .orange, iconSize: 17)
                     }
                 }
@@ -996,7 +991,7 @@ struct LCSettingsView: View {
                 
                 Section {
                     NavigationLink {
-                        LCDataManagementView(appDataFolderNames: $appDataFolderNames)
+                        LCDataManagementView()
                     } label: {
                         Text("lc.settings.dataManagement".loc)
                     }
@@ -1231,11 +1226,30 @@ struct LCSettingsView: View {
                 }
                 
                 guard let data = item as? Data else {
-                    errorInfo = "Failed to decode password data"
+                    errorInfo = "Failed to decode certificate data"
                     errorShow = true
                     return
                 }
-                onSideStoreCertificateCallback(certificateData: data, password: "")
+                
+                let passwordQuery: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrAccount as String: "signingCertificatePassword",
+                    kSecReturnData as String: true,
+                    kSecMatchLimit as String: kSecMatchLimitOne,
+                    kSecAttrService as String: "com.kdt.livecontainer",
+                    kSecAttrSynchronizable as String: kSecAttrSynchronizableAny
+                ]
+                
+                var passwordItem: CFTypeRef?
+                let passwordStatus = SecItemCopyMatching(passwordQuery as CFDictionary, &passwordItem)
+                var password = ""
+                if passwordStatus == errSecSuccess,
+                   let passwordData = passwordItem as? Data,
+                   let pwd = String(data: passwordData, encoding: .utf8) {
+                    password = pwd
+                }
+                
+                onSideStoreCertificateCallback(certificateData: data, password: password)
                 
                 return
             }

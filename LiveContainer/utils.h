@@ -27,6 +27,14 @@ bool aarch64_emulate_add_imm(uint32_t instruction, uint32_t *dst, uint32_t *src,
 uint64_t aarch64_emulate_adrp_add(uint32_t instruction, uint32_t addInstruction, uint64_t pc);
 uint64_t aarch64_emulate_adrp_ldr(uint32_t instruction, uint32_t ldrInstruction, uint64_t pc);
 
+static inline void swizzle(Class class, SEL originalAction, SEL swizzledAction) {
+    method_exchangeImplementations(class_getInstanceMethod(class, originalAction), class_getInstanceMethod(class, swizzledAction));
+}
+
+static inline void swizzleClassMethod(Class class, SEL originalAction, SEL swizzledAction) {
+    method_exchangeImplementations(class_getClassMethod(class, originalAction), class_getClassMethod(class, swizzledAction));
+}
+
 @interface NSUserDefaults(LiveContainer)
 + (instancetype)lcUserDefaults;
 + (instancetype)lcSharedDefaults;

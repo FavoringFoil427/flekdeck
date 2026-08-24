@@ -17,7 +17,7 @@
 //
 
 #import <mach-o/dyld.h>
-#import "utils.h"
+#import "../LiveContainer/utils.h"
 
 static BOOL gameKitStubInstalled = NO;
 
