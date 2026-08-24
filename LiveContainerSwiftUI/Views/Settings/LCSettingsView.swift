@@ -265,6 +265,33 @@ struct LCSettingsView: View {
     }
     
     
+    // MARK: - UDID
+
+    /// The UDID with only its ends legible.
+    ///
+    /// Enough of it survives to recognise the device at a glance and to match
+    /// against a support request, and not enough to register or sign with. The
+    /// copy button beside it still yields the real value, which is the one place
+    /// it is needed — reading it off a screen is not, and a screenshot or a
+    /// shoulder is how it usually escapes.
+    private var maskedUdid: String {
+        Self.masking(udid)
+    }
+
+    /// Keeps the first and last `ends` characters and replaces the rest with one
+    /// bullet each, so the length still shows.
+    ///
+    /// A value too short to split that way is masked completely rather than
+    /// printed with its two ends touching, which would show all of it.
+    static func masking(_ value: String, ends: Int = 6) -> String {
+        guard value.count > ends * 2 else {
+            return String(repeating: "\u{2022}", count: value.count)
+        }
+        return String(value.prefix(ends))
+            + String(repeating: "\u{2022}", count: value.count - ends * 2)
+            + String(value.suffix(ends))
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -281,7 +308,7 @@ struct LCSettingsView: View {
                             Text("UDID")
                                 .font(.body)
                             
-                            Text(udid)
+                            Text(maskedUdid)
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
