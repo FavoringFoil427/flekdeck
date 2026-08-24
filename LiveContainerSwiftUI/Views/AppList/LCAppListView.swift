@@ -872,9 +872,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             result.append(contentsOf: sortedApps.map { .installed($0) })
         }
 
-        // Compact deleted-app placeholders within each page so the
-        // remaining apps on that page close the gap, without pulling
-        // items from other pages.
+        // Close the gap a deleted app left, on its own page and nowhere else:
+        // the icons after it move up, and the slot it freed goes to the end of
+        // that same page as an empty one.
+        //
+        // The page keeps the number of slots it had, which is the whole point.
+        // Page boundaries are recorded beside the order rather than in it, so a
+        // page that quietly loses a slot moves every boundary behind it back by
+        // one — the first icon of the next screen steps onto this one, and each
+        // screen after that follows. Nothing is removed from `result` here for
+        // the same reason: its length is what the boundaries are counted in.
         if didReplaceDeleted {
             let isDeletedPlaceholder: (FlekHomeItem) -> Bool = { item in
                 if case .placeholder(let id) = item { return id.hasPrefix("deleted.") }
@@ -882,28 +889,34 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
 
             var sizes = LCUtils.appGroupUserDefault.array(forKey: FlekDeckKeys.homeScreenPageSizes) as? [Int] ?? []
-            if !sizes.isEmpty {
-                // Remove deleted placeholders page-by-page
-                var offset = 0
-                for pageIdx in 0..<sizes.count {
-                    let pageStart = offset
-                    let pageEnd = min(pageStart + sizes[pageIdx], result.count)
-                    var i = pageStart
-                    var removed = 0
-                    while i < pageEnd - removed {
-                        if isDeletedPlaceholder(result[i]) {
-                            result.remove(at: i)
-                            removed += 1
-                        } else {
-                            i += 1
-                        }
-                    }
-                    sizes[pageIdx] -= removed
-                    offset = pageStart + sizes[pageIdx]
+            let itemsPerPage = max(1, homeItemsPerPage)
+            var offset = 0
+            var pageIdx = 0
+            while offset < result.count {
+                // Past the stored sizes lie the uniform pages
+                // paginateFromFlatItems() makes for the items beyond them.
+                let size = pageIdx < sizes.count ? sizes[pageIdx] : itemsPerPage
+                pageIdx += 1
+                guard size > 0 else { continue }
+
+                let pageEnd = min(offset + size, result.count)
+                var page = Array(result[offset..<pageEnd])
+                let freed = page.filter(isDeletedPlaceholder).count
+                if freed > 0 {
+                    page.removeAll(where: isDeletedPlaceholder)
+                    // Distinct ids: `slot.<n>` names a slot by its position in
+                    // the stored order, and one of those may already sit at the
+                    // end of this page.
+                    page.append(contentsOf: (0..<freed).map { .placeholder("freed.\(offset).\($0)") })
+                    result.replaceSubrange(offset..<pageEnd, with: page)
                 }
-                // Safety: remove any deleted placeholders beyond stored pages
-                result.removeAll(where: isDeletedPlaceholder)
-                // Trim trailing pages that are now all-placeholder or empty
+                offset = pageEnd
+            }
+
+            // A trailing page with nothing left on it is not a page. Only the
+            // trailing one here: an emptied page in the middle is closed by the
+            // springboard, which writes the tightened layout back itself.
+            if !sizes.isEmpty {
                 while sizes.count > 1 {
                     let lastPageStart = sizes.dropLast().reduce(0, +)
                     let lastPageEnd = min(lastPageStart + (sizes.last ?? 0), result.count)
@@ -920,9 +933,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                     }
                 }
                 LCUtils.appGroupUserDefault.set(sizes, forKey: FlekDeckKeys.homeScreenPageSizes)
-            } else {
-                // No page sizes stored — just remove deleted placeholders
-                result.removeAll(where: isDeletedPlaceholder)
             }
         }
 
@@ -1017,15 +1027,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         sharedAppSortManager.customSortOrder = appIds
     }
 
-    /// Returns the page index for a given flat-array position using
-    /// the persisted page sizes (or uniform chunking as fallback).
-    ///
-    /// When the index is beyond the stored page sizes the last page is
-    /// filled up to `itemsPerPage` before a new page is assumed —
-    /// matching `LCSpringboardViewController.paginateFromFlatItems()`.
-    private func pageForIndex(_ index: Int) -> Int {
-        // Estimate itemsPerPage from screen geometry
-        // (mirrors LCSpringboardViewController.recalculateItemsPerPage)
+    /// How many icons fit on a springboard page, worked back from the screen —
+    /// the same count `LCSpringboardViewController` measures from the page it
+    /// has in front of it. Pages the stored sizes say nothing about are this big.
+    private var homeItemsPerPage: Int {
+        // Mirrors LCSpringboardViewController.recalculateItemsPerPage
         let screenBounds = UIScreen.main.bounds
         let safeArea = UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.windows.first?.safeAreaInsets }
@@ -1034,8 +1040,17 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             screenSize: screenBounds.size,
             safeAreaInsets: safeArea
         )
+        return LCSpringboardPageCell.itemsPerPage(forPageSize: pageSize)
+    }
 
-        let ipp = LCSpringboardPageCell.itemsPerPage(forPageSize: pageSize)
+    /// Returns the page index for a given flat-array position using
+    /// the persisted page sizes (or uniform chunking as fallback).
+    ///
+    /// When the index is beyond the stored page sizes the last page is
+    /// filled up to `itemsPerPage` before a new page is assumed —
+    /// matching `LCSpringboardViewController.paginateFromFlatItems()`.
+    private func pageForIndex(_ index: Int) -> Int {
+        let ipp = homeItemsPerPage
 
         let sizes = LCUtils.appGroupUserDefault.array(forKey: FlekDeckKeys.homeScreenPageSizes) as? [Int] ?? []
         if !sizes.isEmpty {
@@ -2283,12 +2298,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             FlekLaunchModeStore.shared.forget(app)
             FlekLaunchTracker.shared.forget(app)
 
-            let itemId = FlekHomeItem.installed(app).id
-            var storedOrder = LCUtils.appGroupUserDefault.stringArray(forKey: FlekDeckKeys.homeScreenOrder) ?? []
-            if storedOrder.contains(itemId) {
-                storedOrder.removeAll { $0 == itemId }
-                LCUtils.appGroupUserDefault.set(storedOrder, forKey: FlekDeckKeys.homeScreenOrder)
-            }
+            // The app's slot in the home order is deliberately left alone here.
+            // `rebuildOrderedHomeItems` is what takes an app off the grid: an id
+            // it can no longer resolve becomes an empty slot on the page the app
+            // was on, the icons behind it close the gap, and the tightened order
+            // is written back.
+            //
+            // Splicing the id out first is what stopped that happening. It shifts
+            // every id after it back one place, so the rebuild finds nothing
+            // missing, skips the whole per-page pass — and the first icon of the
+            // next screen steps back onto this one to fill the hole.
             if let uniqueId = sharedAppSortManager.getUniqueIdentifier(for: app) {
                 sharedAppSortManager.customSortOrder.removeAll { $0 == uniqueId }
             }

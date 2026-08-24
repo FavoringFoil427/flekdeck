@@ -52,6 +52,11 @@ final class LCSpringboardViewController: UIViewController {
 
     private var currentPage: Int = 0
 
+    /// Set when a page was closed for being empty and the tightened layout
+    /// still has to be written back. Flushed as soon as the view has the
+    /// geometry to measure a page with.
+    private var needsEmptyPageSync = false
+
     // MARK: - Layout config
 
     private(set) var itemsPerPage: Int = 15
@@ -133,7 +138,7 @@ final class LCSpringboardViewController: UIViewController {
         let oldIPP = itemsPerPage
         recalculateItemsPerPage()
         if itemsPerPage != oldIPP && !flatItems.isEmpty {
-            paginateFromFlatItems()
+            if paginateFromFlatItems() { needsEmptyPageSync = true }
             outerCollectionView.reloadData()
             pageControl.numberOfPages = pages.count
             // Restore scroll position after re-pagination
@@ -142,6 +147,10 @@ final class LCSpringboardViewController: UIViewController {
                 outerCollectionView.setContentOffset(offset, animated: false)
             }
         }
+
+        // A page may have been closed before there was a page size to measure;
+        // now there is one.
+        flushEmptyPageSyncIfNeeded()
     }
 
     // MARK: - Setup
@@ -196,7 +205,7 @@ final class LCSpringboardViewController: UIViewController {
         let oldPageCount = pages.count
         flatItems = newItems
         recalculateItemsPerPage()
-        paginateFromFlatItems()
+        let closedEmptyPages = paginateFromFlatItems()
 
         // In edit mode, preserve the trailing empty page so that the page
         // count stays stable after a deletion. Without this,
@@ -226,15 +235,22 @@ final class LCSpringboardViewController: UIViewController {
                 }
             }
         } else {
+            currentPage = max(0, min(currentPage, pages.count - 1))
             outerCollectionView.reloadData()
             // Preserve scroll position after page count change
-            if currentPage > 0 && currentPage < pages.count {
-                let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(currentPage), y: 0)
-                outerCollectionView.setContentOffset(offset, animated: false)
-            }
+            let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(currentPage), y: 0)
+            outerCollectionView.setContentOffset(offset, animated: false)
         }
         pageControl.numberOfPages = pages.count
         pageControl.currentPage = min(currentPage, max(0, pages.count - 1))
+
+        // The emptied page is gone from `pages`, but the persisted order still
+        // holds the padding that made it a page. Write the tightened layout
+        // back so the next rebuild doesn't hand the dead page straight back.
+        if closedEmptyPages {
+            needsEmptyPageSync = true
+            flushEmptyPageSyncIfNeeded()
+        }
     }
 
     /// Recalculate the `itemsPerPage` metric from the size of a page.
@@ -298,8 +314,12 @@ final class LCSpringboardViewController: UIViewController {
     /// When items exist beyond the stored sizes (e.g. a newly installed app),
     /// the last page is filled up to `itemsPerPage` before a new page is
     /// created — matching real iOS SpringBoard behaviour.
-    private func paginateFromFlatItems() {
-        guard itemsPerPage > 0 else { return }
+    ///
+    /// Returns whether any page was closed for being empty, so the caller can
+    /// persist the tightened layout.
+    @discardableResult
+    private func paginateFromFlatItems() -> Bool {
+        guard itemsPerPage > 0 else { return false }
 
         let storedSizes = LCUtils.appGroupUserDefault.array(
             forKey: FlekDeckKeys.homeScreenPageSizes
@@ -347,15 +367,78 @@ final class LCSpringboardViewController: UIViewController {
         for i in newPages.indices {
             newPages[i].removeAll(where: { $0.isPlaceholder })
         }
-        // Remove trailing empty pages left after stripping
-        while newPages.count > 1 && (newPages.last?.isEmpty ?? true) {
-            newPages.removeLast()
-        }
-
         if newPages.isEmpty {
             newPages = [[]]
         }
         pages = newPages
+
+        // A page left with nothing on it after stripping is closed wherever it
+        // sits, not only at the end: a screen the user emptied in the middle of
+        // the deck goes away like any other.
+        return removeEmptyPages()
+    }
+
+    // MARK: - Empty pages
+
+    /// Closes every page holding nothing the user can see — no items, or only
+    /// placeholder padding — wherever it sits in the deck, and keeps
+    /// `currentPage` on the page being looked at. At least one page survives.
+    ///
+    /// Edit mode's trailing page is spared: it is the empty page an icon
+    /// dragged past the end of the deck lands on, and it goes when editing does.
+    ///
+    /// Returns whether any page was closed.
+    @discardableResult
+    private func removeEmptyPages() -> Bool {
+        let dropTargetPage = isInEditMode && pages.count > 1 ? pages.count - 1 : -1
+        var survivors = pages.indices.filter { index in
+            index == dropTargetPage || !pages[index].allSatisfy({ $0.isPlaceholder })
+        }
+        // A springboard with nothing on it at all still shows one page.
+        if survivors.isEmpty { survivors = [0] }
+        guard survivors.count < pages.count else { return false }
+
+        pages = survivors.map { pages[$0] }
+        // The user stays with the page they were looking at: it keeps its
+        // icons, only its index moves down by the pages closed ahead of it.
+        // When the page they were on is the one that closed, they land on the
+        // page that slid into its place.
+        currentPage = survivors.firstIndex(where: { $0 >= currentPage }) ?? pages.count - 1
+        return true
+    }
+
+    /// Writes a layout tightened by `removeEmptyPages()` back to SwiftUI.
+    ///
+    /// Held until the view has been laid out: the sync records page sizes in
+    /// terms of `itemsPerPage`, and with no geometry to measure a page with
+    /// that is a guess, which would persist page boundaries the user never
+    /// drew. Deferred by a turn either way — the caller is usually inside a
+    /// SwiftUI update or a layout pass, and the sync writes to a binding.
+    private func flushEmptyPageSyncIfNeeded() {
+        guard needsEmptyPageSync, view.bounds.height > 0, !dragManager.isDragging else { return }
+        needsEmptyPageSync = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.dragManager.isDragging else { return }
+            self.syncPagesToSwiftUI()
+        }
+    }
+
+    /// Closes a page a drag just emptied and persists the tightened layout.
+    /// Called once the dropped icon has settled, so nothing moves out from
+    /// under the slide-back animation.
+    func collapseEmptyPagesAfterDrag() {
+        guard !dragManager.isDragging, removeEmptyPages() else { return }
+
+        outerCollectionView.reloadData()
+        // The emptied page is behind the user — the drag scrolled them off it
+        // to drop the icon — so re-pinning the offset to its new index leaves
+        // the screen looking exactly as it did.
+        let offset = CGPoint(x: outerCollectionView.bounds.width * CGFloat(currentPage), y: 0)
+        outerCollectionView.setContentOffset(offset, animated: false)
+        pageControl.numberOfPages = pages.count
+        pageControl.currentPage = currentPage
+
+        syncPagesToSwiftUI()
     }
 
     // MARK: - Editing (matches jSpringBoard's enterEditingMode / leaveEditingMode)
@@ -385,26 +468,14 @@ final class LCSpringboardViewController: UIViewController {
 
             pageControl.backgroundStyle = .minimal
 
-            // Remove trailing empty pages after edit animations settle.
+            // Close the pages left empty, after edit animations settle.
             // Uses reloadData instead of deleteItems to avoid conflicts
             // with ongoing leaveEditingMode animations.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                 guard let self else { return }
 
-                var removedPages = false
-                while self.pages.count > 1,
-                      let last = self.pages.last,
-                      last.isEmpty || last.allSatisfy({ $0.isPlaceholder }) {
-                    self.pages.removeLast()
-                    removedPages = true
-                }
-
-                if removedPages {
-                    // Clamp currentPage if the user was on a removed page
-                    let maxPage = max(0, self.pages.count - 1)
-                    if self.currentPage > maxPage {
-                        self.currentPage = maxPage
-                    }
+                // Editing is over, so the trailing drop target goes too.
+                if self.removeEmptyPages() {
                     self.outerCollectionView.reloadData()
                     self.pageControl.numberOfPages = self.pages.count
                     self.pageControl.currentPage = self.currentPage

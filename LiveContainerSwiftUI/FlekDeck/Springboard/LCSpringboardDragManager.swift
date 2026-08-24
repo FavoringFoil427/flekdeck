@@ -329,6 +329,9 @@ final class LCSpringboardDragManager {
                 // Apply any item changes that arrived while dragging
                 // (e.g. an installing app finished and became .installed).
                 vc.applyPendingItemsIfNeeded()
+                // The icon has landed, so a page it was the last one on is
+                // now a page with nothing on it: close it up.
+                vc.collapseEmptyPagesAfterDrag()
             })
         } else {
             op.placeholderView.removeFromSuperview()
@@ -337,6 +340,7 @@ final class LCSpringboardDragManager {
                 (cell as? LCSpringboardPageCell)?.draggedItemId = nil
             }
             vc.applyPendingItemsIfNeeded()
+            vc.collapseEmptyPagesAfterDrag()
         }
     }
 
