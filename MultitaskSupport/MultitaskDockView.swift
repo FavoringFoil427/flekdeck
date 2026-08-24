@@ -2926,6 +2926,27 @@ class AppInfoProvider {
         }
     }
 
+    /// Stops the card row holding on to a touch before it will scroll.
+    ///
+    /// A scroll view delays touches to its content by default, so that a finger
+    /// that turns out to be tapping something reaches it rather than being read
+    /// as a drag. In the switcher that trade is the wrong way round: the cards
+    /// are large, the row is meant to be flung, and the pause is paid on every
+    /// touch — most noticeably the one right after the carousel settles, where
+    /// the first part of the drag goes nowhere and the row feels stuck before it
+    /// gives. Tapping a card still works: a tap is not movement, and the card's
+    /// own dismiss gesture needs twenty points before it claims anything.
+    private func handTouchesStraightToScrollViews(in view: UIView) {
+        if let scrollView = view as? UIScrollView {
+            scrollView.delaysContentTouches = false
+            // A drag that began on a card must still be able to become a scroll.
+            scrollView.canCancelContentTouches = true
+        }
+        for subview in view.subviews {
+            handTouchesStraightToScrollViews(in: subview)
+        }
+    }
+
     private func presentAppSwitcher(in keyWindow: UIWindow) {
         // Ensure the design is captured before the overlay's bottom toggle renders,
         // so it uses the real corner radius (not the uncaptured default) — otherwise,
@@ -2985,6 +3006,9 @@ class AppInfoProvider {
         // backdrop and everything "pops in" a frame later — the blink/reload.
         hc.view.setNeedsLayout()
         hc.view.layoutIfNeeded()
+        // Now that the hierarchy exists, hand the row's scroll view its touches
+        // without the customary pause. See -handTouchesStraightToScrollViews.
+        handTouchesStraightToScrollViews(in: hc.view)
 
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
@@ -3010,6 +3034,11 @@ class AppInfoProvider {
             // has no visible effect — it just keeps the bar's state consistent
             // for the exit path.
             self.hostingController?.view.alpha = 0
+            // Again, because the row's scroll view is made by SwiftUI and need
+            // not have existed at the first pass. Setting it twice costs a walk
+            // of a hierarchy that is a few dozen views deep; missing it costs the
+            // pause on every touch for as long as the switcher is open.
+            self.handTouchesStraightToScrollViews(in: hc.view)
         }
     }
     
@@ -4207,9 +4236,18 @@ struct AppSwitcherOverlay: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .scaleEffect(isPresented ? 1.0 : 0.85)
                 .opacity(isPresented ? 1.0 : 0)
+                // The cascade is capped rather than open-ended. At three
+                // hundredths of a second per card and no ceiling, the wait before
+                // the last card even begins grew with the number of apps open —
+                // and a card is transparent until its turn comes, so it is neither
+                // tappable nor a settled snap target for the row to align to. With
+                // eight apps that was about a quarter of a second of switcher that
+                // was plainly on screen and would not answer a swipe. Eighty
+                // milliseconds is enough to read as a cascade and is the same
+                // whether two apps are open or twenty.
                 .animation(
-                    .spring(response: 0.4, dampingFraction: 0.82)
-                    .delay(Double(pair.offset) * 0.03),
+                    .spring(response: 0.3, dampingFraction: 0.82)
+                    .delay(min(Double(pair.offset) * 0.02, 0.08)),
                     value: isPresented
                 )
             }
@@ -4791,6 +4829,12 @@ struct AppSwitcherCard: View {
     @EnvironmentObject var dockManager: MultitaskDockManager
     @State private var dragOffset: CGFloat = 0
     @State private var isDismissing = false
+    /// True only while a drag is live. SwiftUI clears a `@GestureState` when the
+    /// gesture ends *or* is cancelled, which a plain `@State` gives no way to
+    /// notice — and cancellation is the ordinary case here, since the row's
+    /// scroll view takes the touch over whenever it decides the movement is
+    /// sideways. See the reset below.
+    @GestureState private var isDragActive = false
     @State private var isVerticalDrag = false
     @State private var hasPassedThreshold = false
 
@@ -4995,17 +5039,22 @@ struct AppSwitcherCard: View {
         }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
-            // 10pt rather than 20: the card used to need a full twenty points of
-            // travel before it moved at all, which is long enough to read as the
-            // drag being ignored. The direction test below is what keeps a
-            // horizontal scroll from being taken as a dismiss, not the distance.
-            DragGesture(minimumDistance: 10)
+            // Twenty points, and not less. This gesture runs alongside the card
+            // row's horizontal scrolling, and the distance is what decides which
+            // of the two claims a touch: dropped to ten, this one won first and
+            // the row could not be scrolled at all. The direction test below
+            // sorts a vertical drag from a horizontal one only once this has
+            // already taken the touch, so it cannot stand in for the distance.
+            DragGesture(minimumDistance: 20)
+                .updating($isDragActive) { _, state, _ in state = true }
                 .onChanged { value in
+                    // A card already flying off does not take another drag.
+                    guard !isDismissing else { return }
                     let h = value.translation.height
                     let w = value.translation.width
                     
                     // Determine direction on first significant movement
-                    if !isVerticalDrag && abs(h) > 10 && abs(h) > abs(w) * 1.5 {
+                    if !isVerticalDrag && abs(h) > 20 && abs(h) > abs(w) * 1.5 {
                         isVerticalDrag = true
                     }
                     
@@ -5033,6 +5082,7 @@ struct AppSwitcherCard: View {
                     }
                 }
                 .onEnded { value in
+                    guard !isDismissing else { return }
                     let velocity = value.velocity.height
                     let translation = value.translation.height
                     
@@ -5079,10 +5129,37 @@ struct AppSwitcherCard: View {
                     hasPassedThreshold = false
                 }
         )
+        .onChange(of: isDragActive) { active in
+            guard !active else { return }
+            // The only place that runs whichever way the drag finished. SwiftUI
+            // calls onEnded when a gesture ends and not when it is cancelled, and
+            // the scroll view cancels this one every time it decides the movement
+            // was sideways — so the flags below were being left set by the drag
+            // that got interrupted. isVerticalDrag surviving is the worst of it:
+            // the next touch skips the direction test entirely and is tracked as a
+            // dismiss however horizontal it was, which is the swipe that does not
+            // scroll and the card that lifts when the row should have moved.
+            isVerticalDrag = false
+            hasPassedThreshold = false
+            // Left where the finger abandoned it otherwise.
+            guard !isDismissing, dragOffset != 0 else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                dragOffset = 0
+            }
+        }
         .onChange(of: dockManager.isClosingAll) { closing in
             if closing {
                 withAnimation(.easeIn(duration: 0.3).delay(Double(cardIndex) * 0.05)) {
                     closeAllOffset = -UIScreen.main.bounds.height
+                }
+            } else if closeAllOffset != 0 {
+                // Closing all clears the flag once the sweep is done, but it only
+                // removes the internal pages from the list itself — a window-backed
+                // app leaves on its own schedule and its card can still be mounted
+                // when the flag drops. Sent off-screen and never brought back, such
+                // a card is present, untouchable and invisible. It comes back.
+                withAnimation(.easeOut(duration: 0.25)) {
+                    closeAllOffset = 0
                 }
             }
         }
