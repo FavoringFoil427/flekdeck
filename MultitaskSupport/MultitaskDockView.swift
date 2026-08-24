@@ -1333,7 +1333,7 @@ class AppInfoProvider {
                         // does not, and a short ease-in dropped that difference in on
                         // the last frame.
                         UIView.animate(withDuration: Constants.standardAnimationDuration,
-                                       delay: 0, options: .curveEaseOut) {
+                                       delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
                             overlay.view.alpha = 0
                         } completion: { _ in
                             overlay.view.removeFromSuperview()
@@ -1417,7 +1417,7 @@ class AppInfoProvider {
             UIView.animate(
                 withDuration: Constants.barSlideDuration,
                 delay: 0,
-                options: [.curveEaseInOut, .beginFromCurrentState],
+                options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                 animations: {
                     hostingController.view.alpha = 1
                     hostingController.view.transform = self.barBaseTransform
@@ -1457,7 +1457,7 @@ class AppInfoProvider {
             UIView.animate(
                 withDuration: Constants.barSlideDuration,
                 delay: 0,
-                options: [.curveEaseInOut, .beginFromCurrentState],
+                options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                 animations: {
                     hostingController.view.alpha = 0
                     hostingController.view.transform = self.barHiddenTransform(offset: slideOffset)
@@ -1678,7 +1678,7 @@ class AppInfoProvider {
 
             // Remove the bar reservation from internal pages so they stretch full
             for (_, controller) in self.internalPageControllers {
-                UIView.animate(withDuration: Constants.longAnimationDuration) {
+                UIView.animate(withDuration: Constants.longAnimationDuration, delay: 0, options: .allowUserInteraction) {
                     self.applyBarInset(to: controller, reserved: false)
                 }
             }
@@ -1689,7 +1689,7 @@ class AppInfoProvider {
             UIView.animate(
                 withDuration: Constants.barSlideDuration,
                 delay: 0,
-                options: [.curveEaseInOut, .beginFromCurrentState],
+                options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                 animations: {
                     hostingController.view.transform = self.barHiddenTransform(offset: 160)
                     hostingController.view.alpha = 0
@@ -1719,7 +1719,7 @@ class AppInfoProvider {
             // Hide nav assist and reset stash state
             self.isNavAssistStashed = false
             self.navAssistChevron = nil
-            UIView.animate(withDuration: 0.2, animations: {
+            UIView.animate(withDuration: 0.2, delay: 0, options: .allowUserInteraction, animations: {
                 self.navAssistButton?.alpha = 0
                 self.navAssistButton?.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
             }) { _ in
@@ -1734,7 +1734,7 @@ class AppInfoProvider {
             
             // Restore the bar reservation on internal pages
             for (_, controller) in self.internalPageControllers {
-                UIView.animate(withDuration: Constants.standardAnimationDuration) {
+                UIView.animate(withDuration: Constants.standardAnimationDuration, delay: 0, options: .allowUserInteraction) {
                     self.applyBarInset(to: controller, reserved: true)
                 }
             }
@@ -1748,7 +1748,7 @@ class AppInfoProvider {
             UIView.animate(
                 withDuration: Constants.barSlideDuration,
                 delay: 0.15,
-                options: [.curveEaseInOut, .beginFromCurrentState],
+                options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
                 animations: {
                     hostingController.view.alpha = 1
                     hostingController.view.transform = self.barBaseTransform
@@ -2339,11 +2339,11 @@ class AppInfoProvider {
             // so under Reduce Motion it is simply brought forward.
             guard !UIAccessibility.isReduceMotionEnabled else { return }
 
-            UIView.animate(withDuration: Constants.shortAnimationDuration1, animations: {
+            UIView.animate(withDuration: Constants.shortAnimationDuration1, delay: 0, options: .allowUserInteraction, animations: {
                 let scale = Constants.bringToFrontScale
                 view.transform = CGAffineTransform(scaleX: scale, y: scale)
             }) { _ in
-                UIView.animate(withDuration: Constants.shortAnimationDuration2) {
+                UIView.animate(withDuration: Constants.shortAnimationDuration2, delay: 0, options: .allowUserInteraction) {
                     view.transform = .identity
                 }
             }
@@ -2556,7 +2556,7 @@ class AppInfoProvider {
 
     private func fadeOutLaunchPlaceholder(_ placeholder: UIView) {
         UIView.animate(withDuration: Constants.standardAnimationDuration, delay: 0,
-                       options: [.curveEaseInOut, .beginFromCurrentState]) {
+                       options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]) {
             placeholder.alpha = 0
         } completion: { _ in
             placeholder.removeFromSuperview()
@@ -3034,6 +3034,12 @@ class AppInfoProvider {
         // Revealing the live springboard (not the glass-less snapshot) is what keeps the
         // icon glass consistent, matching Close all / the Home button.
         overlay.view.backgroundColor = .clear
+        // Deaf from the moment it starts leaving. It stays in the hierarchy for
+        // the third of a second below and is see-through for all of it, so every
+        // touch in that window was landing on a view on its way out and going
+        // nowhere. Passing them through means the springboard being revealed can
+        // answer them, which is what it looks like should happen.
+        overlay.view.isUserInteractionEnabled = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
             overlay.view.removeFromSuperview()
             overlay.view.transform = .identity
@@ -3090,11 +3096,14 @@ class AppInfoProvider {
         refreshOrientationLock()
 
         guard let overlay = switcherOverlayController else { return }
+        // See -goToSpringboardFromSwitcher: it is fading out and must not keep
+        // swallowing touches on the way.
+        overlay.view.isUserInteractionEnabled = false
 
         UIView.animate(
             withDuration: Constants.shortAnimationDuration1,
             delay: 0,
-            options: .curveEaseIn
+            options: [.curveEaseIn, .allowUserInteraction]
         ) {
             overlay.view.alpha = 0
             overlay.view.transform = CGAffineTransform(scaleX: 1.05, y: 1.05)
@@ -3221,7 +3230,7 @@ class AppInfoProvider {
                 // and the backdrop it is covering has no glass on its icons — pulling
                 // it in one frame made every card's glass snap into existence at once.
                 UIView.animate(withDuration: Constants.standardAnimationDuration,
-                               delay: 0, options: .curveEaseOut) {
+                               delay: 0, options: [.curveEaseOut, .allowUserInteraction]) {
                     overlay.view.alpha = 0
                 } completion: { _ in
                     overlay.view.removeFromSuperview()
@@ -3680,6 +3689,9 @@ struct AppIconView: View {
             onPress: {
                 isPressed = true
             },
+            onCancel: {
+                isPressed = false
+            },
             onRelease: { location in
                 isPressed = false
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -3729,19 +3741,73 @@ struct AppIconView: View {
 }
 
 // MARK: - Press Gesture Helper
-extension View {
-    func onPressGesture(onPress: @escaping () -> Void, onRelease: @escaping (_ location: CGPoint) -> Void) -> some View {
-        self.simultaneousGesture(
+
+/// A press that behaves the way a tap on an app icon should: it lights up as
+/// soon as the finger lands, gives the touch up the moment it travels far enough
+/// to be a scroll, and only fires on release if it never gave up.
+///
+/// It used to compare `translation` against `.zero` exactly, so a finger that
+/// jittered by a fraction of a point on touch-down never lit the highlight at
+/// all and the press read as ignored. And the release fired whatever the finger
+/// had done in between, so a flick that merely began on a card opened that
+/// card's app instead of scrolling past it — this gesture runs alongside the
+/// scroll view's own, and nothing was telling the two apart.
+private struct PressGesture: ViewModifier {
+    let onPress: () -> Void
+    let onCancel: () -> Void
+    let onRelease: (CGPoint) -> Void
+
+    /// How far the finger may travel and still count as a tap. UIKit lets a
+    /// scroll view claim a touch at around ten points, so giving up at the same
+    /// distance hands the gesture over exactly when the scroll takes it, rather
+    /// than leaving both live and letting the release land on whichever won.
+    private static let slop: CGFloat = 10
+
+    /// Deliberately not paired with a "did cancel" flag. A scroll that claims
+    /// this gesture never delivers its end, so any flag set on the way out would
+    /// still be set when the next finger arrives and would swallow that press
+    /// instead. Cancelling on distance alone leaves nothing behind to reset.
+    @State private var isPressing = false
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .global)
                 .onChanged { value in
-                    if value.translation == CGSize.zero {
+                    let travelled = hypot(value.translation.width, value.translation.height)
+                    if travelled > Self.slop {
+                        if isPressing {
+                            isPressing = false
+                            onCancel()
+                        }
+                    } else if !isPressing {
+                        isPressing = true
                         onPress()
                     }
                 }
                 .onEnded { value in
-                    onRelease(value.startLocation)
+                    let wasPressing = isPressing
+                    isPressing = false
+                    let travelled = hypot(value.translation.width, value.translation.height)
+                    // Not conditioned on having seen a press. A tap quick enough
+                    // that no change was ever delivered still landed and lifted
+                    // inside the slop, and that is the whole of the test; making
+                    // the release depend on the highlight having lit would drop
+                    // the fastest taps, which is the opposite of the point.
+                    if travelled <= Self.slop {
+                        onRelease(value.startLocation)
+                    } else if wasPressing {
+                        onCancel()
+                    }
                 }
         )
+    }
+}
+
+extension View {
+    func onPressGesture(onPress: @escaping () -> Void,
+                        onCancel: @escaping () -> Void,
+                        onRelease: @escaping (_ location: CGPoint) -> Void) -> some View {
+        modifier(PressGesture(onPress: onPress, onCancel: onCancel, onRelease: onRelease))
     }
 }
 
@@ -4416,7 +4482,9 @@ final class VolumeSlideCoordinator: NSObject {
         if UIAccessibility.isReduceMotionEnabled {
             overlay.alpha = 0
             overlay.setDragging(true)
-            UIView.animate(withDuration: 0.12) { overlay.alpha = 1 }
+            // Matches the spring branch below, which already allows interaction:
+            // Reduce Motion should shorten the animation, not make the overlay deaf.
+            UIView.animate(withDuration: 0.12, delay: 0, options: .allowUserInteraction) { overlay.alpha = 1 }
         } else {
             overlay.alpha = 0
             overlay.transform = CGAffineTransform(scaleX: 0.86, y: 0.86)
@@ -4436,7 +4504,7 @@ final class VolumeSlideCoordinator: NSObject {
         // lingers. Fading the instant the finger lifts reads as the bar being
         // snatched away rather than finished with.
         UIView.animate(withDuration: 0.25, delay: 0.5,
-                       options: [.curveEaseIn, .beginFromCurrentState]) {
+                       options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction]) {
             overlay.alpha = 0
             overlay.setDragging(false)
         } completion: { finished in
@@ -4725,6 +4793,15 @@ struct AppSwitcherCard: View {
     @State private var isDismissing = false
     @State private var isVerticalDrag = false
     @State private var hasPassedThreshold = false
+
+    /// UIScrollView's overscroll curve: linear at first, then asymptotic, so the
+    /// card keeps answering the finger however far it is pulled without ever
+    /// travelling far enough to look like it might come off.
+    private static func rubberBand(_ offset: CGFloat, limit: CGFloat = 120,
+                                   coefficient: CGFloat = 0.55) -> CGFloat {
+        guard offset > 0 else { return offset }
+        return (1 - (1 / (offset / limit * coefficient + 1))) * limit
+    }
     @State private var closeAllOffset: CGFloat = 0
     /// Where this card sits, so the window it opens can come out of it. Measured
     /// from the layout rather than from what is drawn: a card is scaled as it
@@ -4918,18 +4995,30 @@ struct AppSwitcherCard: View {
         }
         .offset(y: dragOffset + closeAllOffset)
         .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
+            // 10pt rather than 20: the card used to need a full twenty points of
+            // travel before it moved at all, which is long enough to read as the
+            // drag being ignored. The direction test below is what keeps a
+            // horizontal scroll from being taken as a dismiss, not the distance.
+            DragGesture(minimumDistance: 10)
                 .onChanged { value in
                     let h = value.translation.height
                     let w = value.translation.width
                     
                     // Determine direction on first significant movement
-                    if !isVerticalDrag && abs(h) > 20 && abs(h) > abs(w) * 1.5 {
+                    if !isVerticalDrag && abs(h) > 10 && abs(h) > abs(w) * 1.5 {
                         isVerticalDrag = true
                     }
                     
-                    // Only track upward vertical drags
-                    if isVerticalDrag && h < 0 {
+                    if isVerticalDrag && h >= 0 {
+                        // Down is not a dismiss direction, but refusing to move at
+                        // all is what makes a card feel stuck to the screen. It
+                        // follows with resistance instead, the way a scroll view
+                        // does past its edge, and springs back on release.
+                        dragOffset = Self.rubberBand(h)
+                        if hasPassedThreshold {
+                            hasPassedThreshold = false
+                        }
+                    } else if isVerticalDrag {
                         dragOffset = h
                         
                         // Haptic feedback when crossing the dismiss threshold
