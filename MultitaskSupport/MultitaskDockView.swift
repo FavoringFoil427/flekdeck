@@ -842,13 +842,9 @@ class AppInfoProvider {
     /// upright, its right when the view is on its side. This is the rule stated in
     /// the terms the user sees it in, and everything else is derived from it.
     private var barViewerEdge: ScreenEdge {
-        // iPad keeps the bar along the bottom in both orientations. Moving it to the
-        // edge is an iPhone accommodation — there a bottom bar in landscape would eat
-        // most of the little height available — but iPad has the width for it, and
-        // rotating the strip stood the app names on their side.
-        if UIDevice.current.userInterfaceIdiom == .pad { return .bottom }
-        let size = barViewerSize
-        return size.width > size.height ? .right : .bottom
+        // Retained for the nav-assist button's frame conversions. The bar itself no
+        // longer derives its edge from here — see `barLayoutEdge`.
+        return .bottom
     }
 
     /// The layout edge that currently *is* `barViewerEdge`.
@@ -859,7 +855,36 @@ class AppInfoProvider {
     /// which way the phone was turned, and the bar has to be drawn along that edge
     /// to appear where the rule says it should be.
     private var barLayoutEdge: ScreenEdge {
-        rotateEdge(barViewerEdge, by: -viewerRotationSteps)
+        // The device's chin — the hardware edge with the charging port, opposite
+        // the sensor housing. That edge is the bar's home in every orientation.
+        //
+        // Taken from the interface orientation, which is the only thing that says
+        // where the chin physically is once the interface has turned. The previous
+        // rule put the bar on the viewer's right whenever the view was wider than
+        // tall; `.right` is the chin on one landscape turn and the Dynamic Island
+        // on the other, so half the time the bar sat behind the island with its
+        // buttons unreachable. Nothing about "right" distinguishes the two turns.
+        //
+        // Reading the safe area instead does not work: landscape does not give the
+        // asymmetric left/right insets that would be needed to locate the housing
+        // that way.
+        //
+        // The enum names are inverted against `UIDeviceOrientation` — see
+        // `interfaceRotationSteps`, where `.landscapeLeft` is documented as the
+        // phone turned clockwise with the home button on the left. Home button on
+        // the left means chin on the left, so:
+        //
+        //   turned clockwise      → interface .landscapeLeft  → chin left
+        //   turned anticlockwise  → interface .landscapeRight → chin right
+        //
+        // iPad has no housing to avoid and keeps the bottom, as it always has.
+        guard UIDevice.current.userInterfaceIdiom != .pad else { return .bottom }
+        let scene = hostingController?.view.window?.windowScene ?? keyWindow?.windowScene
+        switch scene?.interfaceOrientation {
+        case .landscapeLeft:  return .left
+        case .landscapeRight: return .right
+        default:              return .bottom
+        }
     }
 
     /// The edge `updateDockFrame` last actually drew the bar along. Everything that
@@ -867,6 +892,27 @@ class AppInfoProvider {
     /// be — reads this, so a device reading taken at a different moment cannot put
     /// the bar and a guest window's reserved strip on two different edges.
     private var lastPlacedBarEdge: ScreenEdge?
+
+    /// True between the start and end of a system rotation.
+    ///
+    /// While it is set, the device-orientation notification leaves the bar and the
+    /// floating button alone. Both are moved by the rotation coordinator instead,
+    /// which is the only place they can be moved smoothly: property changes made
+    /// inside `animate(alongsideTransition:)` are interpolated with the system's
+    /// own rotation, on its curve and over its duration, and land exactly as the
+    /// screen finishes turning.
+    private var isRotating = false
+
+    /// True while the bar is parked off-screen for a rotation.
+    ///
+    /// Paired with `isRotating` rather than trusted alone: if the coordinator's
+    /// completion never arrives — an interrupted or cancelled turn — the bar would
+    /// otherwise stay parked forever. Every read requires both, so the first layout
+    /// after a turn ends puts it back regardless.
+    private var isBarSlidOut = false
+
+    /// Whether the bar should currently be drawn off its edge.
+    private var isBarParked: Bool { isBarSlidOut && isRotating }
 
     /// Whether the bar is laid out as a vertical strip, i.e. it sits on a left or
     /// right *layout* edge. Drives the -90° turn of the strip, the edge the internal
@@ -1056,6 +1102,34 @@ class AppInfoProvider {
         // else that resizes the window. Runs both from the rotation coordinator (so
         // the move rides the system animation) and from the host's own layout (the
         // authoritative moment, whatever order the rotation callbacks arrive in).
+        // A turn takes the bar off its old edge, moves it while it cannot be seen,
+        // and brings it back in on the new one. Out and in take half the rotation
+        // each, so the whole thing lasts exactly as long as the screen takes to
+        // turn. Riding the coordinator's interpolation instead sweeps the bar round
+        // the corner, because its own quarter-turn and the window's compose into a
+        // longer arc than either.
+        root.onHostRotationBegan = { [weak self] in
+            guard let self else { return }
+            self.isRotating = true
+            guard self.isVisible, self.isSwitcherBarVisible,
+                  let host = self.hostingController else { return }
+            self.isBarSlidOut = true
+            UIView.animate(withDuration: Self.rotationDuration / 2, delay: 0,
+                           options: [.curveEaseIn, .allowUserInteraction]) {
+                host.view.transform = self.barHiddenTransform()
+            }
+        }
+        root.onHostRotationEnded = { [weak self] in
+            guard let self else { return }
+            self.isRotating = false
+            guard self.isBarSlidOut else { return }
+            self.isBarSlidOut = false
+            guard let host = self.hostingController else { return }
+            UIView.animate(withDuration: Self.rotationDuration / 2, delay: 0,
+                           options: [.curveEaseOut, .allowUserInteraction]) {
+                host.view.transform = self.barBaseTransform
+            }
+        }
         root.onHostGeometryChange = { [weak self] bounds in
             guard let self else { return }
             // The bar is measured against this same host, so it re-lays out here too
@@ -1063,7 +1137,15 @@ class AppInfoProvider {
             // host has resized — or, when the host is not the thing turning, never
             // describe this host at all.
             if self.isVisible && self.isSwitcherBarVisible {
-                self.updateDockFrame(animated: false)
+                if self.isBarParked {
+                    // Explicitly unanimated. This runs inside the coordinator's
+                    // block, where a plain assignment is interpolated — and
+                    // interpolating from one off-screen position to another can
+                    // cross the visible area on the way.
+                    UIView.performWithoutAnimation { self.updateDockFrame(animated: false) }
+                } else {
+                    self.updateDockFrame(animated: false)
+                }
             }
             guard let button = self.navAssistButton, !self.isNavAssistDragging else { return }
             self.placeNavAssist(button, in: bounds, stashed: self.isNavAssistStashed, animated: false)
@@ -1141,10 +1223,21 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             // Re-size the switcher's cards for the orientation they are now in.
             self.refreshSwitcherScreenSize()
-            if self.isVisible {
-                // Snap (not animate) so the bar lands on its new short edge as the
-                // system's own rotation animation completes, avoiding a compounded
-                // spin from animating our -90° transform at the same time.
+            // Left to the rotation coordinator when the interface is turning.
+            //
+            // This used to snap the bar into place here, to avoid animating the
+            // bar's own -90° turn on top of the window's — which does read as a
+            // compounded spin. But snapping was the wrong half to keep: this
+            // notification arrives before the coordinator's block runs, so the bar
+            // had already jumped to its new edge and there was nothing left for the
+            // system animation to carry. Standing aside lets the coordinator move
+            // it, which is both smooth and correct, because changes made inside its
+            // block are interpolated with the rotation rather than against it.
+            //
+            // Still runs when the interface is not turning — a portrait-locked host
+            // with the phone turned in the hand — where there is no coordinator and
+            // no animation to ride.
+            if self.isVisible && !self.isRotating {
                 self.updateDockFrame(animated: false)
             }
             // Every open guest re-measures on a turn, whatever the bar decided to do.
@@ -1172,7 +1265,7 @@ class AppInfoProvider {
             // is a cheap idempotent re-place. The host's layout callback repeats it
             // once the rotation settles, which is what makes a device notification
             // arriving before the window has resized harmless.
-            if let button = self.navAssistButton, !self.isNavAssistDragging {
+            if let button = self.navAssistButton, !self.isNavAssistDragging, !self.isRotating {
                 // Animated: when the interface is not rotating there is no system
                 // animation for the move to hide inside, and a jump reads as a
                 // glitch. When it is, this pass finds the button already at its
@@ -1309,7 +1402,12 @@ class AppInfoProvider {
 
         let apply = {
             hostingController.view.bounds = CGRect(origin: .zero, size: boundsSize)
-            hostingController.view.transform = self.barBaseTransform
+            // Parked while the screen turns, so the move to the new edge happens
+            // out of sight and the bar slides back in rather than sweeping round
+            // the corner.
+            hostingController.view.transform = self.isBarParked
+                ? self.barHiddenTransform()
+                : self.barBaseTransform
             hostingController.view.center = center
         }
 
@@ -3445,6 +3543,11 @@ final class MultitaskOverlayRootViewController: UIViewController {
     /// always runs but only after the fact.
     var onHostGeometryChange: ((CGRect) -> Void)?
 
+    /// Bracket a rotation transition, so work driven by a device notification can
+    /// keep out of the way while the coordinator is animating the same move.
+    var onHostRotationBegan: (() -> Void)?
+    var onHostRotationEnded: (() -> Void)?
+
     override func loadView() {
         let root = OverlayPassthroughView()
         root.backgroundColor = .clear
@@ -3456,10 +3559,15 @@ final class MultitaskOverlayRootViewController: UIViewController {
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
+        // Announced so that anything else which reacts to a turn can stand aside
+        // and let this coordinator own the move — see `isRotating` in the manager.
+        onHostRotationBegan?()
         // Inside the coordinator so the move rides the system's rotation animation
         // rather than jumping before or after it.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             self?.onHostGeometryChange?(CGRect(origin: .zero, size: size))
+        }, completion: { [weak self] _ in
+            self?.onHostRotationEnded?()
         })
     }
 }
