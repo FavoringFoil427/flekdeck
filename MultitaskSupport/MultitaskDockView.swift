@@ -3397,14 +3397,47 @@ class AppInfoProvider {
             let appsToClose = self.apps
             for app in appsToClose {
                 self.dismissPresentation(forAppUUID: app.appUUID)
+                // Keyed by the window's identity, so they have to go while the app
+                // is still here to be asked for its view. `removeRunningApp` would
+                // have done this as each guest exited, but by then the list below
+                // has been emptied and there is nothing left to look the view up
+                // through — leaving a dead window retained here, under a key a
+                // later window could be handed once the address comes back around.
+                if let view = app.view {
+                    self.launchPlaceholders.removeValue(forKey: ObjectIdentifier(view))
+                    self.windowsWithContent.remove(ObjectIdentifier(view))
+                }
                 if app.isInternalPage {
                     app.view?.removeFromSuperview()
                     self.internalPageControllers[app.appUUID] = nil
                 } else if let vc = app.view?._viewDelegate() as? DecoratedAppSceneViewController {
+                    // Out of sight before the overlay starts clearing, the way
+                    // `goToSpringboardFromSwitcher` puts its windows away. The
+                    // switcher never hid these — it only covered them — so a window
+                    // left standing is uncovered by the fade below and then goes
+                    // whenever its guest process happens to finish exiting, several
+                    // of them blinking out one after another once the cards have
+                    // already swept away.
+                    vc.finishMinimizeWindow()
                     vc.closeWindow()
                 }
             }
-            self.apps.removeAll { $0.isInternalPage }
+            // Every app leaves the list here, in one step and without an animation,
+            // rather than each one leaving as its own guest process gets around to
+            // exiting. `removeRunningApp` is what those exits call, and it animates
+            // the removal with a spring so the switcher's remaining cards can close
+            // the gap — right for a single app being closed, wrong for this, where
+            // the list is emptying anyway and the springboard is already back. Left
+            // to it, the running-app icons on the home screen spring away one at a
+            // time over the second or so it takes the guests to die, well after the
+            // cards have gone. The stragglers' own `removeRunningApp` calls still
+            // arrive; they simply find nothing left to take out.
+            self.apps.removeAll()
+            self.appSnapshotViews.removeAll()
+            self.appSnapshotSizes.removeAll()
+            self.appSnapshotImages.removeAll()
+            self.appSnapshotRotations.removeAll()
+            self.updateFrontmostApp()
             self.isClosingAll = false
             self.isAppSwitcherOpen = false
             if let overlay = self.switcherOverlayController {

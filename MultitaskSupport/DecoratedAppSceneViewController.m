@@ -479,12 +479,15 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         MultitaskDockManager *dock = [MultitaskDockManager shared];
         [dock removeRunningApp:self.dataUUID];
         
-        self.view.layer.masksToBounds = NO;
-        [UIView transitionWithView:self.view duration:0.4 options:UIViewAnimationOptionTransitionCurlUp animations:^{
-            self.view.hidden = YES;
-        } completion:^(BOOL b){
-            [self.view removeFromSuperview];
-        }];
+        // Gone without a send-off. Whatever closed this window has already drawn
+        // the exit — the card swiped away, the sweep of Close All, the flight into
+        // an icon — and this is only the teardown catching up afterwards. A page
+        // curl here used to go unseen behind the switcher's backdrop; now that
+        // Close All fades that backdrop while the windows are still tearing down,
+        // it plays out in the open, several windows curling away one after another
+        // once the cards have already gone.
+        self.view.hidden = YES;
+        [self.view removeFromSuperview];
         
         if(skipTerminationScreen) {
             [MultitaskRelaunchManager scheduleRelaunchIfNeededWithBundleId:self.appSceneVC.bundleId dataUUID:self.dataUUID isManualTermination:isManual];
