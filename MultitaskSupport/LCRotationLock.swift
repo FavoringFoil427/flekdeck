@@ -45,6 +45,18 @@ import UIKit
     /// Starts refreshing the device reading and keeps it refreshed. Idempotent.
     @objc public static func beginTracking() {
         guard tracker == nil else { return }
+        // On main, whoever called. Both the notification generation and the timer
+        // below are main-run-loop concerns, and this is reached from a lazily
+        // initialised singleton whose thread is not guaranteed.
+        if Thread.isMainThread {
+            startTracking()
+        } else {
+            DispatchQueue.main.async { startTracking() }
+        }
+    }
+
+    private static func startTracking() {
+        guard tracker == nil else { return }
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         tracker = Tracker()
         sample()
@@ -67,13 +79,27 @@ import UIKit
             NotificationCenter.default.addObserver(
                 self, selector: #selector(orientationChanged),
                 name: UIDevice.orientationDidChangeNotification, object: nil)
-            timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            // Built unscheduled and added to the main run loop explicitly, never
+            // with `Timer.scheduledTimer`.
+            //
+            // `scheduledTimer` attaches to *the current thread's* run loop, and this
+            // is reached from `MultitaskDockManager.init` — a `static let shared`,
+            // so it is initialised by whichever thread touches it first, and ObjC
+            // reaches it from `LCUtils`. On a background thread the run loop never
+            // runs and the timer never fires; adding it to the main run loop
+            // afterwards cannot rescue it, because a timer lives in exactly one run
+            // loop. Nothing then reads `UIDevice.current.orientation` periodically,
+            // which is what keeps UIKit reporting it, so the cache stays stale and
+            // the lock never engages.
+            //
+            // Common modes because a default-mode timer stops firing while a scroll
+            // view is tracking, and a guest being scrolled is exactly when the
+            // reading must not go stale.
+            let t = Timer(timeInterval: 0.1, repeats: true) { _ in
                 LCRotationLock.sample()
             }
-            // Common modes: a default-mode timer stops firing while a scroll view
-            // is tracking, and a guest being scrolled is exactly when the reading
-            // must not go stale.
-            if let timer { RunLoop.main.add(timer, forMode: .common) }
+            RunLoop.main.add(t, forMode: .common)
+            timer = t
         }
 
         @objc private func orientationChanged() { LCRotationLock.sample() }
@@ -136,9 +162,35 @@ import UIKit
     @objc public static let shared = LCRotationLockOverlay()
 
     private var window: UIWindow?
+    private var panelView: UIView?
     private var label: UILabel?
     private var button: UIButton?
     private var timer: Timer?
+
+    /// Whether the panel is drawn. Everything else about the overlay happens
+    /// either way: the window is created, attached to the scene, laid out and
+    /// composited, and its timer runs. Only the panel's contents are hidden.
+    ///
+    /// A workaround, and labelled as one. Ruled out by experiment: the lock's own
+    /// value (identical either way, and the overlay never writes it); the panel
+    /// polling `UIDevice.current.orientation` (the lock polls it too, on the main
+    /// run loop); the window's root view controller (removed, no change); key
+    /// window theft (the effect needs no touch); and creating the window once and
+    /// destroying it (not enough — it has to still be there).
+    ///
+    /// What remains untested is which of the window's ongoing effects matters.
+    /// Bisecting `start()` would answer it.
+    @objc public static var isPanelVisible: Bool = false
+
+    /// Shows or hides the panel on an overlay that is already running.
+    ///
+    /// Only the panel's alpha changes — the window stays created, attached and
+    /// composited either way, because that is the part that the rotation lock
+    /// turns out to depend on.
+    @objc public static func setPanelVisible(_ visible: Bool) {
+        isPanelVisible = visible
+        shared.panelView?.alpha = visible ? 1 : 0
+    }
 
     @objc public func start() {
         guard window == nil else { return }
@@ -157,8 +209,14 @@ import UIKit
         win.windowLevel = .alert + 100
         win.backgroundColor = .clear
         win.isHidden = false
+        // Always rendered. An alpha-zero window may never be composited at all,
+        // and compositing is one of the effects that might be the load-bearing
+        // one. The background is clear, so a rendered window with a hidden panel
+        // shows nothing.
+        win.alpha = 1
 
         let panel = UIView()
+        panel.alpha = Self.isPanelVisible ? 1 : 0
         panel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         panel.layer.cornerRadius = 8
         panel.layer.borderWidth = 1
@@ -175,16 +233,29 @@ import UIKit
         toggle.layer.cornerRadius = 5
         toggle.contentEdgeInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
 
-        let host = UIViewController()
-        host.view.backgroundColor = .clear
-        host.view.addSubview(panel)
+        // EXPERIMENT (hypothesis A): no root view controller.
+        //
+        // `application(_:supportedInterfaceOrientationsFor:)` is asked about every
+        // window, and this one's root controller was a bare `UIViewController` —
+        // an opinion about orientation with no constraints on it at all, sitting
+        // beside the app's own constrained hierarchy. When the device goes flat and
+        // UIKit re-resolves, a bare controller resolves face-up to portrait, which
+        // is the same "unknown falls back to portrait" pattern behind every bug in
+        // this area. Rotating the host that way puts the turn one level above the
+        // geometry guards, which is why the lock can be engaged and correct while
+        // the guest still turns.
+        //
+        // A window shows subviews perfectly well without a root controller, so this
+        // removes the opinion while leaving the window, its level and its timer
+        // exactly as they were — the point being to change one thing.
+        win.addSubview(panel)
         panel.addSubview(text)
         panel.addSubview(toggle)
 
         for v in [panel, text, toggle] { v.translatesAutoresizingMaskIntoConstraints = false }
         NSLayoutConstraint.activate([
-            panel.leadingAnchor.constraint(equalTo: host.view.safeAreaLayoutGuide.leadingAnchor, constant: 6),
-            panel.topAnchor.constraint(equalTo: host.view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            panel.leadingAnchor.constraint(equalTo: win.safeAreaLayoutGuide.leadingAnchor, constant: 6),
+            panel.topAnchor.constraint(equalTo: win.safeAreaLayoutGuide.topAnchor, constant: 6),
 
             text.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 8),
             text.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -8),
@@ -194,9 +265,8 @@ import UIKit
             toggle.topAnchor.constraint(equalTo: text.bottomAnchor, constant: 6),
             toggle.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -6),
         ])
-        win.rootViewController = host
-
         window = win
+        panelView = panel
         label = text
         button = toggle
 
@@ -211,8 +281,14 @@ import UIKit
         timer = nil
         window?.isHidden = true
         window = nil
+        panelView = nil
         label = nil
         button = nil
+        // Cleared so a panel built later starts by writing its state rather than
+        // comparing against values belonging to views that no longer exist.
+        lastText = nil
+        lastManual = nil
+        lastLocked = nil
     }
 
     @objc private func toggleLock() {
@@ -221,23 +297,53 @@ import UIKit
         refresh()
     }
 
+    /// Last values written, so an unchanged tick writes nothing.
+    private var lastText: String?
+    private var lastManual: Bool?
+    private var lastLocked: Bool?
+
     private func refresh() {
+        // Read unconditionally, every tick, including while the panel is hidden.
+        //
+        // These reads are not just for display: `positionDescription` samples
+        // `UIDevice.current.orientation`, and something reading that property
+        // periodically is one of the live candidates for why this overlay has to
+        // exist at all for the rotation lock to engage. Whatever is skipped below
+        // to save work, the reads are not.
         let locked = LCRotationLock.isLocked
-        label?.text = """
+        let manual = LCRotationLock.isManual
+        let text = """
         POSITION  \(LCRotationLock.positionDescription)
         ROTATION  \(locked ? "LOCKED" : "FREE")
         REASON    \(LCRotationLock.reason)
         """
-        button?.setTitle(LCRotationLock.isManual ? "UNLOCK" : "LOCK", for: .normal)
-        button?.backgroundColor = LCRotationLock.isManual
-            ? UIColor.systemRed.withAlphaComponent(0.85)
-            : UIColor.systemBlue.withAlphaComponent(0.85)
-        button?.setTitleColor(.white, for: .normal)
-        // Border tracks the effective state, so a lock held by the phone lying
-        // flat reads the same at a glance as one held by hand.
-        (button?.superview)?.layer.borderColor = locked
-            ? UIColor.systemRed.withAlphaComponent(0.8).cgColor
-            : UIColor.white.withAlphaComponent(0.25).cgColor
+
+        // Assigning an equal string still invalidates layout — UIKit does not
+        // compare for you — so at 10 Hz that is a text measurement and a layout
+        // pass ten times a second, forever, whether or not anything is visible.
+        // The readout only changes when the orientation or the lock does, which is
+        // rare, so guarding collapses the common tick to a string build and a
+        // comparison.
+        if text != lastText {
+            lastText = text
+            label?.text = text
+        }
+        if manual != lastManual {
+            lastManual = manual
+            button?.setTitle(manual ? "UNLOCK" : "LOCK", for: .normal)
+            button?.backgroundColor = manual
+                ? UIColor.systemRed.withAlphaComponent(0.85)
+                : UIColor.systemBlue.withAlphaComponent(0.85)
+            button?.setTitleColor(.white, for: .normal)
+        }
+        if locked != lastLocked {
+            lastLocked = locked
+            // Border tracks the effective state, so a lock held by the phone lying
+            // flat reads the same at a glance as one held by hand.
+            panelView?.layer.borderColor = locked
+                ? UIColor.systemRed.withAlphaComponent(0.8).cgColor
+                : UIColor.white.withAlphaComponent(0.25).cgColor
+        }
     }
 }
 
@@ -246,6 +352,10 @@ import UIKit
 private final class LockPassthroughWindow: UIWindow {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard let hit = super.hitTest(point, with: event) else { return nil }
-        return hit === rootViewController?.view ? nil : hit
+        // The window itself takes no touches — only the panel and its button do,
+        // so everything outside them reaches the app underneath. Compared against
+        // `self` rather than a root controller's view, since there is no longer a
+        // root controller.
+        return hit === self ? nil : hit
     }
 }

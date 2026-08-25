@@ -77,7 +77,7 @@ struct LCSettingsView: View {
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
     @AppStorage("LCMaxOneAppOnStage", store: LCUtils.appGroupUserDefault) var onlyOneAppOnStage = false
     @AppStorage("LCRedirectURLToHost", store: LCUtils.appGroupUserDefault) var redirectURLToHost = false
-    @AppStorage("LCShowRotationOverlay", store: LCUtils.appGroupUserDefault) var showRotationOverlay = false
+    @AppStorage("LCShowRotationPanel", store: LCUtils.appGroupUserDefault) var showRotationPanel = false
     
     @AppStorage("LCSideJITServerAddress", store: LCUtils.appGroupUserDefault) var sideJITServerAddress : String = ""
     @AppStorage("LCDeviceUDID", store: LCUtils.appGroupUserDefault) var deviceUDID: String = ""
@@ -570,6 +570,19 @@ struct LCSettingsView: View {
 
                 if sharedModel.developerMode {
                     Section {
+                        if #available(iOS 16.1, *) {
+                            Toggle(isOn: $showRotationPanel) {
+                                Text("lc.settings.rotationOverlay".loc)
+                            }
+                            .onChange(of: showRotationPanel) { on in
+                                // The overlay always runs; this only draws it. If
+                                // the panel is being taken away, drop any manual
+                                // lock with it, so a lock cannot outlive the only
+                                // control that releases it.
+                                if !on { LCRotationLock.isManual = false }
+                                LCRotationLockOverlay.setPanelVisible(on)
+                            }
+                        }
                         Toggle(isOn: $injectToLCItelf) {
                             Text("lc.settings.injectLCItself".loc)
                         }
@@ -902,27 +915,6 @@ struct LCSettingsView: View {
                         }
                     } footer: {
                         Text("lc.settings.multitaskDesc".loc)
-                    }
-
-                    Section {
-                        Toggle(isOn: $showRotationOverlay) {
-                            Text("lc.settings.rotationOverlay".loc)
-                        }
-                        .onChange(of: showRotationOverlay) { on in
-                            if on {
-                                LCRotationLockOverlay.shared.start()
-                            } else {
-                                // Releasing the manual lock on the way out, so a
-                                // lock left on cannot outlive the only control
-                                // for turning it off.
-                                LCRotationLock.isManual = false
-                                LCRotationLockOverlay.shared.stop()
-                            }
-                        }
-                    } header: {
-                        Text("lc.settings.developer".loc)
-                    } footer: {
-                        Text("lc.settings.rotationOverlay.desc".loc)
                     }
                 }
                 

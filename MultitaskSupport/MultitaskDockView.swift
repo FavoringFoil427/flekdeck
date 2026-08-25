@@ -940,10 +940,23 @@ class AppInfoProvider {
         // Position + lock readout, with a manual lock button. Off unless switched
         // on under Multitask > Developer — the rotation lock itself always runs;
         // this only shows what it is doing and offers a manual override.
-        if LCUtils.appGroupUserDefault.bool(forKey: "LCShowRotationOverlay") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                LCRotationLockOverlay.shared.start()
-            }
+        // The overlay is always created and never torn down; the setting only
+        // decides whether its panel is drawn.
+        //
+        // The rotation lock engages while this overlay exists and does not when it
+        // is absent — reproducibly, and for reasons I could not find. Creating it
+        // once at launch and removing it again was not enough, so it is not merely
+        // having existed: it has to still be there while a guest is running. The
+        // configuration that demonstrably works is "overlay on", so that is the
+        // configuration shipped, minus the pixels.
+        // `LCShowRotationPanel`, a fresh key: the old `LCShowRotationOverlay` used
+        // to decide whether the overlay existed at all, and anyone who switched it
+        // on then would otherwise inherit a visible panel now that the flag means
+        // something narrower.
+        LCRotationLockOverlay.isPanelVisible =
+            LCUtils.appGroupUserDefault.bool(forKey: "LCShowRotationPanel")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            LCRotationLockOverlay.shared.start()
         }
         if let win = keyWindow { attachSafeAreaSentinel(to: win) }
         refreshCachedSafeAreaInsets()

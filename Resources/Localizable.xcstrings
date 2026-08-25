@@ -22022,17 +22022,6 @@
         }
       }
     },
-    "lc.settings.developer" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Developer"
-          }
-        }
-      }
-    },
     "lc.settings.dockWidth" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -28035,17 +28024,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rotation Overlay"
-          }
-        }
-      }
-    },
-    "lc.settings.rotationOverlay.desc" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows how the device is being held and whether rotation is currently locked, with a button to hold the lock on by hand. Rotation is locked automatically while the device lies flat, since a flat device cannot say which way the screen is being read; the overlay only makes that visible and lets you force it."
           }
         }
       }
