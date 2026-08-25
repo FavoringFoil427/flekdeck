@@ -933,6 +933,10 @@ class AppInfoProvider {
         // and when the interface itself is not rotating, the phone being turned is
         // the *only* signal that the floating button has to move.
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        // Keep the device reading live for the rotation lock. Unconditional, and
+        // separate from the overlay below: the lock has to behave identically
+        // whether or not the diagnostic panel is switched on.
+        LCRotationLock.beginTracking()
         // Position + lock readout, with a manual lock button. Off unless switched
         // on under Multitask > Developer — the rotation lock itself always runs;
         // this only shows what it is doing and offers a manual override.

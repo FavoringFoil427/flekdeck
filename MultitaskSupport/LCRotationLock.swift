@@ -26,8 +26,57 @@ import UIKit
 @objc public final class LCRotationLock: NSObject {
 
     /// True while the phone is lying flat and cannot say how it is being read.
+    ///
+    /// Reads a continuously refreshed cache rather than `UIDevice.current.orientation`
+    /// directly. That property proved unreliable when nothing was reading it often:
+    /// the geometry paths sampled a value that still said landscape when the phone
+    /// was already flat, so the lock never engaged. Whatever the mechanism inside
+    /// UIKit, the fix is not to depend on it — `beginTracking()` keeps the reading
+    /// warm for the life of the process.
     @objc public static var isFlat: Bool {
-        !UIDevice.current.orientation.isValidInterfaceOrientation
+        !cachedOrientation.isValidInterfaceOrientation
+    }
+
+    // MARK: - Keeping the device reading live
+
+    private static var cachedOrientation: UIDeviceOrientation = .unknown
+    private static var tracker: Tracker?
+
+    /// Starts refreshing the device reading and keeps it refreshed. Idempotent.
+    @objc public static func beginTracking() {
+        guard tracker == nil else { return }
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        tracker = Tracker()
+        sample()
+    }
+
+    fileprivate static func sample() {
+        cachedOrientation = UIDevice.current.orientation
+    }
+
+    /// Owns the timer and the notification observer, both of which need a target.
+    private final class Tracker: NSObject {
+        private var timer: Timer?
+
+        override init() {
+            super.init()
+            // Both a notification and a poll. The notification carries most
+            // changes; the poll is what makes the value dependable when nothing
+            // else in the process happens to be reading it, which is the case
+            // that failed.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(orientationChanged),
+                name: UIDevice.orientationDidChangeNotification, object: nil)
+            timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                LCRotationLock.sample()
+            }
+            // Common modes: a default-mode timer stops firing while a scroll view
+            // is tracking, and a guest being scrolled is exactly when the reading
+            // must not go stale.
+            if let timer { RunLoop.main.add(timer, forMode: .common) }
+        }
+
+        @objc private func orientationChanged() { LCRotationLock.sample() }
     }
 
     /// Forced on from the panel. Survives the phone being picked up.
