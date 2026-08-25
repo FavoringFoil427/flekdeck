@@ -33,7 +33,6 @@ enum JITEnablerType : Int, CaseIterable, Identifiable {
 }
 
 struct LCSettingsView: View {
-    @State private var showDevPasscode = false
     @State private var showIdentityReport = false
     @State var errorShow = false
     @State var errorInfo = ""
@@ -519,18 +518,7 @@ struct LCSettingsView: View {
                         .foregroundStyle(.gray)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 5) {
-                            // Ask for the passcode before flipping developer mode
-                            // on; skip it if it's already unlocked this session.
-                            if sharedModel.developerMode { return }
-                            showDevPasscode = true
-                        }
-                        .fullScreenCover(isPresented: $showDevPasscode) {
-                            SettingsPasscodeGate(onUnlock: {
-                                sharedModel.developerMode = true
-                                showDevPasscode = false
-                            }, onCancel: {
-                                showDevPasscode = false
-                            })
+                            sharedModel.developerMode = true
                         }
                     
                     HStack(spacing:0){
@@ -602,11 +590,6 @@ struct LCSettingsView: View {
                             Text("Disable LiveProcess watchdog termination")
                         }
                         Button {
-                            export()
-                        } label: {
-                            Text("Export Cert")
-                        }
-                        Button {
                             exportDyld()
                         } label: {
                             Text("Export Dyld")
@@ -626,12 +609,6 @@ struct LCSettingsView: View {
                         } label: {
                             Text("Reset Symbol Offsets")
                         }
-                        Button {
-                            presentFLEXOverlay()
-                        } label: {
-                            Text("Show FLEX Overlay")
-                        }
-                        .disabled(NSClassFromString("FLEXManager") == nil)
                         #if is32BitSupported
                         HStack {
                             Text("LiveExec32 .app path")
@@ -1102,50 +1079,6 @@ struct LCSettingsView: View {
         }
     }
 
-    func export() {
-        let fileManager = FileManager.default
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        
-        // 1. Copy embedded.mobileprovision from the main bundle to Documents
-        if let embeddedURL = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision") {
-            let destinationURL = documentsURL.appendingPathComponent("embedded.mobileprovision")
-            do {
-                try fileManager.copyItem(at: embeddedURL, to: destinationURL)
-                print("Successfully copied embedded.mobileprovision to Documents.")
-            } catch {
-                print("Error copying embedded.mobileprovision: \(error)")
-            }
-        } else {
-            print("embedded.mobileprovision not found in the main bundle.")
-        }
-        
-        // 2. Read "certData" from UserDefaults and save to cert.p12 in Documents
-        if let certData = LCUtils.certificateData() {
-            let certFileURL = documentsURL.appendingPathComponent("cert.p12")
-            do {
-                try certData.write(to: certFileURL)
-                print("Successfully wrote certData to cert.p12 in Documents.")
-            } catch {
-                print("Error writing certData to cert.p12: \(error)")
-            }
-        } else {
-            print("certData not found in UserDefaults.")
-        }
-        
-        // 3. Read "certPassword" from UserDefaults and save to pass.txt in Documents
-        if let certPassword = LCSharedUtils.certificatePassword() {
-            let passwordFileURL = documentsURL.appendingPathComponent("pass.txt")
-            do {
-                try certPassword.write(to: passwordFileURL, atomically: true, encoding: .utf8)
-                print("Successfully wrote certPassword to pass.txt in Documents.")
-            } catch {
-                print("Error writing certPassword to pass.txt: \(error)")
-            }
-        } else {
-            print("certPassword not found in UserDefaults.")
-        }
-    }
-    
     func exportMainBundle() {
         let url = Bundle.main.bundleURL
         let fileManager = FileManager.default
@@ -1161,12 +1094,6 @@ struct LCSettingsView: View {
     
     func resetSymbolOffsets() {
         LCUtils.appGroupUserDefault.removeObject(forKey: "symbolOffsetCache")
-    }
-    
-    func presentFLEXOverlay() {
-        let manager = (NSClassFromString("FLEXManager") as? NSObject.Type)?.perform(NSSelectorFromString("sharedManager"))
-            .takeUnretainedValue() as? NSObject
-        manager?.perform(NSSelectorFromString("showExplorer"))
     }
     
     func importCertificate() async {

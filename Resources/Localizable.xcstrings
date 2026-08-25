@@ -27537,17 +27537,6 @@
         }
       }
     },
-    "lc.settings.passcode.prompt" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter Passcode"
-          }
-        }
-      }
-    },
     "lc.settings.redirectURLToHost" : {
       "localizations" : {
         "ar" : {
