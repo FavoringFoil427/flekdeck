@@ -6,6 +6,7 @@
 //
 #import "DecoratedAppSceneViewController.h"
 #import "VirtualWindowsHostView.h"
+#import "LiveContainerSwiftUI-Swift.h"
 
 static void *kBackdropObservationContext = &kBackdropObservationContext;
 
@@ -119,8 +120,23 @@ static void *kBackdropObservationContext = &kBackdropObservationContext;
 /// fires when the geometry has actually changed — the notification can arrive
 /// before the window has resized, and it says nothing at all about a Split View
 /// or Slide Over resize, which needs exactly the same repair.
+/// Whether guest geometry may currently be re-derived. Mirrors the predicate in
+/// the scene controllers; both read the same `LCRotationLock`.
+static BOOL LCRotationIsLocked(void) {
+    return LCRotationLock.isLocked;
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
+    // HARD LOCK: while the phone is flat, do not propagate a bounds change to the
+    // guests — and deliberately return BEFORE recording it as laid out.
+    //
+    // Recording it would mark the new bounds as handled while the guests were
+    // never told, so lifting the phone would find nothing left to reconcile and
+    // the freeze would become permanent. Leaving `_lastLaidOutBounds` stale means
+    // the very next layout pass after the phone is picked up still sees a
+    // difference and repairs everything in one go.
+    if(LCRotationIsLocked()) return;
     if(CGRectEqualToRect(self.bounds, _lastLaidOutBounds)) return;
     _lastLaidOutBounds = self.bounds;
     for(UIView *subview in self.subviews) {

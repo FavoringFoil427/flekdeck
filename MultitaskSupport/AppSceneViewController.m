@@ -291,6 +291,44 @@ static void LCUnstageAppFromAppGroup(NSString *bundleId, NSString *dataUUID, BOO
 @property(nonatomic, readwrite) bool isAppTerminationCleanUpCalled;
 @end
 
+/// The device orientation to hand a guest, derived from the orientation UIKit has
+/// actually settled the host into rather than read from the accelerometer.
+///
+/// `UIDevice.currentDevice.orientation` reports where the *hardware* is pointing,
+/// and nothing suppresses it — not the app's supported orientations, and not the
+/// user's Portrait Orientation Lock, which is a display setting the sensor knows
+/// nothing about. Handing that to a guest tells it the phone turned at moments
+/// when the host has been told it may not follow, so the guest turns inside a
+/// window that did not, and a rotation the user explicitly locked out happens
+/// anyway.
+///
+/// Taking the host's interface orientation instead makes the guest agree with the
+/// window it is drawn into by construction, and inherits every rule UIKit already
+/// applied to reach it — Portrait Orientation Lock included. Device and interface
+/// landscape names are mirror images: a phone turned so its bottom edge is on the
+/// right shows an interface whose top is on the left.
+/// Whether guest geometry may currently be re-derived — flat phone or manual
+/// lock. See the matching predicate in DecoratedAppSceneViewController.
+static BOOL LCRotationIsLocked(void) {
+    return LCRotationLock.isLocked;
+}
+
+static UIDeviceOrientation LCDeviceOrientationForInterface(UIInterfaceOrientation orientation) {
+    switch(orientation) {
+        case UIInterfaceOrientationPortrait:           return UIDeviceOrientationPortrait;
+        case UIInterfaceOrientationLandscapeLeft:      return UIDeviceOrientationLandscapeRight;
+        case UIInterfaceOrientationLandscapeRight:     return UIDeviceOrientationLandscapeLeft;
+        case UIInterfaceOrientationPortraitUpsideDown: return UIDeviceOrientationPortraitUpsideDown;
+        // Not portrait. `UIInterfaceOrientationUnknown` is zero, and so is the
+        // result of asking a view that is momentarily out of a window for its
+        // scene's orientation — so folding unknown into a `default` that answers
+        // portrait turns "I could not tell" into a positive instruction to stand
+        // upright. It can only ever manufacture portrait, never landscape, which
+        // is why it showed as landscape collapsing while portrait looked fine.
+        default:                                       return UIDeviceOrientationUnknown;
+    }
+}
+
 @implementation AppSceneViewController
 
 // Readonly with a hand-written getter, so the backing store is not synthesized.
@@ -432,8 +470,10 @@ static void LCUnstageAppFromAppGroup(NSString *bundleId, NSString *dataUUID, BOO
         settings.foreground = YES;
         // Baseline geometry for a windowed scene. A maximized one is re-derived
         // by the delegate at the bottom of this block, which has the last word.
-        settings.deviceOrientation = UIDevice.currentDevice.orientation;
         settings.interfaceOrientation = UIApplication.sharedApplication.statusBarOrientation;
+        UIDeviceOrientation guestDevice = LCDeviceOrientationForInterface(settings.interfaceOrientation);
+        // Only ever written with a real answer; unknown leaves the guest as it is.
+        if(guestDevice != UIDeviceOrientationUnknown) settings.deviceOrientation = guestDevice;
         if(UIInterfaceOrientationIsLandscape(settings.interfaceOrientation)) {
             settings.frame = CGRectMake(0, 0, self.view.frame.size.height, self.view.frame.size.width);
         } else {
@@ -624,9 +664,29 @@ static void LCUnstageAppFromAppGroup(NSString *bundleId, NSString *dataUUID, BOO
         if(currentDebounceToken != self.resizeDebounceToken) {
             return;
         }
+        // HARD LOCK: hold the guest's geometry while the phone is flat. The frame
+        // computed below is what reshapes the drawable, and a reshape reads as a
+        // rotation to any app that lays out responsively. Gated on the scene
+        // already having a frame so first-time setup is never blocked.
+        if(LCRotationIsLocked() && self.presenter.scene.settings.frame.size.width > 0) {
+            return;
+        }
         [self updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
-            settings.deviceOrientation = UIDevice.currentDevice.orientation;
-            settings.interfaceOrientation = self.view.window.windowScene.interfaceOrientation;
+            // HARD LOCK: leave both alone while the phone is flat.
+            //
+            // `settings` here is a copy of the guest's own live settings, so not
+            // writing means it keeps the orientation it already had. This matters
+            // more than it looks: the value written here is not only handed to the
+            // guest, it also drives the width/height swap that reshapes the
+            // content view in `updateSettingsWithBlock:`. Stamping the host's
+            // (upright) orientation on a turned guest re-shapes its drawable even
+            // where the orientation itself never reaches the scene.
+            if(!LCRotationIsLocked()) {
+                settings.interfaceOrientation = self.view.window.windowScene.interfaceOrientation;
+                UIDeviceOrientation guestDevice = LCDeviceOrientationForInterface(settings.interfaceOrientation);
+                // Only ever written with a real answer; unknown leaves it as it is.
+                if(guestDevice != UIDeviceOrientationUnknown) settings.deviceOrientation = guestDevice;
+            }
             CGRect frame = self.view.frame;
             if(!self.usesHostingControllerAPI) {
                 frame.size.width /= self.scaleRatio;

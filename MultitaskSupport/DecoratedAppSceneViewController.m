@@ -82,13 +82,54 @@ static UIInterfaceOrientation LCGuestSceneOrientation(UIMutableApplicationSceneS
     return orientation;
 }
 
+/// The last device orientation that could describe how the guest is being *read*.
+///
+/// `UIDevice.currentDevice.orientation` also reports face-up and face-down, which
+/// a phone tilted far enough back onto its own back will hit. Neither is an
+/// answer to "which way round is the user holding this" — they describe the
+/// phone's relationship to the ground, not to the viewer.
+///
+/// That distinction is load-bearing here because the device is consulted at
+/// exactly the moment the scene's own reported orientation has been found
+/// untrustworthy. Letting face-up fall through to the guess below swaps one
+/// unreliable answer for a different one: a phone read as `landscapeRight`
+/// resolves the guest to `landscapeLeft` while it is being held, and to
+/// `landscapeRight` the instant it is tilted past face-up — flipping the guest
+/// 180° for no reason the user caused, and only in multitask, since nothing else
+/// derives an orientation this way.
+///
+/// Holding the last real answer makes tilt mean nothing, which is what iOS does
+/// natively: an app laid flat on a table keeps the orientation it had.
+/// Whether guest geometry may currently be re-derived.
+///
+/// Delegates to `LCRotationLock`, which answers no both while the phone is lying
+/// flat — where the device is not saying which way the screen is being read, so
+/// anything derived from it is a guess — and while the on-screen panel is holding
+/// the lock by hand. Both routes go through this one predicate on purpose: a
+/// manual lock that took a different path through the geometry code would be a
+/// second thing to get right.
+static BOOL LCRotationIsLocked(void) {
+    return LCRotationLock.isLocked;
+}
+
+static UIDeviceOrientation LCLastViewingDeviceOrientation(void) {
+    static UIDeviceOrientation last = UIDeviceOrientationPortrait;
+    UIDeviceOrientation current = UIDevice.currentDevice.orientation;
+    if(UIDeviceOrientationIsValidInterfaceOrientation(current)) {
+        last = current;
+    }
+    return last;
+}
+
 /// How far the guest has turned its own content against the scene it lives in.
 ///
 /// A guest autorotates on `deviceOrientation`. When this host is pinned upright
 /// the scene never follows, so the guest is turned inside a window that is not —
 /// and anything expressed in the guest's own frame is carried around with it.
 static NSInteger LCGuestSelfRotationSteps(UIMutableApplicationSceneSettings *settings) {
-    UIDeviceOrientation device = UIDevice.currentDevice.orientation;
+    // Sticky reading, like every other orientation consumer in this file: face-up
+    // would otherwise report zero steps and describe a turned guest as upright.
+    UIDeviceOrientation device = LCLastViewingDeviceOrientation();
     if(!UIDeviceOrientationIsValidInterfaceOrientation(device)) return 0;
     NSInteger steps = LCDeviceSteps(device) - LCInterfaceSteps(LCGuestSceneOrientation(settings));
     return ((steps % 4) + 4) % 4;
@@ -116,7 +157,7 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     BOOL windowIsLandscape = size.width > size.height;
     if(windowIsLandscape == UIInterfaceOrientationIsLandscape(reported)) return reported;
 
-    switch(UIDevice.currentDevice.orientation) {
+    switch(LCLastViewingDeviceOrientation()) {
         case UIDeviceOrientationLandscapeLeft:      return UIInterfaceOrientationLandscapeRight;
         case UIDeviceOrientationLandscapeRight:     return UIInterfaceOrientationLandscapeLeft;
         case UIDeviceOrientationPortraitUpsideDown: return UIInterfaceOrientationPortraitUpsideDown;
@@ -125,7 +166,17 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     return windowIsLandscape ? UIInterfaceOrientationLandscapeRight : UIInterfaceOrientationPortrait;
 }
 
-@implementation DecoratedAppSceneViewController
+@implementation DecoratedAppSceneViewController {
+    /// The last orientation this guest was known to be in while the phone was
+    /// actually being held. The hard lock's memory.
+    ///
+    /// Held here rather than read back out of the scene settings on purpose: the
+    /// settings object is copied, merged and overwritten by several writers on
+    /// every host diff, and every previous attempt at this bug failed because it
+    /// trusted that object to still hold the guest's orientation when it came to
+    /// be read. An ivar cannot be clobbered by a settings merge.
+    UIInterfaceOrientation _lockedGuestOrientation;
+}
 - (instancetype)initWindowName:(NSString*)windowName bundleId:(NSString*)bundleId dataUUID:(NSString*)dataUUID rootVC:(UIViewController*)rootVC {
     self = [super initWithNibName:nil bundle:nil];
     self.view = [[UIStackView alloc] initWithFrame:self.view.frame];
@@ -498,16 +549,69 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 - (void)appSceneVC:(AppSceneViewController*)vc didUpdateFromSettings:(UIMutableApplicationSceneSettings *)baseSettings transitionContext:(id)newContext lifecycleActionType:(uint32_t)actionType {
     UIMutableApplicationSceneSettings *newSettings = [vc.presenter.scene.settings mutableCopy];
     newSettings.userInterfaceStyle = baseSettings.userInterfaceStyle;
-    newSettings.interfaceOrientation = baseSettings.interfaceOrientation;
-    newSettings.deviceOrientation = baseSettings.deviceOrientation;
+    // Only when the guest has not yet said which way it is facing.
+    //
+    // This is a diff of the *host's* settings, and the guest's orientation is not
+    // the host's. A landscape guest inside an upright host is the normal case here
+    // (see LCWindowOrientation above), so stamping the host's value over it is not
+    // a copy — it is a deletion. `vc.presenter.scene.settings.interfaceOrientation`
+    // is the only record anywhere in this process that the guest is turned, and
+    // this line is where it was being erased, on every host diff.
+    //
+    // What made that fatal is a few lines below: `updateMaximizedFrameWithSettings:`
+    // hands this same field to `LCWindowOrientation` as `reported`. Stamped
+    // portrait against an upright host window, the two agree, and that function
+    // returns at its early guard — so the sticky device reading it falls back on
+    // is never consulted. The guest is re-derived as upright.
+    //
+    // While the phone is genuinely held sideways this was survivable, because the
+    // guest's landscape was carried by `deviceOrientation` below, which the host
+    // kept re-asserting. At face-up that field stops carrying an answer (and the
+    // guard below correctly refuses to copy the non-answer), so the orientation
+    // has to be *remembered* rather than re-derived — and by then this line has
+    // already erased the memory. Portrait is all that is left. That is the snap.
+    if(newSettings.interfaceOrientation == UIInterfaceOrientationUnknown) {
+        newSettings.interfaceOrientation = baseSettings.interfaceOrientation;
+    }
+    // Face-up and face-down are not viewing orientations, and must not be copied.
+    //
+    // This is the authoritative writer of the guest's orientation: it pushes
+    // straight to the scene at the bottom of this method, so whatever it says
+    // overrules anything computed in AppSceneViewController. And it is driven by a
+    // host scene-settings *diff*, not by UIDeviceOrientationDidChangeNotification —
+    // which is why guarding that notification changed nothing.
+    //
+    // The host's own scene settings carry the raw SpringBoard reading, face-up
+    // included. Copying it verbatim tells the guest process "the device is now
+    // face-up", and the guest's UIKit — unhooked in multitask, since the guest
+    // hooks are gated on !isLiveProcess — resolves that non-answer to portrait and
+    // rotates itself. Nothing in the host moved, which is exactly why the host's
+    // own interfaceOrientation never changed while the guest visibly turned.
+    //
+    // Not assigning leaves the guest holding the orientation it already had, which
+    // is what a native app does when it is laid on a table.
+    if(UIDeviceOrientationIsValidInterfaceOrientation(baseSettings.deviceOrientation)) {
+        newSettings.deviceOrientation = baseSettings.deviceOrientation;
+    }
     newSettings.foreground = YES;
     
-    if(self.isMaximized) {
-        [self updateMaximizedFrameWithSettings:newSettings];
-    } else {
-        [self updateWindowedFrameWithSettings:newSettings];
+    // HARD LOCK: same rule on the host-diff path — hold the shape while flat.
+    BOOL frozen = LCRotationIsLocked() && _lockedGuestOrientation != UIInterfaceOrientationUnknown;
+    if(!frozen) {
+        if(self.isMaximized) {
+            [self updateMaximizedFrameWithSettings:newSettings];
+        } else {
+            [self updateWindowedFrameWithSettings:newSettings];
+        }
     }
-    [self applySceneFrameToSettings:newSettings orientation:baseSettings.interfaceOrientation];
+    // The orientation the guest was just told it is in — not the host's. When the
+    // two differ (a landscape guest inside an upright host) `updateMaximizedFrameWithSettings:`
+    // has already corrected `newSettings.interfaceOrientation` via `LCWindowOrientation`,
+    // and reaching past that for the host's value re-derives the drawable's
+    // width/height swap from the orientation the guest is *not* in.
+    if(!frozen) {
+        [self applySceneFrameToSettings:newSettings orientation:newSettings.interfaceOrientation];
+    }
 
     [_appSceneVC.presenter.scene updateSettings:newSettings withTransitionContext:newContext completion:nil];
 
@@ -677,6 +781,17 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     // outlives the view being taken out of the hierarchy, and answering that with
     // zeroes would collapse it rather than leave it be.
     if(!self.view.window) return;
+    // HARD LOCK: no geometry is re-derived while the phone is flat.
+    //
+    // Freezing the orientation alone was not enough, and the reason is that the
+    // guest does not need to be *told* it rotated in order to look rotated. It is
+    // handed a drawable of a given shape, and a responsive app given a 402x874
+    // drawable draws its portrait layout whatever its orientation says. So the
+    // shape is the thing that has to hold still, not the label on it.
+    //
+    // Gated on having a settled orientation so a guest opened while the phone is
+    // already flat still gets its initial layout; only re-derivation is blocked.
+    if(LCRotationIsLocked() && _lockedGuestOrientation != UIInterfaceOrientationUnknown) return;
     [self updateMaximizedFrameWithSettings:settings];
     [self applySceneFrameToSettings:settings orientation:LCGuestSceneOrientation(settings)];
 }
@@ -694,7 +809,11 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         // The window is held clear of the sensor housing while the phone is turned
         // (see -updateMaximizedFrameWithSettings:), so the guest is no longer
         // sitting under it and must not be told to keep it clear a second time.
-        if(UIDeviceOrientationIsLandscape(UIDevice.currentDevice.orientation)) {
+        // Last *viewing* orientation, not the raw one: the housing is still cleared
+        // by a phone held sideways and then tilted onto its back, but the raw
+        // reading turns face-up at that point and stops answering landscape, which
+        // would put the inset back and shift the guest's content for a tilt.
+        if(UIDeviceOrientationIsLandscape(LCLastViewingDeviceOrientation())) {
             safeAreaInsets.top = 0;
         }
         // The window is now held clear of the housing on its long edges (see
@@ -725,9 +844,29 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     // scale peripheryInsets to match the scale ratio
     settings.peripheryInsets = UIEdgeInsetsMake(settings.peripheryInsets.top/_scaleRatio, settings.peripheryInsets.left/_scaleRatio, settings.peripheryInsets.bottom/_scaleRatio, settings.peripheryInsets.right/_scaleRatio);
     if(UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPad) {
-        // The window's orientation, not the one the settings claim: they disagree
-        // exactly when this goes wrong.
-        UIInterfaceOrientation currentOrientation = LCWindowOrientation(self.view, settings);
+        // HARD LOCK: while the phone is flat, do not re-derive the guest's
+        // orientation at all — reassert the one it had when the phone was last
+        // actually being held.
+        //
+        // Everything that decides a guest's orientation funnels through here, so
+        // this is where "flat means frozen" is cheapest to guarantee. It is a
+        // deliberate refusal to compute rather than a better computation: every
+        // earlier attempt at this bug tried to make the derivation smarter, and
+        // each one still had some input that resolved a face-up reading to
+        // portrait. Nothing derived from a device that is not answering can be
+        // trusted, so while it is not answering, nothing is derived.
+        UIInterfaceOrientation currentOrientation;
+        if(LCRotationIsLocked() && _lockedGuestOrientation != UIInterfaceOrientationUnknown) {
+            currentOrientation = _lockedGuestOrientation;
+        } else {
+            // The window's orientation, not the one the settings claim: they
+            // disagree exactly when this goes wrong.
+            currentOrientation = LCWindowOrientation(self.view, settings);
+            // Only remember an answer reached while the phone was being held.
+            if(!LCRotationIsLocked() && currentOrientation != UIInterfaceOrientationUnknown) {
+                _lockedGuestOrientation = currentOrientation;
+            }
+        }
         settings.interfaceOrientation = currentOrientation;
         if(UIInterfaceOrientationIsLandscape(currentOrientation)) {
             safeAreaInsets.top = 0;

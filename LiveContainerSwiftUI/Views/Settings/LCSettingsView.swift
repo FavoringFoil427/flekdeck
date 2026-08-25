@@ -77,6 +77,7 @@ struct LCSettingsView: View {
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
     @AppStorage("LCMaxOneAppOnStage", store: LCUtils.appGroupUserDefault) var onlyOneAppOnStage = false
     @AppStorage("LCRedirectURLToHost", store: LCUtils.appGroupUserDefault) var redirectURLToHost = false
+    @AppStorage("LCShowRotationOverlay", store: LCUtils.appGroupUserDefault) var showRotationOverlay = false
     
     @AppStorage("LCSideJITServerAddress", store: LCUtils.appGroupUserDefault) var sideJITServerAddress : String = ""
     @AppStorage("LCDeviceUDID", store: LCUtils.appGroupUserDefault) var deviceUDID: String = ""
@@ -901,6 +902,27 @@ struct LCSettingsView: View {
                         }
                     } footer: {
                         Text("lc.settings.multitaskDesc".loc)
+                    }
+
+                    Section {
+                        Toggle(isOn: $showRotationOverlay) {
+                            Text("lc.settings.rotationOverlay".loc)
+                        }
+                        .onChange(of: showRotationOverlay) { on in
+                            if on {
+                                LCRotationLockOverlay.shared.start()
+                            } else {
+                                // Releasing the manual lock on the way out, so a
+                                // lock left on cannot outlive the only control
+                                // for turning it off.
+                                LCRotationLock.isManual = false
+                                LCRotationLockOverlay.shared.stop()
+                            }
+                        }
+                    } header: {
+                        Text("lc.settings.developer".loc)
+                    } footer: {
+                        Text("lc.settings.rotationOverlay.desc".loc)
                     }
                 }
                 

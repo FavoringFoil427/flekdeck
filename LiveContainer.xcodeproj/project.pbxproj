@@ -284,6 +284,7 @@
 				DecoratedAppSceneViewController.m,
 				LCGuestVolume.h,
 				LCGuestVolume.m,
+				LCRotationLock.swift,
 				LCStatusBarManager.h,
 				LCStatusBarManager.m,
 				MultitaskAppWindow.swift,

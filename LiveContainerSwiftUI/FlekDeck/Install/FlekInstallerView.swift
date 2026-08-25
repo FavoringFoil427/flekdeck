@@ -163,6 +163,10 @@ struct FlekInstallerView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // Same rule as the dock: face-up and face-down say nothing about how
+            // the page is being read, so re-deriving the bar's layout from one
+            // only reintroduces whatever its fallbacks answer.
+            guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
             updateSwitcherBarState()
         }
         .onAppear {

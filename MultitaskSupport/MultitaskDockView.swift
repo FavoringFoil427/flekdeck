@@ -395,6 +395,17 @@ class AppInfoProvider {
     /// table must not read as "portrait" and swing the button across the screen.
     /// Nil until the device has reported a real one.
     private var lastKnownDeviceSteps: Int?
+
+    /// The last device orientation that describes how the screen is being *read*,
+    /// ignoring face-up and face-down. Kept beside `lastKnownDeviceSteps` because
+    /// callers that need the orientation itself, rather than a quarter-turn count,
+    /// need the same stickiness for the same reason.
+    private var lastValidDeviceOrientation: UIDeviceOrientation {
+        let current = UIDevice.current.orientation
+        if current.isValidInterfaceOrientation { _lastValidDeviceOrientation = current }
+        return _lastValidDeviceOrientation
+    }
+    private var _lastValidDeviceOrientation: UIDeviceOrientation = .portrait
     /// True while a finger is actually moving the button, so the geometry callbacks
     /// that re-place it on a resize don't pull it out from under that finger.
     ///
@@ -922,6 +933,14 @@ class AppInfoProvider {
         // and when the interface itself is not rotating, the phone being turned is
         // the *only* signal that the floating button has to move.
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        // Position + lock readout, with a manual lock button. Off unless switched
+        // on under Multitask > Developer — the rotation lock itself always runs;
+        // this only shows what it is doing and offers a manual override.
+        if LCUtils.appGroupUserDefault.bool(forKey: "LCShowRotationOverlay") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                LCRotationLockOverlay.shared.start()
+            }
+        }
         if let win = keyWindow { attachSafeAreaSentinel(to: win) }
         refreshCachedSafeAreaInsets()
         setupDockView()
@@ -1085,6 +1104,23 @@ class AppInfoProvider {
     }
 
     @objc private func deviceOrientationDidChange() {
+        // Face-up and face-down are not orientations anything here can act on.
+        //
+        // `UIDevice` reports them alongside the four real ones, and they describe
+        // the phone's relationship to the ground rather than to the viewer — a
+        // phone set down on a table is still being read the same way round it was
+        // a moment earlier. Every consumer below re-derives geometry from "which
+        // way is the device", so letting a face-up transition through means
+        // re-deriving all of it from a reading that carries no such information,
+        // and the answers that come back are whatever the fallbacks happen to say.
+        // That is the whole of the bug where laying the phone flat while holding
+        // it in landscape snapped the window back to portrait: the turn was not
+        // decided anywhere, it fell out of a dozen defaults at once.
+        //
+        // iOS itself holds the interface across face-up, which is why a native app
+        // laid on a table keeps its orientation. This does the same by refusing to
+        // treat the transition as news.
+        guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
         DispatchQueue.main.async {
             // Re-size the switcher's cards for the orientation they are now in.
             self.refreshSwitcherScreenSize()
@@ -2779,7 +2815,9 @@ class AppInfoProvider {
                 // guest rendering sideways inside an upright host. The interface can't
                 // say which way it is being read, so use the device. Note the axes are
                 // mirrored — device landscapeLeft is interface landscapeRight.
-                quarterTurn = UIDevice.current.orientation == .landscapeLeft ? .pi / 2 : -.pi / 2
+                // Last valid reading: face-up would otherwise silently pick the
+                // other direction and capture the card upside down.
+                quarterTurn = self.lastValidDeviceOrientation == .landscapeLeft ? .pi / 2 : -.pi / 2
             }
         }
 
