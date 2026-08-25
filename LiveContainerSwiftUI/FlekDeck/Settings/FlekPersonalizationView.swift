@@ -124,7 +124,9 @@ struct FlekPersonalizationView: View {
     private var currentPreview: some View {
         ZStack(alignment: .top) {
             Group {
-                if !wallpaperPhoto.isEmpty, let img = FlekWallpaperStore.loadPhoto(named: wallpaperPhoto) {
+                if !wallpaperPhoto.isEmpty,
+                   let img = FlekWallpaperStore.loadPhoto(named: wallpaperPhoto,
+                                                          maxPixel: FlekWallpaperImages.thumbnailMaxPixel) {
                     Image(uiImage: img).resizable().scaledToFill()
                 } else {
                     FlekWallpaper.from(descriptor: wallpaperDescriptor).thumbnail()
