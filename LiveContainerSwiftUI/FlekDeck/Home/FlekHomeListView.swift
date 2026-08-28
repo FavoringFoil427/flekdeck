@@ -224,23 +224,10 @@ struct FlekHomeListView<Menu: View>: View {
 
 }
 
-/// Static (non-blurring) frosted surface for list rows. Replaces `.ultraThinMaterial`,
-/// which forces a live backdrop blur per row every frame while scrolling. The
-/// wallpaper behind is already statically blurred, so a solid translucent fill
-/// looks nearly identical at a fraction of the cost. The opacity values below are
-/// the visual tuning knobs.
-private struct FlekStaticRowSurface: View {
-    var cornerRadius: CGFloat = 20
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(colorScheme == .dark ? Color(white: 0.16).opacity(0.7) : Color.white.opacity(0.6))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
-            )
-    }
+/// Tuning knob for the list row surface. Matches the value `flekGlassCard`
+/// passes on the grid, so rows and cards read as the same material.
+enum FlekHomeListRow {
+    static let surfaceTint: Double = 0.22
 }
 
 struct FlekAppRow<Icon: View>: View {
@@ -324,7 +311,11 @@ struct FlekAppRow<Icon: View>: View {
         .padding(.trailing, 10)
         .frame(height: 84)
         .background {
-            FlekStaticRowSurface(cornerRadius: 20)
+            // The same surface the grid cards fall back to, so a row and a card
+            // are one material. `flekGlassCard` is deliberately not used here:
+            // it would take the Liquid Glass path on iOS 26, and rows are not
+            // opting into that yet.
+            FlekGlassBackground(cornerRadius: 20, tint: FlekHomeListRow.surfaceTint)
         }
     }
 }
@@ -397,7 +388,11 @@ struct FlekInstallRow: View {
         .padding(.trailing, 10)
         .frame(height: 84)
         .background {
-            FlekStaticRowSurface(cornerRadius: 20)
+            // The same surface the grid cards fall back to, so a row and a card
+            // are one material. `flekGlassCard` is deliberately not used here:
+            // it would take the Liquid Glass path on iOS 26, and rows are not
+            // opting into that yet.
+            FlekGlassBackground(cornerRadius: 20, tint: FlekHomeListRow.surfaceTint)
         }
     }
 }
