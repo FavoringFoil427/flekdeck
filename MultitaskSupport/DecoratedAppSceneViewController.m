@@ -809,21 +809,25 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         // which way the phone was turned, so the reservation comes off every edge
         // rather than being assumed onto one. Portrait is unchanged by arithmetic:
         // the reservation there is larger than the home-indicator inset it cancels.
-        // The window is held clear of the sensor housing while the phone is turned
-        // (see -updateMaximizedFrameWithSettings:), so the guest is no longer
-        // sitting under it and must not be told to keep it clear a second time.
-        // Last *viewing* orientation, not the raw one: the housing is still cleared
-        // by a phone held sideways and then tilted onto its back, but the raw
-        // reading turns face-up at that point and stops answering landscape, which
-        // would put the inset back and shift the guest's content for a tilt.
-        if(UIDeviceOrientationIsLandscape(LCLastViewingDeviceOrientation())) {
-            safeAreaInsets.top = 0;
-        }
-        // The window is now held clear of the housing on its long edges (see
-        // -updateMaximizedFrameWithSettings:), so the guest is no longer under it
-        // and must not keep the same strip clear a second time.
+        // The window is held clear of the sensor housing while it is turned (see
+        // -updateMaximizedFrameWithSettings:), so the guest is no longer sitting
+        // under it and must not be told to keep it clear a second time.
+        //
+        // Asked of the window's own shape, not of how the device is being held.
+        // The two were the same answer while the window always turned with the
+        // phone, and the top inset was read from the device — a sticky reading,
+        // because the raw one turns face-up on a tilt and would put the inset back
+        // and shift the guest's content for it. Neither is right once the host can
+        // be pinned: an orientation-locked guest keeps a landscape window while the
+        // phone is turned upright, and the device reading then restored the top
+        // inset and laid a strip of the black backdrop across the top of a guest
+        // that had not moved. It fails the other way too — a portrait window under
+        // a sideways phone had its housing clearance taken away and drew under the
+        // island. The window's shape cannot be wrong about the window, and it is
+        // already what the long edges below are asked of, two lines apart.
         CGSize windowSize = self.view.window.bounds.size;
         if(windowSize.width > windowSize.height) {
+            safeAreaInsets.top = 0;
             safeAreaInsets.left = 0;
             safeAreaInsets.right = 0;
         }

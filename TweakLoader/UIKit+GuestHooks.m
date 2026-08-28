@@ -31,12 +31,26 @@ static void UIKitGuestHooksInit() {
             default:
                 break;
         }
-        if(!NSUserDefaults.isLiveProcess && LCOrientationLock != UIInterfaceOrientationUnknown) {
+        if(LCOrientationLock != UIInterfaceOrientationUnknown) {
 //            swizzle(UIApplication.class, @selector(_handleDelegateCallbacksWithOptions:isSuspended:restoreState:), @selector(hook__handleDelegateCallbacksWithOptions:isSuspended:restoreState:));
-            swizzle(FBSSceneParameters.class, @selector(initWithXPCDictionary:), @selector(hook_initWithXPCDictionary:));
+            // What the lock actually is: the guest's own view controllers refusing
+            // to turn. Installed for multitask guests too, where it is the only
+            // thing stopping a guest rotating its content on the raw device
+            // orientation inside a window the host is deliberately holding still —
+            // see `LCGuestSelfRotationSteps` in DecoratedAppSceneViewController.
             swizzle(UIViewController.class, @selector(__supportedInterfaceOrientations), @selector(hook___supportedInterfaceOrientations));
             swizzle(UIViewController.class, @selector(shouldAutorotateToInterfaceOrientation:), @selector(hook_shouldAutorotateToInterfaceOrientation:));
-            swizzle(UIWindow.class, @selector(setAutorotates:forceUpdateInterfaceOrientation:), @selector(hook_setAutorotates:forceUpdateInterfaceOrientation:));
+
+            if(!NSUserDefaults.isLiveProcess) {
+                // Both of these write the scene's own orientation, and in multitask
+                // the host owns that: it pushes a settings update on every geometry
+                // change, so a guest pinning its scene here would be overwritten a
+                // frame later and would fight the host's frame arithmetic in
+                // between. Outside multitask the guest owns its scene and they are
+                // what make the lock stick.
+                swizzle(FBSSceneParameters.class, @selector(initWithXPCDictionary:), @selector(hook_initWithXPCDictionary:));
+                swizzle(UIWindow.class, @selector(setAutorotates:forceUpdateInterfaceOrientation:), @selector(hook_setAutorotates:forceUpdateInterfaceOrientation:));
+            }
         }
 
     }

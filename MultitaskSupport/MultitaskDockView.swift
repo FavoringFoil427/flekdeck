@@ -880,11 +880,49 @@ class AppInfoProvider {
         // iPad has no housing to avoid and keeps the bottom, as it always has.
         guard UIDevice.current.userInterfaceIdiom != .pad else { return .bottom }
         let scene = hostingController?.view.window?.windowScene ?? keyWindow?.windowScene
-        switch scene?.interfaceOrientation {
+        switch resolvedInterfaceOrientation(scene) {
         case .landscapeLeft:  return .left
         case .landscapeRight: return .right
         default:              return .bottom
         }
+    }
+
+    /// `scene.interfaceOrientation`, corrected against the rectangle the bar is
+    /// actually being laid out in.
+    ///
+    /// The two part company for a frame or two around every turn, and a turn is now
+    /// asked for explicitly on several paths — going home, opening the switcher, a
+    /// guest with an orientation lock coming to the front — so the window rotates at
+    /// moments no device event accompanies. Reading the stale value lays the bar
+    /// along the wrong edge, and `lastPlacedBarEdge` then caches that until
+    /// something else happens to force a layout, which is why it only goes wrong
+    /// some of the time.
+    ///
+    /// The layout rectangle cannot be stale about its own shape: it is the thing the
+    /// bar is being positioned inside. So when the two disagree the rectangle wins,
+    /// and the device says which of the two landscape directions it is. Same rule
+    /// and same reason as `LCWindowOrientation` in DecoratedAppSceneViewController,
+    /// which was written for this failure on the guest's side of the window.
+    ///
+    /// A pinned host is not a disagreement: its rectangle stays portrait and so does
+    /// its reported orientation, so nothing here overrides it.
+    private func resolvedInterfaceOrientation(_ scene: UIWindowScene?) -> UIInterfaceOrientation {
+        let reported = scene?.interfaceOrientation ?? .portrait
+        let bounds = barLayoutBounds
+        guard bounds.width > 0, bounds.height > 0 else { return reported }
+
+        let boundsAreLandscape = bounds.width > bounds.height
+        if boundsAreLandscape == reported.isLandscape { return reported }
+
+        switch UIDevice.current.orientation {
+        case .landscapeLeft:      return .landscapeRight   // device and interface axes are mirrored
+        case .landscapeRight:     return .landscapeLeft
+        case .portraitUpsideDown: return .portraitUpsideDown
+        default: break
+        }
+        // Flat, or not yet reporting. The shape is still known even when the
+        // direction is not, so keep the axis and pick either turn over ignoring it.
+        return boundsAreLandscape ? .landscapeRight : .portrait
     }
 
     /// The edge `updateDockFrame` last actually drew the bar along. Everything that
@@ -1498,6 +1536,9 @@ class AppInfoProvider {
                 self.hideDock()
             } else if self.isVisible {
                 self.updateDockFrame()
+                // A different app is in front now, and it may be pinned where the
+                // one that just left was not — or the other way round.
+                self.refreshOrientationLock()
             }
         }
     }
@@ -1633,34 +1674,25 @@ class AppInfoProvider {
             }
             
             if hasVisibleWindow {
-                // Whether anything is headed for the dock has to be settled before
-                // the home state flips, since that is what puts the dock on screen:
-                // decided any later and its entrance has already begun.
-                let flying = self.frontmostVisibleWindow()
-                self.homeDockShouldSkipEntrance = self.apps.contains { app in
-                    guard let view = app.view, view === flying,
-                          let itemID = app.springboardItemID else { return false }
-                    return LCMinimizeToIconAnimator.willUseHomeDock(forItemID: itemID)
+                guard self.frontmostAppOrientations == nil else {
+                    // A guest pinned to its own orientation cannot be shown in
+                    // another one. Its view controllers have been told they support
+                    // only the one, so a window turned out from under it is a window
+                    // it will not lay out for — handed a portrait drawable it flips
+                    // between the two and never settles, which is the judder before
+                    // the shrink. So it leaves first, in the orientation it is
+                    // pinned to, and the screen turns once its window has gone.
+                    self.flyEverythingHome()
+                    self.whenWindowsAreAway { self.turnUpright() }
+                    return
                 }
-
-                // Minimize ALL visible windows and hide the dock bar. This is the
-                // way home, so a built-in page shrinks into its own icon on the
-                // way rather than simply going out.
-                self.minimizeAllWindows(style: .intoIcons)
-                self.updateFrontmostApp()
-                self.isHomeState = true
-                self.hideDock()
-
-                // Every other way the dock appears keeps its entrance.
-                if self.homeDockShouldSkipEntrance {
-                    self.homeDockEntranceSkipToken &+= 1
-                    let token = self.homeDockEntranceSkipToken
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        if self.homeDockEntranceSkipToken == token {
-                            self.homeDockShouldSkipEntrance = false
-                        }
-                    }
-                }
+                // Upright first, then the flight. The window is aimed at one of the
+                // springboard's icons, and where that icon sits is decided by the
+                // portrait layout it is the only one to have. Turning underneath the
+                // flight instead would resolve the target against a landscape
+                // springboard and then take that springboard away mid-air, landing
+                // the window nowhere near the icon it was going to.
+                self.whenUpright { self.flyEverythingHome() }
             } else {
                 // All minimized — bring back last used app
                 self.isHomeState = false
@@ -1674,6 +1706,74 @@ class AppInfoProvider {
         }
     }
     
+    /// Locks the interface to portrait and runs `body` once the window has
+    /// actually turned — straight away when it is upright already, or when the
+    /// turn is declined (rotation locked at the system level, so it never comes).
+    private func whenUpright(_ body: @escaping () -> Void) {
+        AppDelegate.orientationLock = .portrait
+        guard AppDelegate.applyOrientationLock(), let window = keyWindow else {
+            body()
+            return
+        }
+        whenWindowIsPortrait(window, body)
+    }
+
+    /// Locks the interface to portrait and turns the window there, with nothing to
+    /// wait for: by the time this runs the window it would have disturbed is gone.
+    private func turnUpright() {
+        AppDelegate.orientationLock = .portrait
+        AppDelegate.applyOrientationLock()
+    }
+
+    /// Runs `body` once no guest window is left on screen, or after a grace period
+    /// if one never goes — the caller must run either way.
+    ///
+    /// Polls the same question `ensureControlAccessible` asks, rather than counting
+    /// out the flight's duration, so it is the windows actually being gone that
+    /// releases the turn and not an assumption about how long that takes.
+    private func whenWindowsAreAway(attempt: Int = 0, _ body: @escaping () -> Void) {
+        guard hasForegroundAppWindow(), attempt < 45 else {
+            body()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) { [weak self] in
+            self?.whenWindowsAreAway(attempt: attempt + 1, body)
+        }
+    }
+
+    /// The home button's second half: every visible window put away into its icon
+    /// and the bar taken down. Split out of `goHome` so it can be run after the
+    /// window has turned upright rather than beside the turn.
+    private func flyEverythingHome() {
+        // Whether anything is headed for the dock has to be settled before
+        // the home state flips, since that is what puts the dock on screen:
+        // decided any later and its entrance has already begun.
+        let flying = frontmostVisibleWindow()
+        homeDockShouldSkipEntrance = apps.contains { app in
+            guard let view = app.view, view === flying,
+                  let itemID = app.springboardItemID else { return false }
+            return LCMinimizeToIconAnimator.willUseHomeDock(forItemID: itemID)
+        }
+
+        // Minimize ALL visible windows and hide the dock bar. This is the
+        // way home, so a built-in page shrinks into its own icon on the
+        // way rather than simply going out.
+        minimizeAllWindows(style: .intoIcons)
+        updateFrontmostApp()
+        isHomeState = true
+        hideDock()
+
+        // Every other way the dock appears keeps its entrance.
+        guard homeDockShouldSkipEntrance else { return }
+        homeDockEntranceSkipToken &+= 1
+        let token = homeDockEntranceSkipToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            if self.homeDockEntranceSkipToken == token {
+                self.homeDockShouldSkipEntrance = false
+            }
+        }
+    }
+
     /// Find the current frontmost visible app from the view hierarchy
     private func updateFrontmostApp() {
         for view in self.windowHostingView.subviews.reversed() {
@@ -1715,6 +1815,31 @@ class AppInfoProvider {
         return barShown || navShown
     }
 
+    /// The orientations a foreground guest has been pinned to in its own settings,
+    /// or nil when it is free to turn.
+    ///
+    /// The per-app lock is enforced inside the guest process, by swizzling
+    /// `-[UIViewController __supportedInterfaceOrientations]`, and that stops the
+    /// guest turning its *content*. It cannot stop the host window turning
+    /// underneath it — and a turned host hands the guest a differently shaped
+    /// drawable, which is the whole of how a guest comes to look rotated. So the
+    /// window has to be pinned here as well; neither half is sufficient alone.
+    ///
+    /// Built-in pages are excluded: they are our own SwiftUI and carry no lock.
+    private var frontmostAppOrientations: UIInterfaceOrientationMask? {
+        guard let uuid = frontmostAppUUID,
+              let app = apps.first(where: { $0.appUUID == uuid }),
+              !app.isInternalPage,
+              let info = app.appInfo else { return nil }
+        switch info.orientationLock {
+        // Matching the guest hook, which maps its landscape to a mask covering
+        // both directions rather than to the one it names.
+        case .Landscape: return .landscape
+        case .Portrait: return .portrait
+        default: return nil
+        }
+    }
+
     /// Drives `AppDelegate.orientationLock` from control visibility:
     /// rotatable (`.allButUpsideDown`) while the switcher bar or floating button
     /// is shown, portrait-locked otherwise. No-op outside virtual-window
@@ -1723,24 +1848,30 @@ class AppInfoProvider {
     @objc public func refreshOrientationLock() {
         guard isDockEnabled() else { return }
         DispatchQueue.main.async {
-            // The app switcher overlay is portrait-only. Otherwise: rotatable
-            // while a control is on screen, portrait-locked on the springboard.
+            // The app switcher overlay is portrait-only. Otherwise: the foreground
+            // app's own orientation lock if it has one, free rotation if it does
+            // not, portrait-locked on the springboard.
             let lockPortrait = self.isAppSwitcherOpen || !self.isAnyControlVisible
-            AppDelegate.orientationLock = lockPortrait ? .portrait : .allButUpsideDown
-
-            let keyWindow = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first { $0.isKeyWindow }
-            keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-
-            // If the switcher opened while the device is held in landscape,
-            // actively rotate the interface to portrait so it's always upright.
-            if self.isAppSwitcherOpen,
-               let scene = keyWindow?.windowScene,
-               scene.interfaceOrientation.isLandscape {
-                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            var mask: UIInterfaceOrientationMask = lockPortrait
+                ? .portrait
+                : (self.frontmostAppOrientations ?? .allButUpsideDown)
+            // A pinned guest holds the window at its own orientation for as long as
+            // its window is on screen — including the stretch after the controls
+            // have gone, when we are already on the way home and `hideDock` calls
+            // this while the flight is still running. Turning there is what makes a
+            // locked guest judder; see `goHome`. The switcher is exempt: it covers
+            // the guest with its own portrait overlay, having snapshotted it first.
+            if lockPortrait, !self.isAppSwitcherOpen, self.hasForegroundAppWindow(),
+               let pinned = self.frontmostAppOrientations {
+                mask = pinned
             }
+            AppDelegate.orientationLock = mask
+
+            // Applied rather than only recorded. A window that is already lying
+            // sideways has to be asked to turn — the phone has not moved, so nothing
+            // else will ask — and this runs for every way back to the springboard,
+            // not only the switcher's. See `AppDelegate.applyOrientationLock`.
+            AppDelegate.applyOrientationLock()
         }
     }
 
@@ -3066,11 +3197,26 @@ class AppInfoProvider {
     }
 
     /// Calls `body` once the window has finished rotating to portrait, or after a
-    /// short grace period if it never does — the switcher must open either way, and
-    /// a device with rotation locked at the system level never turns at all.
+    /// short grace period if it never does — the caller must run either way, and a
+    /// device with rotation locked at the system level never turns at all.
+    ///
+    /// Finished, not merely started. The bounds flip at the top of the transition
+    /// and the animation runs on for several more frames, so waiting on the shape
+    /// alone lets the caller go while the screen is still turning under it. That is
+    /// what made the way home from an orientation-locked app stutter: the window was
+    /// being resized by the rotation at the same time as its own flight into an icon
+    /// was interpolating toward a rect measured before either had happened. With the
+    /// lock off and the device already upright there is no turn, nothing waits, and
+    /// the flight has always run alone — which is why only locked apps juddered.
+    ///
+    /// `isRotating` is the coordinator's own bracket, so this waits on the real
+    /// transition rather than a guess at its length. It stays false when there is no
+    /// overlay host to report one, which degrades to the old shape-only test rather
+    /// than hanging. The cap covers a full turn with room to spare, and a lock left
+    /// set by an interrupted transition costs half a second once.
     private func whenWindowIsPortrait(_ window: UIWindow, attempt: Int = 0, _ body: @escaping () -> Void) {
         let isPortrait = window.bounds.height >= window.bounds.width
-        guard !isPortrait, attempt < 12 else {
+        guard !(isPortrait && !isRotating), attempt < 30 else {
             body()
             return
         }

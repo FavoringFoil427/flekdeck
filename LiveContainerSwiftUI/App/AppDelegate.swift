@@ -7,7 +7,52 @@ import Intents
     /// Set to `.portrait` when the springboard is visible so that only the
     /// home screen is locked to portrait while the rest of the app can rotate.
     static var orientationLock: UIInterfaceOrientationMask = .allButUpsideDown
-        
+
+    /// Puts the interface into `orientationLock`, turning the window when the
+    /// orientation it is currently in has just stopped being allowed.
+    ///
+    /// Narrowing the mask is not enough on its own. UIKit re-resolves orientation
+    /// off a device event, and leaving a landscape app for the springboard is not
+    /// one — the phone lies exactly where it was. Without an explicit request the
+    /// window keeps that landscape and the springboard, which has only a portrait
+    /// layout, is drawn sideways into it.
+    ///
+    /// Returns whether a turn was actually asked for, so a caller that must not draw
+    /// until the window has turned knows whether it has anything to wait for.
+    @discardableResult
+    static func applyOrientationLock() -> Bool {
+        guard #available(iOS 16.0, *) else { return false }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive })
+                ?? scenes.first else { return false }
+
+        // Every window in the scene, not just the key one. This app keeps overlay
+        // windows above its own — the multitask host, the rotation readout — and
+        // whichever of them happens to be key may have no root controller at all,
+        // in which case asking only the key window asks nobody.
+        for window in scene.windows {
+            window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        }
+
+        let current = mask(for: scene.interfaceOrientation)
+        guard !current.isEmpty, !orientationLock.contains(current) else { return false }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientationLock))
+        return true
+    }
+
+    /// The single-orientation mask an interface orientation belongs to, so it can
+    /// be tested against `orientationLock`. Empty for `.unknown`, which no mask
+    /// contains and which nothing should be turned away from.
+    private static func mask(for orientation: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
+        switch orientation {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeLeft
+        case .landscapeRight: return .landscapeRight
+        default: return []
+        }
+    }
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? ) -> Bool {
         application.shortcutItems = nil
         UserDefaults.standard.removeObject(forKey: "LCNeedToAcquireJIT")
