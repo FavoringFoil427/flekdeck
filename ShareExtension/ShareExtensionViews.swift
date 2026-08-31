@@ -1,6 +1,24 @@
 import SwiftUI
 import UIKit
 
+/// The share sheet is the host app's own surface, so it has to carry the host's
+/// name. Reading it off the containing bundle keeps that name in one place
+/// instead of leaving a second literal here to fall out of sync at the next
+/// rename -- which is exactly how this title came to still say LiveContainer.
+private let hostAppDisplayName: String = {
+    var url = Bundle.main.bundleURL
+    while url.pathExtension != "app" && url.pathComponents.count > 1 {
+        url.deleteLastPathComponent()
+    }
+    let info = Bundle(url: url)?.infoDictionary
+    for key in ["CFBundleDisplayName", "CFBundleName"] {
+        if let name = info?[key] as? String, !name.isEmpty {
+            return name
+        }
+    }
+    return "FlekDeck"
+}()
+
 struct ShareExtensionRootView: View {
     @ObservedObject var viewModel: ShareExtensionViewModel
     let extensionContext: NSExtensionContext?
@@ -55,7 +73,7 @@ struct ShareExtensionRootView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "")
             }
-            .navigationTitle(Text("LiveContainer"))
+            .navigationTitle(hostAppDisplayName)
             .navigationBarTitleDisplayMode(.inline)
         }
     }
