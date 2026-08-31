@@ -245,12 +245,29 @@ struct MultitaskAppWindow: View {
 class MultitaskRelaunchManager: NSObject {
     private static var pendingKeys: Set<String> = []
     private static let pendingLock = NSLock()
-    
+
+    /// Whether a window whose guest exited closes itself instead of standing there
+    /// with a termination notice, and whether the guest is then started again.
+    ///
+    /// Read as absent-means-on rather than through `bool(forKey:)`. Both switches
+    /// are declared `@AppStorage(...) = true`, and that default is only what the
+    /// switch draws — nothing is written to the store until the user flips it. A
+    /// plain `bool(forKey:)` reads the untouched key as false, so on a fresh
+    /// install Settings showed both switches on while the guest kept the
+    /// termination notice and never restarted. Same idiom as the dock's haptics
+    /// setting, which is declared the same way.
+    static var skipsTerminatedScreen: Bool {
+        LCUtils.appGroupUserDefault.object(forKey: "LCSkipTerminatedScreen") as? Bool ?? true
+    }
+    static var restartsTerminatedApp: Bool {
+        LCUtils.appGroupUserDefault.object(forKey: "LCRestartTerminatedApp") as? Bool ?? true
+    }
+
     static func scheduleRelaunchIfNeeded(bundleId: String, dataUUID: String, isManualTermination: Bool) {
         let defaults = LCUtils.appGroupUserDefault
         let multitaskMode = MultitaskMode(rawValue: defaults.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
-        guard defaults.bool(forKey: "LCSkipTerminatedScreen"),
-              defaults.bool(forKey: "LCRestartTerminatedApp"),
+        guard skipsTerminatedScreen,
+              restartsTerminatedApp,
               multitaskMode == .virtualWindow,
               !isManualTermination else { return }
         

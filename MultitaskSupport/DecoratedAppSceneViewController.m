@@ -472,7 +472,7 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 }
 
 - (void)appSceneVCAppDidExit:(AppSceneViewController*)vc {
-    BOOL skipTerminationScreen = [NSUserDefaults.lcSharedDefaults boolForKey:@"LCSkipTerminatedScreen"];
+    BOOL skipTerminationScreen = MultitaskRelaunchManager.skipsTerminatedScreen;
     BOOL isManual = _isAppTerminationRequested;
     if(isManual || skipTerminationScreen) {
         
