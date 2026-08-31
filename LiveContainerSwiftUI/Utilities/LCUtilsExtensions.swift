@@ -437,17 +437,27 @@ extension LCUtils {
         case alreadyDone
         /// Neither side has it.
         case missing
+        /// Both sides have it: something unrelated already occupies the name we
+        /// would move into. The move cannot settle that on its own — one of the
+        /// two has to go first — so it is kept out of the batch, where it would
+        /// only fail preflight with a path the user cannot make sense of.
+        case blocked
     }
 
     static func planMove(from source: URL, to destination: URL) -> MoveStep {
         let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: source.standardizedFileURL.path) {
+        let sourceExists = fileManager.fileExists(atPath: source.standardizedFileURL.path)
+        let destinationExists = fileManager.fileExists(atPath: destination.standardizedFileURL.path)
+        switch (sourceExists, destinationExists) {
+        case (true, false):
             return .pending
-        }
-        if fileManager.fileExists(atPath: destination.standardizedFileURL.path) {
+        case (true, true):
+            return .blocked
+        case (false, true):
             return .alreadyDone
+        case (false, false):
+            return .missing
         }
-        return .missing
     }
 
     static func moveFilesAtomicallyAfterPreflight(_ moves: [(URL, URL)]) throws {

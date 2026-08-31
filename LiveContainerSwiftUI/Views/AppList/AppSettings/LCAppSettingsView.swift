@@ -595,6 +595,23 @@ struct LCAppSettingsView: View {
         "This app's files are no longer on disk, so there is nothing to convert.\n\nThis usually follows an install that was interrupted after the previous copy had been removed. Press and hold the app on the home screen and choose Uninstall to clear the leftover entry, then install it again."
     }
 
+    /// Shown when both sides already hold a copy of the app under the same
+    /// folder name — normal enough, since installing the same IPA shared and
+    /// private gives each side its own copy. Converting would have to write
+    /// over one of them, so it stops and says which one is in the way.
+    private func duplicateBundleMessage(destinationIsShared: Bool) -> String {
+        let side = destinationIsShared ? "shared" : "private"
+        return "There is already a \(side) copy of this app installed, under the same folder name (\(appInfo.relativeBundlePath ?? "")).\n\nConverting would overwrite it. Uninstall whichever of the two copies you no longer want, then convert this one again."
+    }
+
+    /// Shown when a data or tweak folder of the app's has a namesake waiting on
+    /// the other side. Only tweak folders realistically hit this — container
+    /// folders are named by UUID — so the fix is to rename one of them.
+    private func duplicateFolderMessage(_ url: URL, destinationIsShared: Bool) -> String {
+        let side = destinationIsShared ? "shared" : "private"
+        return "A \(side) folder named \"\(url.lastPathComponent)\" already exists, so this app's folder of that name has nowhere to go.\n\nRename one of the two, then convert again."
+    }
+
     /// Whether the bundle still has to be moved, has already been moved by an
     /// earlier attempt, or is gone entirely.
     ///
@@ -611,6 +628,13 @@ struct LCAppSettingsView: View {
         return step
     }
 
+    /// Carries a message the conversion cannot continue past, so it reaches the
+    /// same alert as everything else thrown out of a conversion.
+    private struct ConversionBlocked: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
     private func bundleIsClaimedByAnotherApp(_ url: URL) -> Bool {
         let path = url.standardizedFileURL.path
         return (sharedModel.apps + sharedModel.hiddenApps).contains { other in
@@ -624,10 +648,23 @@ struct LCAppSettingsView: View {
     /// Adds a move to the batch only if there is anything left to move. Data and
     /// tweak folders can legitimately be absent — a container folder is created
     /// on the app's first run — and a folder already sitting at the destination
-    /// was moved by an earlier attempt. Neither should stop the conversion.
-    private func appendIfPending(_ moves: inout [(URL, URL)], _ source: URL, _ destination: URL) {
-        if case .pending = LCUtils.planMove(from: source, to: destination) {
+    /// was moved by an earlier attempt. Neither should stop the conversion. A
+    /// namesake on the other side does, since the move would write over it.
+    private func appendIfPending(
+        _ moves: inout [(URL, URL)],
+        _ source: URL,
+        _ destination: URL,
+        destinationIsShared: Bool
+    ) throws {
+        switch LCUtils.planMove(from: source, to: destination) {
+        case .pending:
             moves.append((source, destination))
+        case .blocked:
+            throw ConversionBlocked(
+                message: duplicateFolderMessage(destination, destinationIsShared: destinationIsShared)
+            )
+        case .alreadyDone, .missing:
+            break
         }
     }
 
@@ -659,23 +696,29 @@ struct LCAppSettingsView: View {
                 errorInfo = missingBundleMessage
                 errorShow = true
                 return
+            case .blocked:
+                errorInfo = duplicateBundleMessage(destinationIsShared: true)
+                errorShow = true
+                return
             }
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
                 }
 
-                appendIfPending(
+                try appendIfPending(
                     &moves,
                     LCPath.dataPath.appendingPathComponent(container.folderName),
-                    LCPath.lcGroupDataPath.appendingPathComponent(container.folderName)
+                    LCPath.lcGroupDataPath.appendingPathComponent(container.folderName),
+                    destinationIsShared: true
                 )
             }
             if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                appendIfPending(
+                try appendIfPending(
                     &moves,
                     LCPath.tweakPath.appendingPathComponent(tweakFolder),
-                    LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder)
+                    LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder),
+                    destinationIsShared: true
                 )
             }
 
@@ -733,22 +776,28 @@ struct LCAppSettingsView: View {
                 errorInfo = missingBundleMessage
                 errorShow = true
                 return
+            case .blocked:
+                errorInfo = duplicateBundleMessage(destinationIsShared: false)
+                errorShow = true
+                return
             }
             for container in model.uiContainers {
                 if container.storageBookMark != nil {
                     continue
                 }
-                appendIfPending(
+                try appendIfPending(
                     &moves,
                     LCPath.lcGroupDataPath.appendingPathComponent(container.folderName),
-                    LCPath.dataPath.appendingPathComponent(container.folderName)
+                    LCPath.dataPath.appendingPathComponent(container.folderName),
+                    destinationIsShared: false
                 )
             }
             if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                appendIfPending(
+                try appendIfPending(
                     &moves,
                     LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder),
-                    LCPath.tweakPath.appendingPathComponent(tweakFolder)
+                    LCPath.tweakPath.appendingPathComponent(tweakFolder),
+                    destinationIsShared: false
                 )
             }
 
