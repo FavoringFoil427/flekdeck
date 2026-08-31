@@ -28,6 +28,8 @@ struct LiveContainerSwiftUIApp : SwiftUI.App {
             LCUtils.appGroupUserDefault.set(hostEncryptedUdid, forKey: "LCHostEncryptedUdid")
         }
 
+        LCPath.clearStaleShareInbox()
+
         let fm = FileManager()
         var tempAppDataFolderNames : [String] = []
         var tempTweakFolderNames : [String] = []

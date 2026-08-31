@@ -508,6 +508,13 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                                 try? fm.removeItem(at: fileURL)
                             }
                         }
+                        // A copy the share extension staged in the app group is
+                        // ours to remove, and exists for no other reason than to
+                        // have reached us. It sits in a folder of its own.
+                        if let shareInbox = LCSharedUtils.shareInboxPath(),
+                           fileURL.path.hasPrefix(shareInbox.path + "/") {
+                            try? fm.removeItem(at: fileURL.deletingLastPathComponent())
+                        }
                     }
                 }
 

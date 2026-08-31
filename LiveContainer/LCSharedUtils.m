@@ -118,6 +118,24 @@ NSString* FBSOpenApplicationOptionKeyPayloadURL = @"__PayloadURL";
     return appGroupPath;
 }
 
+// Where the share extension parks a file it is handing over to be installed.
+// It cannot hand over the file it was given: that URL is reachable only from
+// the extension -- it is either a file provider's, which only the extension
+// holds a scope for, or a copy iOS made inside the extension's own container,
+// and the extension is torn down the moment it opens the install URL. The app
+// group is the one place both processes can read, so the file is copied here
+// and LiveContainer installs from -- and then removes -- the copy.
+//
+// nil when there is no app group, which leaves the extension to hand over the
+// original URL as it did before.
++ (NSURL*) shareInboxPath {
+    NSURL* appGroupPath = [self appGroupPath];
+    if(!appGroupPath) {
+        return nil;
+    }
+    return [appGroupPath URLByAppendingPathComponent:@"LiveContainer/ShareInbox"];
+}
+
 + (NSString *)certificatePassword {
     NSUserDefaults* nud = NSUserDefaults.lcSharedDefaults ?: NSUserDefaults.standardUserDefaults;
     return [nud objectForKey:@"LCCertificatePassword"];

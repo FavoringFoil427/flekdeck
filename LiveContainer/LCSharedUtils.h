@@ -4,6 +4,7 @@
 + (NSString*) teamIdentifier;
 + (NSString *)appGroupID;
 + (NSURL*) appGroupPath;
++ (NSURL*) shareInboxPath;
 + (NSString *)certificatePassword;
 + (BOOL)launchToGuestAppWithClassicMode:(NSUInteger)classicMode;
 + (BOOL)launchToGuestAppWithURL:(NSURL *)url;

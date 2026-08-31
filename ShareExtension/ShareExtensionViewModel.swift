@@ -455,12 +455,25 @@ final class ShareExtensionViewModel: ObservableObject {
         defer { isLaunching = false }
 
         do {
-            try storeBookmark(for: fileURL)
+            // What gets handed over is a copy in the app group, not the file the
+            // share sheet gave us -- see stageForInstall. Only when there is no
+            // app group to copy into does the original URL go over, with the
+            // bookmark that used to be the whole of the handover.
+            let urlToInstall: URL
+            if let inbox = LCSharedUtils.shareInboxPath() {
+                urlToInstall = try await Task.detached(priority: .userInitiated) {
+                    try Self.stageForInstall(fileURL, inInbox: inbox)
+                }.value
+            } else {
+                try storeBookmark(for: fileURL)
+                urlToInstall = fileURL
+            }
+
             guard var components = URLComponents(string: "livecontainer://install") else {
                 throw ShareExtensionError("Unable to build install URL.")
             }
             components.queryItems = [
-                URLQueryItem(name: "url", value: fileURL.absoluteString)
+                URLQueryItem(name: "url", value: urlToInstall.absoluteString)
             ]
             guard let installURL = components.url else {
                 throw ShareExtensionError("Unable to build install URL.")
@@ -471,6 +484,40 @@ final class ShareExtensionViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Copies the shared file into the app group and returns the copy.
+    ///
+    /// The URL the share sheet hands over cannot be opened by LiveContainer: it
+    /// is either a file provider's, which only this extension holds a security
+    /// scope for, or a copy iOS made inside this extension's container, which
+    /// goes away with the extension -- and the extension is torn down the moment
+    /// it opens the install URL. So the app was being handed a path it could not
+    /// read, and the install failed reporting the file was not an IPA, which is
+    /// what a decompress of nothing looks like from the outside.
+    ///
+    /// Each file gets a folder of its own, so that the name the user shared
+    /// survives collisions and the app can drop the folder whole once it is done
+    /// installing.
+    private nonisolated static func stageForInstall(_ fileURL: URL, inInbox inbox: URL) throws -> URL {
+        let fm = FileManager()
+        let accessed = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let folder = inbox.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = folder.appendingPathComponent(fileURL.lastPathComponent)
+        do {
+            try fm.copyItem(at: fileURL, to: destination)
+        } catch {
+            try? fm.removeItem(at: folder)
+            throw error
+        }
+        return destination
     }
 
     private func preparePayloadForLaunch() throws -> String? {

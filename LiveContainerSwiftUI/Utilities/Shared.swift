@@ -38,6 +38,33 @@ struct LCPath {
     public static let lcGroupAppGroupPath = lcGroupDocPath.appendingPathComponent("Data/AppGroup")
     public static let lcGroupTweakPath = lcGroupDocPath.appendingPathComponent("Tweaks")
     
+    /// Drops staging folders the share extension left behind, where the install
+    /// they were copied for never ran — the app was never opened by the install
+    /// URL, or was killed before it was done with the file. Nothing else clears
+    /// them, and each one holds a whole IPA.
+    ///
+    /// Called at launch, which is the one moment no install is in flight. That
+    /// includes the launch the share itself causes, so only folders too old to
+    /// be the one being handed over right now are taken.
+    public static func clearStaleShareInbox() {
+        guard let shareInbox = LCSharedUtils.shareInboxPath() else {
+            return
+        }
+        let fm = FileManager()
+        guard let staged = try? fm.contentsOfDirectory(
+            at: shareInbox, includingPropertiesForKeys: [.contentModificationDateKey]) else {
+            return
+        }
+        let cutoff = Date().addingTimeInterval(-3600)
+        for folder in staged {
+            let modified = (try? folder.resourceValues(
+                forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff {
+                try? fm.removeItem(at: folder)
+            }
+        }
+    }
+
     /// Appended to the folder of an app that is being replaced, for as long as
     /// its replacement is being moved into place. See `recoverInterruptedReplaces`.
     public static let replacingSuffix = ".replacing"
