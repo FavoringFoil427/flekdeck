@@ -2149,47 +2149,65 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             return
         }
         
-        // A file handed over by the share extension is not readable by path: it
-        // arrives as a security-scoped bookmark, and access has to be claimed
-        // before anything can open it. The queue installs asynchronously and
-        // would reach the file long after that claim lapsed, so it is copied
-        // somewhere we own while the claim is still held and the copy is queued.
+        // A file opened from the Files app is not readable by path: access has
+        // to be claimed before anything can open it, and the claim belongs to
+        // this moment. The queue installs asynchronously and would reach the
+        // file long after the claim lapsed, so it is copied somewhere we own
+        // while the claim is still held and the copy is what gets queued.
         var queuedUrl = urlStr
-        if let url = URL(string: urlStr), url.isFileURL,
-           let staged = stageSecurityScopedIpaIfNeeded(url) {
-            queuedUrl = staged.absoluteString
+        if let url = URL(string: urlStr), url.isFileURL {
+            if let staged = stageSecurityScopedIpaIfNeeded(url) {
+                queuedUrl = staged.absoluteString
+            } else if !FileManager.default.isReadableFile(atPath: url.path) {
+                // Queueing it anyway would install nothing and report that the
+                // file is not an IPA, which sends the user off looking at a
+                // file that is perfectly fine.
+                errorInfo = "lc.appList.ipaAccessError".loc
+                errorShow = true
+                return
+            }
         }
 
         installQueue.enqueue(url: queuedUrl, name: nil, iconURL: nil)
     }
 
-    /// Copies an IPA that is only reachable through a security-scoped bookmark
-    /// into our own temporary directory, and returns the copy.
+    /// Copies an IPA that is only reachable through a security scope into our
+    /// own temporary directory, and returns the copy.
     ///
     /// Returns nil when the file is already readable — the ordinary case for
-    /// anything chosen with the document picker — and when no copy could be
-    /// made, in which case the caller queues the original and the failure is
-    /// reported the way it always was.
+    /// anything chosen with the document picker, which needs no copy — and
+    /// when no copy could be made, which the caller tells the difference
+    /// between by looking at the file again.
     private func stageSecurityScopedIpaIfNeeded(_ url: URL) -> URL? {
         let fm = FileManager.default
         if fm.isReadableFile(atPath: url.path) { return nil }
 
         var resolved = url
-        var didStartAccessing = false
-        if let bookmarkData = LCUtils.appGroupUserDefault.data(forKey: "LCLaunchExtensionFileBookmark") {
+        // A file opened in place -- Files' Open With, and the button its
+        // preview puts at the bottom -- arrives carrying its own scope, so
+        // claim that first.
+        var didStartAccessing = url.startAccessingSecurityScopedResource()
+        // The bookmark is only ever about a file the share extension handed
+        // over. Reading it first meant that any bookmark left in the app group
+        // -- and nothing here ever cleared one -- silently redirected the
+        // install to whatever had last been shared, so it is consulted only
+        // when the URL did not open on its own, and only when it names the
+        // same file.
+        if !FileManager.default.isReadableFile(atPath: resolved.path),
+           let bookmarkData = LCUtils.appGroupUserDefault.data(forKey: "LCLaunchExtensionFileBookmark") {
             var isStale = false
             if let bookmarkUrl = try? URL(
                 resolvingBookmarkData: bookmarkData,
                 options: URL.BookmarkResolutionOptions(rawValue: 1 << 10),
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
-            ) {
+            ), bookmarkUrl.lastPathComponent == url.lastPathComponent {
+                if didStartAccessing {
+                    resolved.stopAccessingSecurityScopedResource()
+                }
                 resolved = bookmarkUrl
                 didStartAccessing = bookmarkUrl.startAccessingSecurityScopedResource()
             }
-        }
-        if !didStartAccessing {
-            didStartAccessing = resolved.startAccessingSecurityScopedResource()
         }
         defer {
             if didStartAccessing {

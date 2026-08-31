@@ -110,6 +110,13 @@ struct LCPath {
 class SharedModel: ObservableObject {
     @Published var selectedTab: LCTabIdentifier = .apps
     @Published var deepLink: URL?
+    /// A URL that arrived before any window was ready to act on it, held until
+    /// one is. It lives here rather than on the window that received it because
+    /// that window is often not the one that survives: opening a document from
+    /// the Files app hands it to a newly connected scene, which this app then
+    /// closes as a duplicate — taking a URL parked in the scene's own state
+    /// with it, which is why an IPA opened that way did nothing at all.
+    @Published var pendingOpenURL: URL?
     
     @Published var isHiddenAppUnlocked = false
     @Published var developerMode = false

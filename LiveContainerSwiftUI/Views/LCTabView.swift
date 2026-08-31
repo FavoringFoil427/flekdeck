@@ -20,7 +20,6 @@ struct LCTabView: View {
     @State private var isBlocked = false
     @State private var hasCheckedBlockedStatus = false
     @State private var didFailBlockedStatusCheck = false
-    @State private var pendingURL: URL?
     @State private var didRunPostGateStartup = false
     @State private var isVerifyingAccess = false
     @State private var accessVerificationFailureMessage = "Please check your internet connection and try again."
@@ -132,11 +131,14 @@ struct LCTabView: View {
         .onOpenURL { url in
             dispatchURL(url: url)
         }
+        .onChange(of: sharedModel.pendingOpenURL) { _ in
+            processPendingURLIfNeeded()
+        }
     }
     
     func dispatchURL(url: URL) {
         if isBlocked || didFailBlockedStatusCheck || !hasCheckedBlockedStatus {
-            pendingURL = url
+            sharedModel.pendingOpenURL = url
             return
         }
         repeat {
@@ -169,11 +171,16 @@ struct LCTabView: View {
         sharedModel.deepLink = url
     }
 
+    /// Takes whatever URL is waiting, if this window is in a state to act on it.
+    /// Every window runs this, and the first one through clears the URL, so a
+    /// window that is about to be closed as a duplicate can park a document and
+    /// have the window that stays open install it.
     func processPendingURLIfNeeded() {
-        guard let url = pendingURL else {
+        guard hasCheckedBlockedStatus, !isBlocked, !didFailBlockedStatusCheck,
+              let url = sharedModel.pendingOpenURL else {
             return
         }
-        pendingURL = nil
+        sharedModel.pendingOpenURL = nil
         dispatchURL(url: url)
     }
     
