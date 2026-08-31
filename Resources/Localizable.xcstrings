@@ -5588,6 +5588,17 @@
         }
       }
     },
+    "lc.appList.updateReplace %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update/replace %@"
+          }
+        }
+      }
+    },
     "lc.appList.urlFileIsNotIpaError" : {
       "extractionState" : "manual",
       "localizations" : {

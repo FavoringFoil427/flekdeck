@@ -552,7 +552,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                 Button(role: installOption.isReplace ? .destructive : nil, action: {
                     installReplaceAlert.close(result: installOption)
                 }, label: {
-                    Text(installOption.isReplace ? installOption.nameOfFolderToInstall : "lc.appList.installAsNew".loc)
+                    // The replace options used to be labelled with the bundle
+                    // folder alone, which reads as a heading rather than as the
+                    // thing the button is about to do to it.
+                    Text(installOption.isReplace
+                         ? "lc.appList.updateReplace %@".localizeWithFormat(installOption.nameOfFolderToInstall)
+                         : "lc.appList.installAsNew".loc)
                 })
                 
             }
