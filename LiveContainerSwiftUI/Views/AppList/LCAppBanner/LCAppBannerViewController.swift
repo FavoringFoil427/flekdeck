@@ -236,8 +236,8 @@ final class LCAppBannerViewController: UIViewController, UIContextMenuInteractio
     }
 
     private func openDataFolder() {
-        guard let folderName = configuration.model.uiSelectedContainer?.folderName,
-              let url = URL(string: "shareddocuments://\(LCPath.dataPath.path)/\(folderName)") else {
+        guard let container = configuration.model.uiSelectedContainer,
+              let url = container.filesAppURL else {
             return
         }
         UIApplication.shared.open(url)

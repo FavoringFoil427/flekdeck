@@ -42,6 +42,19 @@ class LCContainer : ObservableObject, Hashable {
     private var infoDictUrl : URL {
         return containerURL.appendingPathComponent("LCContainerInfo.plist")
     }
+    /// The folder as the Files app addresses it. Built from `containerURL` so it
+    /// follows the folder wherever it actually is — the app group for a shared
+    /// app, the user's own folder for an external one — instead of assuming our
+    /// Documents. Assembled rather than interpolated so the path is properly
+    /// percent-encoded: a folder the user picked is free to have a space in its
+    /// name, which the URL parser on the older systems we still run on rejects.
+    public var filesAppURL : URL? {
+        var components = URLComponents()
+        components.scheme = "shareddocuments"
+        components.host = ""
+        components.path = containerURL.standardizedFileURL.path
+        return components.url
+    }
     public var keychainGroupId : Int {
         get {
             if infoDict == nil {

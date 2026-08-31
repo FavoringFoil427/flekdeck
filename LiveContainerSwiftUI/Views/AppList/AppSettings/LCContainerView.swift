@@ -255,8 +255,10 @@ struct LCContainerView : View {
     }
     
     func openDataFolder() {
-        let url = URL(string:"shareddocuments://\(LCPath.dataPath.path)/\(container.folderName)")
-        UIApplication.shared.open(url!)
+        guard let url = container.filesAppURL else {
+            return
+        }
+        UIApplication.shared.open(url)
     }
     
     func setAsDefault() {
