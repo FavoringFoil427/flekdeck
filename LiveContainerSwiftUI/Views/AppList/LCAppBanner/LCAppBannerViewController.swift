@@ -202,7 +202,7 @@ final class LCAppBannerViewController: UIViewController, UIContextMenuInteractio
             self?.openSettings()
         })
 
-        if !model.uiIsShared {
+        if model.isUninstallable {
             sectionChildren.append(UIAction(
                 title: "lc.appBanner.uninstall".loc,
                 image: UIImage(systemName: "trash"),
@@ -257,8 +257,7 @@ final class LCAppBannerViewController: UIViewController, UIContextMenuInteractio
         }
 
         var shouldRemoveAppFolders = false
-        let containers = appInfo.containers
-        if !containers.isEmpty {
+        if !appInfo.containers.isEmpty {
             shouldRemoveAppFolders = await presentConfirmation(
                 title: "lc.appBanner.deleteDataTitle".loc,
                 message: "lc.appBanner.deleteDataMsg %@".localizeWithFormat(displayName),
@@ -268,22 +267,8 @@ final class LCAppBannerViewController: UIViewController, UIContextMenuInteractio
         }
 
         do {
-            guard let bundlePath = appInfo.bundlePath() else {
-                throw CocoaError(.fileNoSuchFile)
-            }
-
-            let fileManager = FileManager.default
-            try fileManager.removeItem(atPath: bundlePath)
+            try configuration.model.uninstall(removingContainers: shouldRemoveAppFolders)
             delegate.removeApp(app: configuration.model)
-
-            if shouldRemoveAppFolders {
-                for container in containers {
-                    let dataUUID = container.folderName
-                    try fileManager.removeItem(at: LCPath.dataPath.appendingPathComponent(dataUUID))
-                    LCUtils.removeAppKeychain(dataUUID: dataUUID)
-                    DataManager.shared.model.appDataFolderNames.removeAll { $0 == dataUUID }
-                }
-            }
         } catch {
             showError(error.localizedDescription)
         }

@@ -9,6 +9,22 @@ protocol LCAppModelDelegate {
     func showRunWhenMultitaskAlert() async -> Bool?
 }
 
+/// Why an app cannot be uninstalled. Carries the explanation itself, so the
+/// menus that hide Uninstall and the alert that explains the absence do not have
+/// to keep their own copies of the wording in step.
+enum UninstallRefused : LocalizedError {
+    /// The bundle is in the app group and still there, so it is not this
+    /// install's to take away.
+    case sharedBundle
+
+    var errorDescription: String? {
+        switch self {
+        case .sharedBundle:
+            return "This app is stored in the shared folder, so every FlekDeck on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first."
+        }
+    }
+}
+
 class LCAppModel: ObservableObject, Hashable {
     
     @Published var appInfo : LCAppInfo
@@ -167,6 +183,65 @@ class LCAppModel: ObservableObject, Hashable {
             return true
         }
         return !FileManager.default.fileExists(atPath: bundlePath)
+    }
+
+    /// Whether this entry is ours to delete.
+    ///
+    /// A shared bundle belongs to the app group, where every FlekDeck on the
+    /// device sees the same copy, so deleting it from one takes it from all of
+    /// them; the app has to be converted to private first. A stale entry is the
+    /// exception, for the reason `isBundleMissing` gives.
+    ///
+    /// Every menu that offers Uninstall asks this, and `uninstall` enforces it,
+    /// so the rule cannot drift between them — which it had, the app banner
+    /// having never picked up the exception for a stale entry.
+    var isUninstallable : Bool {
+        !uiIsShared || isBundleMissing
+    }
+
+    /// Deletes the app's bundle, and the folders behind its containers if asked.
+    ///
+    /// This is the whole of what uninstalling touches on disk. The home screen
+    /// and the app banner both call it: they differ in how they ask, not in what
+    /// they remove. While they each had their own copy of this they drifted —
+    /// the banner went on looking for a shared app's container folder in our own
+    /// Documents, threw on the first one, and left the rest of the uninstall
+    /// undone with the folder stranded in the app group.
+    ///
+    /// Taking the entry out of the app list is the caller's to do afterwards,
+    /// through `removeApp`.
+    func uninstall(removingContainers: Bool) throws {
+        guard isUninstallable else {
+            throw UninstallRefused.sharedBundle
+        }
+        let fm = FileManager()
+        // A stale entry has no bundle left to remove, which is what makes it
+        // removable in the first place.
+        if let bundlePath = appInfo.bundlePath(), !isBundleMissing {
+            try fm.removeItem(atPath: bundlePath)
+        }
+        guard removingContainers else {
+            return
+        }
+        for container in appInfo.containers {
+            let folderName = container.folderName
+            // A folder the user pointed at external storage lives outside
+            // FlekDeck and is not ours to delete; its keychain items still are.
+            // Otherwise containerURL resolves to the app group for a shared app
+            // and to our own Documents for a private one, so a stale shared
+            // entry cleans up the folder it actually has.
+            //
+            // Not a hard failure if the folder turns out not to be there: what
+            // matters is that the containers after it, and their keychain items,
+            // still get cleaned up.
+            if container.storageBookMark == nil {
+                try? fm.removeItem(at: container.containerURL)
+            }
+            LCUtils.removeAppKeychain(dataUUID: folderName)
+            DispatchQueue.main.async {
+                DataManager.shared.model.appDataFolderNames.removeAll { $0 == folderName }
+            }
+        }
     }
 
     var delegate : LCAppModelDelegate?

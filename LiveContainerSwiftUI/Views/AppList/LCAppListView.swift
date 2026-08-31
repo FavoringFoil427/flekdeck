@@ -1221,7 +1221,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     func presentSharedAppNotRemovableHint() {
         let alert = UIAlertController(
             title: "Shared App",
-            message: "This app is stored in the shared folder, so every FlekDeck on this device uses the same copy — deleting it here would remove it for all of them.\n\nTo delete it, open the app's settings and tap \"Convert to Private App\" first.",
+            message: UninstallRefused.sharedBundle.localizedDescription,
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         var top = UIApplication.shared.connectedScenes
@@ -1395,10 +1395,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
 
         var children: [UIMenuElement] = [launchGroup, addToHomeScreen, lockToggle, settings, moveCards]
 
-        // Shared apps have no Uninstall — the copy is the app group's, not ours.
-        // A shared entry whose bundle already vanished does, since removing it
-        // takes nothing away from the other LiveContainers.
-        if !app.uiIsShared || app.isBundleMissing {
+        if app.isUninstallable {
             let uninstall = UIAction(
                 title: "lc.appBanner.uninstall".loc,
                 image: UIImage(systemName: "trash"),
@@ -1530,9 +1527,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }
 
-        // Same rule as the UIKit menu above: shared apps are the app group's to
-        // keep, but a stale entry pointing at a missing bundle is ours to drop.
-        if !app.uiIsShared || app.isBundleMissing {
+        if app.isUninstallable {
             Button(role: .destructive) {
                 Task { await requestUninstall(app) }
             } label: {
@@ -1599,17 +1594,11 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     }
 
     func requestUninstall(_ app: LCAppModel) async {
-        // A shared app's bundle is in the app group, where every LiveContainer
-        // instance sees it, so it is not removable from here — the app's own menu
-        // hides Uninstall for the same reason, and edit mode shows an info badge
-        // rather than a minus. This also guards the destructive path itself: the
-        // badge is the only way in, but nothing else stopped the deletion.
-        //
-        // Unless the bundle is already gone. Then there is no shared copy left to
-        // take away from anyone, just a row pointing at nothing, and blocking the
-        // deletion would leave it stuck on the home screen forever.
-        let isStale = app.isBundleMissing
-        if app.uiIsShared && !isStale {
+        // The menus hide Uninstall for an app that is not ours to delete, and
+        // edit mode shows an info badge rather than a minus. This guards the
+        // destructive path itself: the badge is the only way in, but nothing
+        // else stopped the deletion.
+        guard app.isUninstallable else {
             presentSharedAppNotRemovableHint()
             return
         }
@@ -1617,33 +1606,12 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if let r = await homeUninstallAlert.open(), !r { return }
 
             var doRemoveFolder = false
-            let containers = app.appInfo.containers
-            if !containers.isEmpty {
+            if !app.appInfo.containers.isEmpty {
                 if let r = await homeUninstallFolderAlert.open() { doRemoveFolder = r }
             }
 
-            let fm = FileManager()
-            if let bundlePath = app.appInfo.bundlePath(), !isStale {
-                try fm.removeItem(atPath: bundlePath)
-            }
+            try app.uninstall(removingContainers: doRemoveFolder)
             removeApp(app: app)
-            if doRemoveFolder {
-                for container in containers {
-                    let dataUUID = container.folderName
-                    // A folder the user pointed at external storage lives outside
-                    // LiveContainer and is not ours to delete; its keychain items
-                    // still are. Otherwise containerURL resolves to the app group
-                    // for a shared app and to our own Documents for a private one,
-                    // so a stale shared entry cleans up the folder it actually has.
-                    if container.storageBookMark == nil {
-                        try? fm.removeItem(at: container.containerURL)
-                    }
-                    LCUtils.removeAppKeychain(dataUUID: dataUUID)
-                    DispatchQueue.main.async {
-                        self.sharedModel.appDataFolderNames.removeAll { $0 == dataUUID }
-                    }
-                }
-            }
         } catch {
             errorInfo = error.localizedDescription
             errorShow = true
