@@ -43,41 +43,12 @@ struct FSAppDetail: Codable {
         return warning
     }
 
-    var formattedSize: String? {
-        guard let size, size > 0 else { return nil }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        return formatter.string(fromByteCount: size)
-    }
+    var formattedSize: String? { FSCatalogFormat.size(bytes: size) }
 
-    var formattedDate: String? {
-        guard let date, let parsed = Self.parseDate(date) else { return nil }
-        return Self.displayDateFormatter.string(from: parsed)
-    }
+    var formattedDate: String? { FSCatalogFormat.date(date) }
 
     var formattedDownloads: String? {
         guard let downloads, downloads > 0 else { return nil }
         return String(downloads)
     }
-
-    // MARK: Parsing
-
-    /// "10 Aug 2026" — month names follow the user's locale.
-    private static let displayDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("d MMM yyyy")
-        return formatter
-    }()
-
-    /// The API sends fractional seconds; some rows come back without them.
-    private static func parseDate(_ raw: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: raw) { return date }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: raw)
-    }
-
 }

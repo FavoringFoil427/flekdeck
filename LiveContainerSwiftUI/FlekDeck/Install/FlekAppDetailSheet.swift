@@ -10,7 +10,9 @@
 //  screen the instant the sheet opens; everything below it comes from
 //  `GET /app/{app_id}` and fades in when it lands. That endpoint is FlekSt0re's
 //  own — a custom repo's `app_id` is only its index in that repo's catalog, so
-//  for those the sheet stays with what the repo listing gave us.
+//  for those the page is built from the row alone. It carries what the repo's
+//  catalog said (`FSAppModel`'s custom-repo fields), which for the better-filled
+//  repos is most of the same page: developer, size, release date, screenshots.
 //
 
 import SwiftUI
@@ -179,6 +181,19 @@ struct FlekAppDetailSheet: View {
 
     private var detail: FSAppDetail? { model.detail }
 
+    // The detail page's answer where there is one, the row's otherwise — a
+    // custom repo's listing is the only source its page has.
+
+    private var developer: String? {
+        guard let name = detail?.developer ?? app.app_developer, !name.isEmpty else { return nil }
+        return name
+    }
+
+    private var photos: [String] {
+        if let photos = detail?.photos, !photos.isEmpty { return photos }
+        return app.app_screenshots ?? []
+    }
+
     private var installItem: InstallItem? { installQueue.item(for: app.install_url) }
     private var isCompleted: Bool { installQueue.completedURLs.contains(app.install_url) }
 
@@ -223,6 +238,7 @@ struct FlekAppDetailSheet: View {
             }
             guard isFlekstore else {
                 model.useListingDescription(app.app_short_description)
+                await model.loadGalleryAspect(photos: app.app_screenshots ?? [])
                 return
             }
             await model.load(appID: app.app_id)
@@ -296,7 +312,7 @@ struct FlekAppDetailSheet: View {
                     .minimumScaleFactor(0.7)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let developer = detail?.developer, !developer.isEmpty {
+                if let developer {
                     Text(String(format: "lc.flek.detail.by %@".loc, developer))
                         .font(.system(size: 16))
                         .foregroundStyle(.secondary)
@@ -496,13 +512,13 @@ struct FlekAppDetailSheet: View {
         var out: [Stat] = [
             Stat(value: detail?.version ?? app.app_version, label: "lc.flek.detail.version".loc)
         ]
-        if let size = detail?.formattedSize {
+        if let size = detail?.formattedSize ?? app.formattedSize {
             out.append(Stat(value: size, label: "lc.flek.detail.size".loc))
         }
-        if let date = detail?.formattedDate {
+        if let date = detail?.formattedDate ?? app.formattedDate {
             out.append(Stat(value: date, label: "lc.flek.detail.updated".loc))
         }
-        if let downloads = detail?.formattedDownloads {
+        if let downloads = detail?.formattedDownloads ?? app.formattedDownloads {
             out.append(Stat(value: downloads, label: "lc.flek.detail.downloads".loc))
         }
         return out
@@ -549,7 +565,7 @@ struct FlekAppDetailSheet: View {
 
     @ViewBuilder
     private func screenshots(containerWidth: CGFloat) -> some View {
-        if let photos = detail?.photos, !photos.isEmpty {
+        if !photos.isEmpty {
             if let aspect = model.galleryAspect {
                 let height = galleryHeight(aspect: aspect, containerWidth: containerWidth)
                 ScrollView(.horizontal, showsIndicators: false) {

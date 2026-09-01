@@ -367,35 +367,31 @@ class FlekstoreAppsListViewModel: ObservableObject {
         let response = try JSONDecoder().decode(RepoResponse.self, from: data)
 
         return response.apps.enumerated().compactMap { index, app in
+            // A versioned repo lists its releases newest first; a flat one puts
+            // the current release on the app itself. The newest release that
+            // can actually be downloaded wins — a repo that lists an entry
+            // without a download URL should fall through to the next one
+            // rather than lose the app.
+            let release = app.versions?.first { $0.downloadURL != nil }
+            guard let installURL = release?.downloadURL ?? app.downloadURL else { return nil }
 
-            // Versioned repo
-            if let latest = app.versions?.first {
-                return FSAppModel(
-                    app_id: index,
-                    app_icon: app.iconURL ?? "",
-                    app_name: app.name,
-                    app_version: latest.absoluteVersion ?? latest.version ?? "Unknown",
-                    app_short_description: app.localizedDescription ?? "",
-                    app_isAdult: 0,
-                    install_url: latest.downloadURL
-                )
-            }
-
-            // Flat repo
-            if let version = app.version,
-               let downloadURL = app.downloadURL {
-                return FSAppModel(
-                    app_id: index,
-                    app_icon: app.iconURL ?? "",
-                    app_name: app.name,
-                    app_version: version,
-                    app_short_description: app.localizedDescription ?? "",
-                    app_isAdult: 0,
-                    install_url: downloadURL
-                )
-            }
-
-            return nil
+            // Everything the catalog says about the app, carried on the row:
+            // custom repos have no detail page behind them, so this listing is
+            // all its app page will ever have to show.
+            return FSAppModel(
+                app_id: index,
+                app_icon: app.iconURL ?? "",
+                app_name: app.name,
+                app_version: release?.absoluteVersion ?? release?.version ?? app.version ?? "Unknown",
+                app_short_description: app.localizedDescription ?? "",
+                app_isAdult: 0,
+                install_url: installURL,
+                app_developer: app.developerName,
+                app_size: release?.size ?? app.size,
+                app_date: release?.date ?? app.versionDate,
+                app_downloads: app.downloads,
+                app_screenshots: app.screenshotURLs.isEmpty ? nil : app.screenshotURLs
+            )
         }
     }
 
