@@ -513,9 +513,15 @@ struct LCSettingsView: View {
                     Text("lc.settings.warning".loc)
                 }
                 
-                VStack{
+                VStack(alignment: .leading, spacing: 2){
                     Text(LCUtils.getVersionInfo())
                         .foregroundStyle(.gray)
+                        // The branch and hash make this long enough to wrap in the
+                        // width the padding below leaves it. Two lines to wrap into,
+                        // and shrinking only once that is not enough either.
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 5) {
                             sharedModel.developerMode = true
@@ -531,10 +537,25 @@ struct LCSettingsView: View {
                             .contentShape(Rectangle())
                             .onTapGesture(perform: openFlekstore)
                     }
+                    // Centred on its own, against a version line that fills the width
+                    // to sit leading. The stack's own alignment cannot do both.
+                    .frame(maxWidth: .infinity)
+                    // The size this line has always been. Only the version below the
+                    // footer was meant to match it, and a font set here is nearer the
+                    // text than the one on the stack, so it is the one that lands.
+                    .font(.body)
                     
                 }
                 .font(.footnote)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                // Line up with the footer above rather than with the cards: a row is
+                // kept 20pt clear of each window edge, and a section footer a further
+                // 20pt inside that. Leading, for the same reason — a matching margin
+                // reads as one only if both start at the same edge. The padding sits
+                // within the frame so the background still covers the whole row —
+                // inset the row itself and the cell's own card colour shows along
+                // both edges.
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(Color(UIColor.systemGroupedBackground))
                 .listRowInsets(EdgeInsets())
 
