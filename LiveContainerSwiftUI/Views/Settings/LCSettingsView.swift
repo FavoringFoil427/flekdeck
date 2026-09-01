@@ -533,6 +533,7 @@ struct LCSettingsView: View {
                     }
                     
                 }
+                .font(.footnote)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .background(Color(UIColor.systemGroupedBackground))
                 .listRowInsets(EdgeInsets())
