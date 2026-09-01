@@ -150,8 +150,11 @@ struct AppRepositoryListView: View {
             }
             
             do {
+                // `apps` alone is enough: a source is free to leave out both the
+                // name and the sourceURL, and its catalog still reads — the
+                // name then falls back to the URL's last path component.
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      json["sourceURL"] != nil || json["name"] != nil else {
+                      json["sourceURL"] != nil || json["name"] != nil || json["apps"] != nil else {
                     showErrorOnMain("Invalid repository format. Only AltStore-style repositories are supported.")
                     return
                 }
