@@ -20,6 +20,12 @@ import UniformTypeIdentifiers
 import Kingfisher
 import QuartzCore
 
+extension Notification.Name {
+    /// An app page is waiting in `FlekInstallerView.pendingDetailRequest` for an
+    /// installer that is already open to pick up.
+    static let flekInstallerOpenAppDetail = Notification.Name("FlekInstallerOpenAppDetail")
+}
+
 struct FlekInstallerView: View {
     var preselectFlekstore: Bool
     var preselectRepoURL: String? = nil
@@ -83,6 +89,24 @@ struct FlekInstallerView: View {
         let isFlekstore: Bool
         var id: String { "\(isFlekstore)|\(app.app_id)|\(app.install_url)" }
     }
+
+    /// An app page asked for from outside the installer — a result tapped, rather
+    /// than downloaded, in the springboard's search.
+    struct DetailRequest {
+        /// The source the result came from, so the installer lands on it.
+        let repoURL: String
+        let app: FSAppModel
+        let isFlekstore: Bool
+    }
+
+    /// The page waiting to be opened, if any.
+    ///
+    /// Handed over here rather than only as a parameter because the installer may
+    /// already be open: the dock hands that page back to the front instead of
+    /// building a new one, so its `task` never runs a second time. A fresh page
+    /// drains this on appearance; one already on screen drains it when
+    /// `.flekInstallerOpenAppDetail` says something is waiting.
+    static var pendingDetailRequest: DetailRequest?
 
     /// Repo selected during this app session. A static resets on process
     /// relaunch, so the installer defaults back to FlekSt0re after an app
@@ -193,9 +217,19 @@ struct FlekInstallerView: View {
             } else {
                 viewModel.repository = .flekstore
             }
+            // A page asked for from outside opens as soon as this one has finished
+            // arriving, rather than waiting on the catalog loading behind it.
+            if Self.pendingDetailRequest != nil {
+                Task { await openPendingDetail(afterPresentation: true) }
+            }
             await viewModel.refreshSubscriptionStatus()
             await viewModel.resetAndFetchApps()
             Task { await MultiRepoSearchModel.prefetchAllRepos() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .flekInstallerOpenAppDetail)) { _ in
+            // This page was already open, so it was handed back to the front
+            // rather than rebuilt — nothing else would pick the request up.
+            Task { await openPendingDetail(afterPresentation: false) }
         }
         .sheet(isPresented: $showSources, onDismiss: {
             // AppRepository.id is a fresh UUID on every decode, so reloading
@@ -895,6 +929,31 @@ struct FlekInstallerView: View {
         repoSearch.cancelSearch()
         searchActive = false
         viewModel.searchQuery = ""
+    }
+
+    /// Opens the page `pendingDetailRequest` is asking for, switching to the
+    /// source it came from first.
+    ///
+    /// `afterPresentation` waits out the animation that is bringing this page on
+    /// screen. A sheet asked for while that is still in flight is asked of a
+    /// controller that is itself mid-presentation, and simply never appears.
+    private func openPendingDetail(afterPresentation: Bool) async {
+        guard let request = Self.pendingDetailRequest else { return }
+        Self.pendingDetailRequest = nil
+
+        if afterPresentation {
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+        }
+
+        // Already on the right source when the page was opened straight onto it;
+        // only an installer that was already open has somewhere to move to.
+        if let match = repos.first(where: { $0.sourceURL == request.repoURL }),
+           match.id != selectedRepoID {
+            selectedRepoID = match.id
+            await switchTo(match)
+        }
+        detailTarget = DetailTarget(app: request.app, isFlekstore: request.isFlekstore)
     }
 
     private func install(_ app: FSAppModel) {

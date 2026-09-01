@@ -21,6 +21,8 @@ struct FlekSearchView: View {
     /// a result offers the same actions as an icon on the home screen.
     var contextMenu: (LCAppModel) -> AnyView = { _ in AnyView(EmptyView()) }
     var onInstallStoreApp: (FSAppModel) -> Void = { _ in }
+    /// Opens a result's page in the installer, on the source it came from.
+    var onOpenStoreApp: (FlekInstallerView.DetailRequest) -> Void = { _ in }
     var onOpenRepo: (String) -> Void = { _ in }
 
     @State private var query = ""
@@ -117,16 +119,22 @@ struct FlekSearchView: View {
                                     .frame(height: 74)
                             } else {
                                 ForEach(repoSection.apps) { app in
-                                    Button {
-                                        if repoSection.isFlekstore {
-                                            FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                                    FlekStoreSearchResultRow(
+                                        app: app,
+                                        onOpen: {
+                                            onOpenStoreApp(.init(repoURL: repoSection.id,
+                                                                 app: app,
+                                                                 isFlekstore: repoSection.isFlekstore))
+                                            close()
+                                        },
+                                        onInstall: {
+                                            if repoSection.isFlekstore {
+                                                FlekstoreAppsListViewModel.recordDownload(appId: app.app_id)
+                                            }
+                                            onInstallStoreApp(app)
+                                            close()
                                         }
-                                        onInstallStoreApp(app)
-                                        close()
-                                    } label: {
-                                        FlekStoreSearchRow(app: app)
-                                    }
-                                    .buttonStyle(.plain)
+                                    )
                                 }
                             }
                         }
@@ -567,6 +575,46 @@ private struct FlekSearchRow: View {
     }
 }
 
+private struct FlekSearchRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// A result from a source. The row opens the app's page in the installer; the
+/// download button on its right, which sits over the row rather than inside it,
+/// installs without the detour.
+private struct FlekStoreSearchResultRow: View {
+    let app: FSAppModel
+    var onOpen: () -> Void
+    var onInstall: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            FlekStoreSearchRow(app: app)
+        }
+        // The row leads somewhere, so it answers a press — otherwise the only
+        // part of it that visibly reacts is the download button beside it.
+        .buttonStyle(FlekSearchRowPressStyle())
+        .overlay(alignment: .trailing) {
+            Button(action: onInstall) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(Color.white)
+                    // A full-size target around a 24pt glyph, so the button can
+                    // be hit without opening the page instead.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 6)
+        }
+    }
+}
+
 private struct FlekStoreSearchRow: View {
     let app: FSAppModel
 
@@ -585,14 +633,13 @@ private struct FlekStoreSearchRow: View {
 
             }
             Spacer(minLength: 4)
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 24))
-                .foregroundStyle(Color.white)
-                .padding(.trailing, 10)
+            // Room for the download button, which is overlaid on top of the row.
+            Color.clear.frame(width: 44, height: 44)
         }
         .padding(.horizontal, 6)
         .frame(height: 74)
         .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

@@ -350,19 +350,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
                             iconURL: app.app_icon
                         )
                     },
+                    onOpenStoreApp: { request in
+                        // The installer picks the page up from here, so that a
+                        // window already open — which is handed back to the front
+                        // rather than rebuilt — still answers the tap.
+                        FlekInstallerView.pendingDetailRequest = request
+                        openInstaller(atRepo: request.repoURL)
+                        NotificationCenter.default.post(name: .flekInstallerOpenAppDetail, object: nil)
+                    },
                     onOpenRepo: { repoURL in
-                        let isMultitaskAvailable: Bool = {
-                            guard #available(iOS 16.0, *) else { return false }
-                            let mode = MultitaskMode(rawValue: LCUtils.appGroupUserDefault.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
-                            return mode == .virtualWindow && sharedModel.multiLCStatus != 2
-                        }()
-                        if #available(iOS 16.0, *), isMultitaskAvailable {
-                            openInternalPageForKind(.installer, preselectRepoURL: repoURL)
-                        } else {
-                            installerPreselectFlekstore = false
-                            installerPreselectRepoURL = repoURL
-                            showInstallerCover = true
-                        }
+                        openInstaller(atRepo: repoURL)
                     }
                 )
                 .transition(.opacity)
@@ -1137,6 +1134,23 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             if inst.installState.failed { failedInstallItem = inst }
         case .placeholder:
             break
+        }
+    }
+
+    /// Opens the installer on one source — as a multitask window where that is
+    /// available, and as a full-screen page otherwise.
+    private func openInstaller(atRepo repoURL: String) {
+        let isMultitaskAvailable: Bool = {
+            guard #available(iOS 16.0, *) else { return false }
+            let mode = MultitaskMode(rawValue: LCUtils.appGroupUserDefault.integer(forKey: "LCMultitaskMode")) ?? .virtualWindow
+            return mode == .virtualWindow && sharedModel.multiLCStatus != 2
+        }()
+        if #available(iOS 16.0, *), isMultitaskAvailable {
+            openInternalPageForKind(.installer, preselectRepoURL: repoURL)
+        } else {
+            installerPreselectFlekstore = false
+            installerPreselectRepoURL = repoURL
+            showInstallerCover = true
         }
     }
 
