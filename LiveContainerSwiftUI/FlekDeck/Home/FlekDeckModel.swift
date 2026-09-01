@@ -55,11 +55,8 @@ enum FlekDefaultAppKind: String, CaseIterable, Identifiable {
 enum FlekEditBadge {
     /// No control — the item is not an app the user manages.
     case none
-    /// The usual minus, which uninstalls.
+    /// The minus, which uninstalls.
     case remove
-    /// Stands in for the minus on an app that cannot be removed from the home
-    /// screen; tapping it says why and where to go instead.
-    case explain
 }
 
 /// One tile on the springboard: a built-in app, an installed guest app, the
@@ -103,27 +100,15 @@ enum FlekHomeItem: Identifiable, DragulaItem {
         return false
     }
 
-    /// Whether this item can be deleted in edit mode.
-    ///
-    /// Only an installed app can be deleted, and only one that is ours to delete
-    /// — `LCAppModel.isUninstallable` is the single answer to that, which every
-    /// menu offering Uninstall and the uninstall itself all ask. Without this,
-    /// edit mode was the one place that still offered (and performed) the
-    /// deletion of a shared app.
-    var canDelete: Bool {
-        if case .installed(let app) = self { return app.isUninstallable }
-        return false
-    }
-
     /// What edit mode puts in the corner of this item.
     ///
-    /// An installed app that cannot be deleted still gets a control, just one
-    /// that explains itself instead of removing anything. Leaving the corner
-    /// empty is what made a shared app a dead end: no minus, and no way to find
-    /// out why or what to do instead.
+    /// Every installed app gets the minus, a shared one included: a shared
+    /// bundle is not this install's to take away, so deleting it converts it to
+    /// a private app first, which `requestUninstall` asks about and does. Only
+    /// the built-in pages and empty slots have nothing to remove.
     var editBadge: FlekEditBadge {
-        guard case .installed = self else { return .none }
-        return canDelete ? .remove : .explain
+        if case .installed = self { return .remove }
+        return .none
     }
 
     func getItemProvider() -> NSItemProvider {

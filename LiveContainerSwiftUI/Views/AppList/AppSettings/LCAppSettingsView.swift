@@ -590,251 +590,51 @@ struct LCAppSettingsView: View {
         }
     }
 
-    /// Shown when neither side of a conversion has the app's bundle.
-    private var missingBundleMessage: String {
-        "This app's files are no longer on disk, so there is nothing to convert.\n\nThis usually follows an install that was interrupted after the previous copy had been removed. Press and hold the app on the home screen and choose Uninstall to clear the leftover entry, then install it again."
-    }
-
-    /// Shown when both sides already hold a copy of the app under the same
-    /// folder name — normal enough, since installing the same IPA shared and
-    /// private gives each side its own copy. Converting would have to write
-    /// over one of them, so it stops and says which one is in the way.
-    private func duplicateBundleMessage(destinationIsShared: Bool) -> String {
-        let side = destinationIsShared ? "shared" : "private"
-        return "There is already a \(side) copy of this app installed, under the same folder name (\(appInfo.relativeBundlePath ?? "")).\n\nConverting would overwrite it. Uninstall whichever of the two copies you no longer want, then convert this one again."
-    }
-
-    /// Shown when a data or tweak folder of the app's has a namesake waiting on
-    /// the other side. Only tweak folders realistically hit this — container
-    /// folders are named by UUID — so the fix is to rename one of them.
-    private func duplicateFolderMessage(_ url: URL, destinationIsShared: Bool) -> String {
-        let side = destinationIsShared ? "shared" : "private"
-        return "A \(side) folder named \"\(url.lastPathComponent)\" already exists, so this app's folder of that name has nowhere to go.\n\nRename one of the two, then convert again."
-    }
-
-    /// Whether the bundle still has to be moved, has already been moved by an
-    /// earlier attempt, or is gone entirely.
-    ///
-    /// This is `LCUtils.planMove` plus one guard specific to the bundle: another
-    /// installed app may already own the folder we would move into, and adopting
-    /// its bundle would leave two entries sharing a single copy, where removing
-    /// either one takes the app away from both. That is not a half-finished
-    /// conversion of ours, so it counts as missing.
-    private func bundleMoveStep(from source: URL, to destination: URL) -> LCUtils.MoveStep {
-        let step = LCUtils.planMove(from: source, to: destination)
-        if case .alreadyDone = step, bundleIsClaimedByAnotherApp(destination) {
-            return .missing
-        }
-        return step
-    }
-
-    /// Carries a message the conversion cannot continue past, so it reaches the
-    /// same alert as everything else thrown out of a conversion.
-    private struct ConversionBlocked: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
-    }
-
-    private func bundleIsClaimedByAnotherApp(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        return (sharedModel.apps + sharedModel.hiddenApps).contains { other in
-            guard other !== model, let otherPath = other.appInfo.bundlePath() else {
-                return false
-            }
-            return URL(fileURLWithPath: otherPath).standardizedFileURL.path == path
-        }
-    }
-
-    /// Adds a move to the batch only if there is anything left to move. Data and
-    /// tweak folders can legitimately be absent — a container folder is created
-    /// on the app's first run — and a folder already sitting at the destination
-    /// was moved by an earlier attempt. Neither should stop the conversion. A
-    /// namesake on the other side does, since the move would write over it.
-    private func appendIfPending(
-        _ moves: inout [(URL, URL)],
-        _ source: URL,
-        _ destination: URL,
-        destinationIsShared: Bool
-    ) throws {
-        switch LCUtils.planMove(from: source, to: destination) {
-        case .pending:
-            moves.append((source, destination))
-        case .blocked:
-            throw ConversionBlocked(
-                message: duplicateFolderMessage(destination, destinationIsShared: destinationIsShared)
-            )
-        case .alreadyDone, .missing:
-            break
-        }
-    }
-
+    /// Both conversions live on the model — the home screen converts a shared
+    /// app to private on its way to being deleted, so the settings screen is no
+    /// longer the only way in. What is left here is the asking: the check that
+    /// runs before the user is put to a decision, the confirmation itself, and
+    /// where the reasons a conversion stops are shown.
     func moveToAppGroup() async {
-        for container in appInfo.containers {
-            if let runningLC = LCSharedUtils.getContainerUsingLCScheme(withFolderName: container.folderName) {
-                errorInfo = "lc.appSettings.appOpenInOtherLc %@ %@".localizeWithFormat(runningLC, runningLC)
-                errorShow = true
-                return
-            }
+        do {
+            try model.checkContainersNotInUse()
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+            return
         }
-        
+
         guard let result = await moveToAppGroupAlert.open(), result else {
             return
         }
-        
+
         do {
-            try LCPath.ensureAppGroupPaths()
-
-            var moves: [(URL, URL)] = [];
-            let bundleSource = URL(fileURLWithPath: appInfo.bundlePath())
-            let bundleDestination = LCPath.lcGroupBundlePath.appendingPathComponent(appInfo.relativeBundlePath)
-            switch bundleMoveStep(from: bundleSource, to: bundleDestination) {
-            case .pending:
-                moves.append((bundleSource, bundleDestination))
-            case .alreadyDone:
-                break
-            case .missing:
-                errorInfo = missingBundleMessage
-                errorShow = true
-                return
-            case .blocked:
-                errorInfo = duplicateBundleMessage(destinationIsShared: true)
-                errorShow = true
-                return
-            }
-            for container in model.uiContainers {
-                if container.storageBookMark != nil {
-                    continue
-                }
-
-                try appendIfPending(
-                    &moves,
-                    LCPath.dataPath.appendingPathComponent(container.folderName),
-                    LCPath.lcGroupDataPath.appendingPathComponent(container.folderName),
-                    destinationIsShared: true
-                )
-            }
-            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                try appendIfPending(
-                    &moves,
-                    LCPath.tweakPath.appendingPathComponent(tweakFolder),
-                    LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder),
-                    destinationIsShared: true
-                )
-            }
-
-            try LCUtils.moveFilesAtomicallyAfterPreflight(moves)
-
-            for container in model.uiContainers {
-                if container.storageBookMark != nil {
-                    continue
-                }
-                sharedModel.appDataFolderNames.removeAll(where: { s in
-                    return s == container.folderName
-                })
-                container.isShared = true
-            }
-            
-            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                sharedModel.tweakFolderNames.removeAll(where: { s in
-                    return s == tweakFolder
-                })
-            }
-            
-            appInfo.setBundlePath(LCPath.lcGroupBundlePath.appendingPathComponent(appInfo.relativeBundlePath).path)
-            appInfo.isShared = true
-            model.uiIsShared = true
+            try model.convertToShared(sharedModel: sharedModel)
         } catch {
             errorInfo = error.localizedDescription
             errorShow = true
         }
-        
     }
-    
+
     func movePrivateDoc() async {
-        for container in appInfo.containers {
-            if let runningLC = LCSharedUtils.getContainerUsingLCScheme(withFolderName: container.folderName) {                
-                errorInfo = "lc.appSettings.appOpenInOtherLc %@ %@".localizeWithFormat(runningLC, runningLC)
-                errorShow = true
-                return
-            }
+        do {
+            try model.checkContainersNotInUse()
+        } catch {
+            errorInfo = error.localizedDescription
+            errorShow = true
+            return
         }
 
         guard let result = await moveToPrivateDocAlert.open(), result else {
             return
         }
-        
+
         do {
-            var moves: [(URL, URL)] = [];
-            let bundleSource = URL(fileURLWithPath: appInfo.bundlePath())
-            let bundleDestination = LCPath.bundlePath.appendingPathComponent(appInfo.relativeBundlePath)
-            switch bundleMoveStep(from: bundleSource, to: bundleDestination) {
-            case .pending:
-                moves.append((bundleSource, bundleDestination))
-            case .alreadyDone:
-                break
-            case .missing:
-                errorInfo = missingBundleMessage
-                errorShow = true
-                return
-            case .blocked:
-                errorInfo = duplicateBundleMessage(destinationIsShared: false)
-                errorShow = true
-                return
-            }
-            for container in model.uiContainers {
-                if container.storageBookMark != nil {
-                    continue
-                }
-                try appendIfPending(
-                    &moves,
-                    LCPath.lcGroupDataPath.appendingPathComponent(container.folderName),
-                    LCPath.dataPath.appendingPathComponent(container.folderName),
-                    destinationIsShared: false
-                )
-            }
-            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0 {
-                try appendIfPending(
-                    &moves,
-                    LCPath.lcGroupTweakPath.appendingPathComponent(tweakFolder),
-                    LCPath.tweakPath.appendingPathComponent(tweakFolder),
-                    destinationIsShared: false
-                )
-            }
-
-            try LCUtils.moveFilesAtomicallyAfterPreflight(moves)
-
-            let fm = FileManager.default
-            for container in model.uiContainers {
-                if container.storageBookMark != nil {
-                    continue
-                }
-                // A container folder is created on the app's first run, so one
-                // that was never used has nothing on either side and does not
-                // belong in the list of folders sitting in our Documents.
-                let folder = LCPath.dataPath.appendingPathComponent(container.folderName)
-                if fm.fileExists(atPath: folder.path), !sharedModel.appDataFolderNames.contains(container.folderName) {
-                    sharedModel.appDataFolderNames.append(container.folderName)
-                }
-            }
-            if let tweakFolder = appInfo.tweakFolder, tweakFolder.count > 0,
-               fm.fileExists(atPath: LCPath.tweakPath.appendingPathComponent(tweakFolder).path) {
-                if !sharedModel.tweakFolderNames.contains(tweakFolder) {
-                    sharedModel.tweakFolderNames.append(tweakFolder)
-                }
-                model.uiTweakFolder = tweakFolder
-            }
-            
-            appInfo.setBundlePath(LCPath.bundlePath.appendingPathComponent(appInfo.relativeBundlePath).path)
-            appInfo.isShared = false
-            model.uiIsShared = false
-            for container in model.uiContainers {
-                container.isShared = false
-            }
+            try model.convertToPrivate(sharedModel: sharedModel, movingTweakFolder: true)
         } catch {
             errorInfo = error.localizedDescription
             errorShow = true
         }
-        
     }
     
     func loadSupportedLanguages() {

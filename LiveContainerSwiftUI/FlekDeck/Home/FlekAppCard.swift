@@ -87,7 +87,7 @@ struct FlekAppCard<Icon: View>: View {
                 Button {
                     onDelete?()
                 } label: {
-                    Image(systemName: editBadge == .explain ? "info" : "minus")
+                    Image(systemName: "minus")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(colorScheme == .dark ? .white : .black)
                         .frame(width: 24, height: 24)

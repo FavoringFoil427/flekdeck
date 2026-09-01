@@ -245,10 +245,10 @@ struct FlekAppRow<Icon: View>: View {
         HStack(spacing: 16) {
             if isEditing && editBadge != .none {
                 Button(action: onDelete) {
-                    Image(systemName: editBadge == .explain ? "info.circle.fill" : "minus.circle.fill")
+                    Image(systemName: "minus.circle.fill")
                         .font(.system(size: 22))
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, editBadge == .explain ? Color.secondary : Color.red)
+                        .foregroundStyle(.white, Color.red)
                 }
                 .buttonStyle(.plain)
                 .transition(.move(edge: .leading).combined(with: .opacity))

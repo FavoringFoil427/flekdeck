@@ -111,6 +111,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     @State private var homeSaveIconExporterShow = false
     @State private var homeSaveIconFile : ImageDocument?
     @StateObject private var homeUninstallAlert = YesNoHelper()
+    @StateObject private var homeSharedUninstallAlert = YesNoHelper()
     @StateObject private var homeUninstallFolderAlert = YesNoHelper()
     @State private var homeRefreshToggle = false
     // Bumped when a launch mode is picked from the list menu. Unlike
@@ -462,6 +463,16 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Button("lc.common.cancel".loc, role: .cancel) { homeUninstallAlert.close(result: false) }
         } message: {
             Text("lc.appBanner.confirmUninstallShortMsg".loc)
+        }
+        // Stands in for the plain uninstall confirmation on a shared app: the
+        // app group's copy is the one every LiveContainer on the device uses, so
+        // saying yes here also gives up sharing it, and that is worth saying
+        // before the deletion rather than after.
+        .alert("Delete Shared App?", isPresented: $homeSharedUninstallAlert.show) {
+            Button("Continue", role: .destructive) { homeSharedUninstallAlert.close(result: true) }
+            Button("lc.common.cancel".loc, role: .cancel) { homeSharedUninstallAlert.close(result: false) }
+        } message: {
+            Text("This app is shared with other FlekDeck instances. To delete it, it will first be converted to a private app, making it unavailable in all other instances.")
         }
         .alert("lc.appBanner.deleteDataTitle".loc, isPresented: $homeUninstallFolderAlert.show) {
             Button(role: .destructive) { homeUninstallFolderAlert.close(result: true) } label: {
@@ -1234,23 +1245,6 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
 
-    /// Explains why a shared app has no delete button in edit mode, and how to
-    /// make it removable. Presented from the info badge that stands in for the
-    /// minus on those apps.
-    func presentSharedAppNotRemovableHint() {
-        let alert = UIAlertController(
-            title: "Shared App",
-            message: UninstallRefused.sharedBundle.localizedDescription,
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        var top = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?.rootViewController
-        while let presented = top?.presentedViewController { top = presented }
-        top?.present(alert, animated: true)
-    }
-
     // MARK: - Home context menu
 
     @ViewBuilder
@@ -1412,18 +1406,18 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             }
         }
 
-        var children: [UIMenuElement] = [launchGroup, addToHomeScreen, lockToggle, settings, moveCards]
-
-        if app.isUninstallable {
-            let uninstall = UIAction(
-                title: "lc.appBanner.uninstall".loc,
-                image: UIImage(systemName: "trash"),
-                attributes: .destructive
-            ) { [self] _ in
-                Task { await requestUninstall(app) }
-            }
-            children.append(uninstall)
+        // Offered for a shared app too, the same as the minus in edit mode:
+        // `requestUninstall` converts it to a private app on the way out rather
+        // than the menu leaving the user nowhere to go.
+        let uninstall = UIAction(
+            title: "lc.appBanner.uninstall".loc,
+            image: UIImage(systemName: "trash"),
+            attributes: .destructive
+        ) { [self] _ in
+            Task { await requestUninstall(app) }
         }
+
+        let children: [UIMenuElement] = [launchGroup, addToHomeScreen, lockToggle, settings, moveCards, uninstall]
 
         return UIMenu(title: "", children: children)
     }
@@ -1546,12 +1540,10 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
             Label("lc.appBanner.moveCards".loc, systemImage: "arrow.up.and.down.and.arrow.left.and.right")
         }
 
-        if app.isUninstallable {
-            Button(role: .destructive) {
-                Task { await requestUninstall(app) }
-            } label: {
-                Label("lc.appBanner.uninstall".loc, systemImage: "trash")
-            }
+        Button(role: .destructive) {
+            Task { await requestUninstall(app) }
+        } label: {
+            Label("lc.appBanner.uninstall".loc, systemImage: "trash")
         }
     }
 
@@ -1612,17 +1604,26 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         }
     }
 
+    /// Asks about, and then performs, an uninstall from the home screen.
+    ///
+    /// A shared app is not this install's copy to take away, so it gets its own
+    /// confirmation, and saying yes converts it to a private app first — which
+    /// is what makes it deletable at all, `uninstall` refusing a shared bundle.
+    /// Everything after that point is the same for both kinds of app.
     func requestUninstall(_ app: LCAppModel) async {
-        // The menus hide Uninstall for an app that is not ours to delete, and
-        // edit mode shows an info badge rather than a minus. This guards the
-        // destructive path itself: the badge is the only way in, but nothing
-        // else stopped the deletion.
-        guard app.isUninstallable else {
-            presentSharedAppNotRemovableHint()
-            return
-        }
         do {
-            if let r = await homeUninstallAlert.open(), !r { return }
+            if app.isUninstallable {
+                if let r = await homeUninstallAlert.open(), !r { return }
+            } else {
+                // Asked before the confirmation, so a FlekDeck that cannot
+                // convert says so rather than putting the user to a decision it
+                // is not going to honour.
+                try app.checkCanConvertToPrivate(sharedModel: sharedModel)
+                guard let r = await homeSharedUninstallAlert.open(), r else { return }
+                // Its tweak folder stays where it is: the app is on its way out,
+                // and the shared copy may be another shared app's too.
+                try app.convertToPrivate(sharedModel: sharedModel, movingTweakFolder: false)
+            }
 
             var doRemoveFolder = false
             if !app.appInfo.containers.isEmpty {

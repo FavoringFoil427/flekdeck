@@ -365,7 +365,7 @@ struct FlekSpringboardView<Menu: View>: View {
                         Button {
                             onDelete(item)
                         } label: {
-                            Image(systemName: item.editBadge == .explain ? "info" : "minus")
+                            Image(systemName: "minus")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.black)
                                 .frame(width: 24, height: 24)
