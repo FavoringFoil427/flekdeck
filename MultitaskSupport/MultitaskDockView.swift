@@ -2193,11 +2193,10 @@ class AppInfoProvider {
 
     /// Whether the bottom swipe is the chosen control rather than the floating button.
     ///
-    /// Off by default, which a missing key already reads as: the swipe draws nothing,
-    /// so someone who has never opened the setting would have no way of knowing it was
-    /// there. `LCSettingsView` declares the same default for the picker.
+    /// On by default, so `bool(forKey:)` — which reads a missing key as false — is not
+    /// enough on its own. `LCSettingsView` declares the same default for the picker.
     private var isSwipeZoneEnabled: Bool {
-        LCUtils.appGroupUserDefault.bool(forKey: "LCMultitaskHomeBar")
+        LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskHomeBar") as? Bool ?? true
     }
 
     /// Put the swipe zone up along the bottom edge of `host`.
