@@ -16043,6 +16043,50 @@
         }
       }
     },
+    "lc.flek.haptics.light" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        }
+      }
+    },
+    "lc.flek.haptics.medium" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medium"
+          }
+        }
+      }
+    },
+    "lc.flek.haptics.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        }
+      }
+    },
+    "lc.flek.haptics.strong" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strong"
+          }
+        }
+      }
+    },
     "lc.flek.homeScreenLayout" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16324,7 +16368,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Switcher Button Haptics"
+            "value" : "Multitask Haptics"
           }
         }
       }

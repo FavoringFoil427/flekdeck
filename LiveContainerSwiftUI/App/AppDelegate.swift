@@ -80,6 +80,12 @@ import Intents
             LCUtils.appGroupUserDefault.setValue(UIDevice.current.buildVersion, forKey: "LCLastIOSBuildVersion")
         }
         
+        // Carry a pre-slider multitask haptics preference onto the intensity
+        // scale, before Settings can read the new key and find nothing.
+        if #available(iOS 16.0, *) {
+            MultitaskDockManager.migrateHapticsPreferenceIfNeeded()
+        }
+
         // Auto-import embedded fs_cert.p12 if no certificate is stored yet
         if LCSharedUtils.certificatePassword() == nil {
             Self.importEmbeddedCertificateIfNeeded()

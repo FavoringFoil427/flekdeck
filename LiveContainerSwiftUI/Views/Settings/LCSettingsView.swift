@@ -70,7 +70,10 @@ struct LCSettingsView: View {
     // Multitask switcher bar: rounded (tall, concave corners) when on, flat short bar when off.
     // Bar rounding amount, 0 (flat) … 100 (fully rounded concave corners).
     @AppStorage("LCMultitaskBarLedgeAmount", store: LCUtils.appGroupUserDefault) var barLedgeAmount: Double = 60
-    @AppStorage("LCMultitaskButtonHaptics", store: LCUtils.appGroupUserDefault) var multitaskButtonHaptics = true
+    // Multitask control haptics: 0 (off) … 3 (strongest). Read back through
+    // MultitaskDockManager, which also carries over the on/off switch this
+    // slider replaced.
+    @AppStorage("LCMultitaskHapticsLevel", store: LCUtils.appGroupUserDefault) var multitaskHapticsLevel = 1
     @AppStorage("LCAutoEndPiP", store: LCUtils.appGroupUserDefault) var autoEndPiP = false
     @AppStorage("LCSkipTerminatedScreen", store: LCUtils.appGroupUserDefault) var skipTerminatedScreen = true
     @AppStorage("LCRestartTerminatedApp", store: LCUtils.appGroupUserDefault) var restartTerminatedApp = true
@@ -291,6 +294,36 @@ struct LCSettingsView: View {
         return String(value.prefix(ends))
             + String(repeating: "\u{2022}", count: value.count - ends * 2)
             + String(value.suffix(ends))
+    }
+
+    /// Name of the step the haptics slider currently sits on, shown beside it —
+    /// a strength is easier to recognise by name than by a bare number, and the
+    /// left end being "Off" is the part worth being explicit about.
+    private var multitaskHapticsLevelName: String {
+        switch multitaskHapticsLevel {
+        case 1: return "lc.flek.haptics.light".loc
+        case 2: return "lc.flek.haptics.medium".loc
+        case 3: return "lc.flek.haptics.strong".loc
+        default: return "lc.flek.haptics.off".loc
+        }
+    }
+
+    /// The slider's Double seen as the stored whole step, playing each new step's
+    /// feedback as it is reached: the setting is about how something feels, so it
+    /// has to be felt while it is being set. Silent at the off end, and silent
+    /// while a drag stays within one step.
+    private var multitaskHapticsBinding: Binding<Double> {
+        Binding(
+            get: { Double(multitaskHapticsLevel) },
+            set: { newValue in
+                let level = min(max(Int(newValue.rounded()), 0), 3)
+                guard level != multitaskHapticsLevel else { return }
+                multitaskHapticsLevel = level
+                if #available(iOS 16.0, *) {
+                    MultitaskDockManager.playHaptic(level: level)
+                }
+            }
+        )
     }
 
     var body: some View {
@@ -887,9 +920,25 @@ struct LCSettingsView: View {
                             Toggle(isOn: $redirectURLToHost) {
                                 Text("lc.settings.redirectURLToHost".loc)
                             }
-                            Toggle(isOn: $multitaskButtonHaptics) {
-                                Text("lc.flek.switcherHaptics".loc)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text("lc.flek.switcherHaptics".loc)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    Text(multitaskHapticsLevelName)
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                                // Four stops, off at the left end. Every stop plays
+                                // its own feedback as it is reached, so the strength
+                                // is chosen by feel rather than by name.
+                                Slider(value: multitaskHapticsBinding,
+                                       in: 0...3, step: 1) {
+                                    Text("lc.flek.switcherHaptics".loc)
+                                }
+                                .tint(.accentColor)
                             }
+                            .padding(.vertical, 4)
                             Picker(selection: $usesBottomSwipe) {
                                 Text("lc.flek.multitaskControl.assistiveTouch".loc).tag(false)
                                 Text("lc.flek.multitaskControl.bottomSwipe".loc).tag(true)

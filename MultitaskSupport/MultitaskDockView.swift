@@ -291,21 +291,67 @@ class AppInfoProvider {
     /// How long the system takes to turn the interface.
     static let rotationDuration: TimeInterval = 0.35
 
-    /// Whether the bar's and the switcher's controls tap back when pressed.
-    /// Off is a deliberate choice — the buttons sit under the thumb during any
-    /// app switch, and their feedback is the most repeated in the app — so it
-    /// lives in Settings ▸ Personalization rather than following the system's
-    /// global haptics setting alone.
-    static let buttonHapticsKey = "LCMultitaskButtonHaptics"
+    /// How hard every multitask control taps back: the bar's and the switcher's
+    /// buttons, the springboard's dock pill, the floating button, and the bottom
+    /// swipe. How strong is a deliberate choice — the controls sit under the
+    /// thumb during any app switch, and their feedback is the most repeated in
+    /// the app — so it lives in Settings ▸ Personalization rather than following
+    /// the system's global haptics setting alone.
+    ///
+    /// `0` is silent; `1`…`maxHapticsLevel` climb from the softest impact iOS
+    /// offers to its heaviest.
+    static let hapticsLevelKey = "LCMultitaskHapticsLevel"
+    static let maxHapticsLevel = 3
+    /// The softest step, which is the feedback these controls have always had.
+    static let defaultHapticsLevel = 1
 
-    /// The controls' one and only feedback: the softest impact iOS offers, so a
-    /// row of buttons pressed dozens of times a session stays unobtrusive.
-    /// Silent when the user has switched it off.
-    static func buttonHaptic() {
+    /// The on/off switch this slider replaced. Only read to carry an old
+    /// preference over — see `migrateHapticsPreferenceIfNeeded`.
+    private static let legacyHapticsToggleKey = "LCMultitaskButtonHaptics"
+
+    /// The chosen strength, clamped: a value written by an older or newer build
+    /// than this one still has to name a step that exists.
+    static var hapticsLevel: Int {
         let defaults = LCUtils.appGroupUserDefault
-        let enabled = defaults.object(forKey: buttonHapticsKey) as? Bool ?? true
-        guard enabled else { return }
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        if let stored = defaults.object(forKey: hapticsLevelKey) as? Int {
+            return min(max(stored, 0), maxHapticsLevel)
+        }
+        return migrateHapticsPreferenceIfNeeded() ?? defaultHapticsLevel
+    }
+
+    /// Move a pre-slider on/off preference onto the scale, once. On becomes the
+    /// softest step — the feedback that switch actually played — and off stays
+    /// silent, so nobody who deliberately turned this off gets it back.
+    ///
+    /// Returns the level it wrote, or nil when there was nothing to carry over.
+    @discardableResult
+    static func migrateHapticsPreferenceIfNeeded() -> Int? {
+        let defaults = LCUtils.appGroupUserDefault
+        guard defaults.object(forKey: hapticsLevelKey) == nil,
+              let wasEnabled = defaults.object(forKey: legacyHapticsToggleKey) as? Bool
+        else { return nil }
+        let level = wasEnabled ? defaultHapticsLevel : 0
+        defaults.set(level, forKey: hapticsLevelKey)
+        return level
+    }
+
+    /// Every multitask control's one and only feedback, at the chosen strength.
+    /// Silent when the slider sits at its left end.
+    static func buttonHaptic() {
+        playHaptic(level: hapticsLevel)
+    }
+
+    /// Fire the feedback a given step plays, whatever is currently saved — the
+    /// settings slider uses this to let the strength be felt as it is chosen.
+    static func playHaptic(level: Int) {
+        let style: UIImpactFeedbackGenerator.FeedbackStyle
+        switch level {
+        case 1: style = .soft
+        case 2: style = .medium
+        case 3: style = .heavy
+        default: return
+        }
+        UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
 
     /// Persisted user preference for which multitask control to show when an app
@@ -2249,9 +2295,10 @@ class AppInfoProvider {
     }
     
     @objc private func navAssistTapped() {
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
-        
+        // The same feedback, at the same strength, as the bar's buttons: this is
+        // the other control the user picked between, not a different one.
+        MultitaskDockManager.buttonHaptic()
+
         if isNavAssistStashed {
             // Docked at an edge: first tap brings the button back out.
             unstashNavAssist()
@@ -3924,6 +3971,7 @@ final class OverlayPassthroughView: UIView {
 /// `bandIntrusion` the zone sits entirely inside the bottom safe-area band, below
 /// where a maximized guest's content stops, so there is nothing of the guest's under
 /// it to lose. Reaching further up would start taking its taps.
+@available(iOS 16.0, *)
 final class MultitaskSwipeZone: UIView {
     /// Run when a swipe up clears the activation threshold.
     var onActivate: (() -> Void)?
@@ -4013,7 +4061,9 @@ final class MultitaskSwipeZone: UIView {
         let activated = -translation >= Self.activationDistance
             || velocity <= -Self.activationVelocity
         guard activated else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // Nothing is drawn here, so this tap is the only acknowledgement the
+        // gesture gets — but it answers to the same setting as the buttons.
+        MultitaskDockManager.buttonHaptic()
         onActivate?()
     }
 }
@@ -5782,7 +5832,7 @@ private struct MultitaskHomeIcon: View {
 
     var body: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            MultitaskDockManager.buttonHaptic()
             let _ = dockManager.bringMultitaskViewToFront(uuid: app.appUUID)
         } label: {
             if let icon = SwitcherBarContentView.cachedIcon(for: app) {
@@ -5883,6 +5933,7 @@ struct MultitaskHomeDockPill: View {
 
     private var switcherButton: some View {
         Button {
+            MultitaskDockManager.buttonHaptic()
             MultitaskDockManager.shared.showAppSwitcher()
         } label: {
             Image(systemName: FlekSymbol.appSwitcher)
