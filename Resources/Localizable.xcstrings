@@ -1665,7 +1665,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usa tu método favorito para habilitar JIT para el LiveContainer actual."
+            "value" : "Usa tu método favorito para habilitar JIT para el FlekDeck actual."
           }
         },
         "pl" : {
@@ -2582,7 +2582,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convierte las apps en Apps Compartidas para usarlas en LiveContainer2"
+            "value" : "Convierte las apps en Apps Compartidas para usarlas en FlekDeck2"
           }
         },
         "pl" : {
@@ -4238,7 +4238,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Administrar apps en el LiveContainer primario"
+            "value" : "Administrar apps en el FlekDeck primario"
           }
         },
         "pl" : {
@@ -4790,7 +4790,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El esquema \"%@\" no se puede abrir con ninguna app instalada en LiveContainer."
+            "value" : "El esquema \"%@\" no se puede abrir con ninguna app instalada en FlekDeck."
           }
         },
         "pl" : {
@@ -4891,7 +4891,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La app se firmó correctamente, pero LiveContainer no pudo firmar los siguientes archivos. Es posible que puedas usar la app, pero espera fallos."
+            "value" : "La app se firmó correctamente, pero FlekDeck no pudo firmar los siguientes archivos. Es posible que puedas usar la app, pero espera fallos."
           }
         },
         "pl" : {
@@ -7778,7 +7778,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ocultar LiveContainer de la API Dyld "
+            "value" : "Ocultar FlekDeck de la API Dyld "
           }
         },
         "pl" : {
@@ -8367,7 +8367,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer intentará obtener permiso JIT antes de lanzar la app."
+            "value" : "FlekDeck intentará obtener permiso JIT antes de lanzar la app."
           }
         },
         "pl" : {
@@ -9269,7 +9269,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover esta app a la carpeta de documentos privada te permite acceder a sus datos y tweaks en la app Archivos, pero no podrá ser ejecutada por otros LiveContainers."
+            "value" : "Mover esta app a la carpeta de documentos privada te permite acceder a sus datos y tweaks en la app Archivos, pero no podrá ser ejecutada por otros FlekDecks."
           }
         },
         "pl" : {
@@ -9471,7 +9471,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mover esta app al grupo de apps permite que otros LiveContainers la ejecuten conservando todos sus datos y tweaks. Si quieres volver a acceder a sus datos y tweaks desde la app Archivos, muévela de nuevo."
+            "value" : "Mover esta app al grupo de apps permite que otros FlekDecks la ejecuten conservando todos sus datos y tweaks. Si quieres volver a acceder a sus datos y tweaks desde la app Archivos, muévela de nuevo."
           }
         },
         "pl" : {
@@ -9667,7 +9667,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usar el ID de paquete de LiveContainer"
+            "value" : "Usar el ID de paquete de FlekDeck"
           }
         },
         "pl" : {
@@ -9768,7 +9768,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Corrige estos problemas usando el identificador de paquete de LiveContainer al sobrescribir el paquete principal."
+            "value" : "Corrige estos problemas usando el identificador de paquete de FlekDeck al sobrescribir el paquete principal."
           }
         },
         "pl" : {
@@ -13601,7 +13601,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer usará el contenedor predeterminado cuando no se especifique ninguno."
+            "value" : "FlekDeck usará el contenedor predeterminado cuando no se especifique ninguno."
           }
         },
         "pl" : {
@@ -16960,7 +16960,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reinicia LiveContainer para instalar apps."
+            "value" : "Reinicia FlekDeck para instalar apps."
           }
         },
         "pl" : {
@@ -17061,7 +17061,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Configura el modo JITLess en los ajustes para usar LiveContainer sin JIT.\n\n**Consulta la página de diagnóstico JITLess en los ajustes si tienes problemas para activar el modo JITLess.**\n\nPulsa el botón más para instalar apps.\n\nMantén pulsado el banner de la app para acceder a los ajustes específicos, correcciones y añadirla a la pantalla de inicio."
+            "value" : "Configura el modo JITLess en los ajustes para usar FlekDeck sin JIT.\n\n**Consulta la página de diagnóstico JITLess en los ajustes si tienes problemas para activar el modo JITLess.**\n\nPulsa el botón más para instalar apps.\n\nMantén pulsado el banner de la app para acceder a los ajustes específicos, correcciones y añadirla a la pantalla de inicio."
           }
         },
         "pl" : {
@@ -17162,7 +17162,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "**Comprueba [LiveContainer FAQ](https://github.com/khanhduytran0/LiveContainer/issues/265) para problemas comunes.**\n                         \nSi encuentras un error o un problema de compatibilidad, por favor envíalo en [GitHub issues](https://github.com/khanhduytran0/LiveContainer/issues)."
+            "value" : "**Comprueba [FlekDeck FAQ](https://github.com/khanhduytran0/LiveContainer/issues/265) para problemas comunes.**\n                         \nSi encuentras un error o un problema de compatibilidad, por favor envíalo en [GitHub issues](https://github.com/khanhduytran0/LiveContainer/issues)."
           }
         },
         "pl" : {
@@ -17263,7 +17263,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ayuda de LiveContainer"
+            "value" : "Ayuda de FlekDeck"
           }
         },
         "pl" : {
@@ -20659,7 +20659,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El ID de paquete de LiveContainer, \"%@\", no coincide con el identificador de la aplicación en los derechos, que espera que el ID de paquete sea \"%@\". Es posible que algunas funciones no estén disponibles."
+            "value" : "El ID de paquete de FlekDeck, \"%@\", no coincide con el identificador de la aplicación en los derechos, que espera que el ID de paquete sea \"%@\". Es posible que algunas funciones no estén disponibles."
           }
         },
         "pl" : {
@@ -21468,7 +21468,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si la cuenta de alguna app no se puede sincronizar entre LiveContainers, puede deberse a que la cuenta sigue almacenada en el llavero privado del LiveContainer actual. Eliminar el llavero puede solucionar este problema, pero puede cerrar la sesión de algunas de tus cuentas. ¿Continuar?"
+            "value" : "Si la cuenta de alguna app no se puede sincronizar entre FlekDecks, puede deberse a que la cuenta sigue almacenada en el llavero privado del FlekDeck actual. Eliminar el llavero puede solucionar este problema, pero puede cerrar la sesión de algunas de tus cuentas. ¿Continuar?"
           }
         },
         "pl" : {
@@ -22377,7 +22377,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer no firmará apps nuevas mientras esta opción esté activada. Con esta opción activada, la app instalada permanecerá sin firmar."
+            "value" : "FlekDeck no firmará apps nuevas mientras esta opción esté activada. Con esta opción activada, la app instalada permanecerá sin firmar."
           }
         },
         "pl" : {
@@ -22882,7 +22882,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enmarca los iconos de acceso directo con el icono de LiveContainer."
+            "value" : "Enmarca los iconos de acceso directo con el icono de FlekDeck."
           }
         },
         "pl" : {
@@ -23429,7 +23429,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Para usar el modo JITLess sin AltStore/SideStore, debes importar el certificado usado para firmar LiveContainer. ¿Continuar?"
+            "value" : "Para usar el modo JITLess sin AltStore/SideStore, debes importar el certificado usado para firmar FlekDeck. ¿Continuar?"
           }
         },
         "pl" : {
@@ -23957,7 +23957,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Error al validar el certificado. Comprueba la contraseña y verifica que el certificado seleccionado se usa para firmar LiveContainer."
+            "value" : "Error al validar el certificado. Comprueba la contraseña y verifica que el certificado seleccionado se usa para firmar FlekDeck."
           }
         },
         "pl" : {
@@ -24462,7 +24462,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "JIT-Less te permite usar LiveContainer sin necesidad de activar JIT."
+            "value" : "JIT-Less te permite usar FlekDeck sin necesidad de activar JIT."
           }
         },
         "pl" : {
@@ -25770,7 +25770,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Múltiples LiveContainers"
+            "value" : "Múltiples FlekDecks"
           }
         },
         "pl" : {
@@ -25871,7 +25871,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer2 está firmado con un certificado distinto al de LiveContainer, por lo que no funcionará. Instala LiveContainer2 con la misma cuenta que usaste para instalar LiveContainer."
+            "value" : "FlekDeck2 está firmado con un certificado distinto al de FlekDeck, por lo que no funcionará. Instala FlekDeck2 con la misma cuenta que usaste para instalar FlekDeck."
           }
         },
         "pl" : {
@@ -25972,7 +25972,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Instalando múltiples LiveContainers y convirtiendo las apps en Apps Compartidas, puedes abrir una app entre todos los LiveContainers conservando la mayoría de sus datos y ajustes."
+            "value" : "Instalando múltiples FlekDecks y convirtiendo las apps en Apps Compartidas, puedes abrir una app entre todos los FlekDecks conservando la mayoría de sus datos y ajustes."
           }
         },
         "pl" : {
@@ -26073,7 +26073,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Instalar otro LiveContainer"
+            "value" : "Instalar otro FlekDeck"
           }
         },
         "pl" : {
@@ -26459,7 +26459,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer generará el ipa para otro LiveContainer. Compártelo con %@ para instalarlo. ¿Continuar?"
+            "value" : "FlekDeck generará el ipa para otro FlekDeck. Compártelo con %@ para instalarlo. ¿Continuar?"
           }
         },
         "pl" : {
@@ -26560,7 +26560,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este es el segundo LiveContainer"
+            "value" : "Este es el segundo FlekDeck"
           }
         },
         "pl" : {
@@ -26668,13 +26668,13 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Faites glisser les LiveContainers pour choisir lequel est essayé en premier lors du lancement d'applications partagées."
+            "value" : "Faites glisser les FlekDecks pour choisir lequel est essayé en premier lors du lancement d'applications partagées."
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اسحب LiveContainers لاختيار أي واحد يتم تجربته أولا عند تشغيل التطبيقات المشتركة."
+            "value" : "اسحب FlekDecks لاختيار أي واحد يتم تجربته أولا عند تشغيل التطبيقات المشتركة."
           }
         },
         "es" : {
@@ -26686,7 +26686,7 @@
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Przeciągnij LiveContainers, aby wybrać, który z nich zostanie wypróbowany jako pierwszy podczas uruchamiania udostępnionych aplikacji."
+            "value" : "Przeciągnij FlekDecks, aby wybrać, który z nich zostanie wypróbowany jako pierwszy podczas uruchamiania udostępnionych aplikacji."
           }
         },
         "zh-Hans" : {
@@ -26698,25 +26698,25 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перетаскивайте LiveContainer'ы, чтобы выбрать, какой из них будет использован при запуске общих приложений."
+            "value" : "Перетаскивайте FlekDeck'и, чтобы выбрать, какой из них будет использован при запуске общих приложений."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ziehen Sie die LiveContainer, um festzulegen, welche App zuerst gestartet wird."
+            "value" : "Ziehen Sie die FlekDeck, um festzulegen, welche App zuerst gestartet wird."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kéo các LiveContainer để chọn cái nào được thử trước khi chạy app được chia sẻ."
+            "value" : "Kéo các FlekDeck để chọn cái nào được thử trước khi chạy app được chia sẻ."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paylaşılan uygulamalar başlatılırken önce hangisinin deneneceğini belirlemek için LiveContainer’ları sürükleyin."
+            "value" : "Paylaşılan uygulamalar başlatılırken önce hangisinin deneneceğini belirlemek için FlekDeck’leri sürükleyin."
           }
         }
       },
@@ -27447,7 +27447,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LiveContainer no está firmado con un certificado de desarrollo, por lo que no funcionará en absoluto. Firma LiveContainer con un certificado de desarrollo."
+            "value" : "FlekDeck no está firmado con un certificado de desarrollo, por lo que no funcionará en absoluto. Firma FlekDeck con un certificado de desarrollo."
           }
         },
         "pl" : {
@@ -27630,7 +27630,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إعادة توجيه مخططات عنوان URL إلى Host LiveContainer"
+            "value" : "إعادة توجيه مخططات عنوان URL إلى Host FlekDeck"
           }
         },
         "zh-Hant" : {
@@ -27672,13 +27672,13 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rediriger les schémas d'URL vers l'hôte LiveContainer"
+            "value" : "Rediriger les schémas d'URL vers l'hôte FlekDeck"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Redirigir esquemas de URL al LiveContainer anfitrión"
+            "value" : "Redirigir esquemas de URL al FlekDeck anfitrión"
           }
         },
         "pl" : {
@@ -27690,13 +27690,13 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перенаправлять схемы URL в LiveContainer"
+            "value" : "Перенаправлять схемы URL в FlekDeck"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "URL-Schema an Host LiveContainer weiterleiten"
+            "value" : "URL-Schema an Host FlekDeck weiterleiten"
           }
         },
         "ja" : {
@@ -28330,7 +28330,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Por defecto, LiveContainer te pregunta cómo abrir una URL. Activa esto para abrir la URL automáticamente en la app actual."
+            "value" : "Por defecto, FlekDeck te pregunta cómo abrir una URL. Activa esto para abrir la URL automáticamente en la app actual."
           }
         },
         "pl" : {
@@ -28532,7 +28532,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Por defecto, LiveContainer te pregunta antes de cambiar de app. Activa esto para cambiar de app inmediatamente. Se perderán los datos no guardados."
+            "value" : "Por defecto, FlekDeck te pregunta antes de cambiar de app. Activa esto para cambiar de app inmediatamente. Se perderán los datos no guardados."
           }
         },
         "pl" : {
@@ -29185,7 +29185,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Por favor, no uses LiveContainer para piratería."
+            "value" : "Por favor, no uses FlekDeck para piratería."
           }
         },
         "pl" : {
@@ -29339,7 +29339,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Parece que LiveContainer falló durante la última firma de la app, y esta podría estar dañada. Considera reinstalar la app o cambiar a otro firmante."
+            "value" : "Parece que FlekDeck falló durante la última firma de la app, y esta podría estar dañada. Considera reinstalar la app o cambiar a otro firmante."
           }
         },
         "pl" : {
