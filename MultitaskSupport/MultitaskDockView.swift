@@ -1342,6 +1342,18 @@ class AppInfoProvider {
                     for (_, controller) in self.internalPageControllers {
                         self.applyBarInset(to: controller, reserved: reserved)
                     }
+                    // And the guest windows, which were the one thing this repaired
+                    // nothing for.
+                    //
+                    // A window's safe area can still read zero when a guest is first
+                    // laid out — `updateDockFrame` says so itself and re-reads for the
+                    // bar — and the guest's frame, its periphery insets and the shape
+                    // of its drawable are all measured through it. Nothing else asks
+                    // again: the host view re-derives on a bounds change, and a safe
+                    // area resolving is not one. So a guest opened into a not-yet-ready
+                    // inset kept it, drawing under the notch or short of the window,
+                    // until some unrelated change happened to push fresh settings.
+                    NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
                 }
             }
         }

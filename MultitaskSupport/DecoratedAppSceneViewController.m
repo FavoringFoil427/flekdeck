@@ -748,6 +748,10 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
     [self applyMaximizedLayout];
 }
 
+- (BOOL)awaitingFirstLayout {
+    return _lockedGuestOrientation == UIInterfaceOrientationUnknown;
+}
+
 /// Re-derives everything about a maximized window's geometry from the screen, the
 /// switcher bar and the orientation as they are now, and gets it to the guest.
 ///
@@ -892,7 +896,11 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 }
 
 - (void)updateMaximizedFrameWithSettings:(UIMutableApplicationSceneSettings *)settings {
-    CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.frame, [self updateMaximizedSafeAreaWithSettings:settings]);
+    // Bounds, not frame: `frame` is in screen coordinates, and what is built here is
+    // a rectangle inside the window. The two agree exactly while the window is full
+    // screen, which on a phone it always is — and disagree by the window's origin
+    // when it is not, placing the guest off by that much.
+    CGRect maxFrame = UIEdgeInsetsInsetRect(self.view.window.bounds, [self updateMaximizedSafeAreaWithSettings:settings]);
     // Reserve exactly the bar's strip thickness so the app sits flush with it — no
     // background gap showing through. The dock reports the strip as insets on the
     // edge the bar is actually drawn along, which is the only thing that answers

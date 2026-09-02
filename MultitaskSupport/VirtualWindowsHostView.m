@@ -136,15 +136,23 @@ static BOOL LCRotationIsLocked(void) {
     // the freeze would become permanent. Leaving `_lastLaidOutBounds` stale means
     // the very next layout pass after the phone is picked up still sees a
     // difference and repairs everything in one go.
-    if(LCRotationIsLocked()) return;
-    if(CGRectEqualToRect(self.bounds, _lastLaidOutBounds)) return;
-    _lastLaidOutBounds = self.bounds;
+    BOOL locked = LCRotationIsLocked();
+    if(!locked && CGRectEqualToRect(self.bounds, _lastLaidOutBounds)) return;
+    if(!locked) _lastLaidOutBounds = self.bounds;
     for(UIView *subview in self.subviews) {
         if(subview == _backdropView) continue;
         DecoratedAppSceneViewController *decoratedVC = (id)subview._viewDelegate;
-        if([decoratedVC isKindOfClass:DecoratedAppSceneViewController.class]) {
-            [decoratedVC refreshMaximizedLayout];
-        }
+        if(![decoratedVC isKindOfClass:DecoratedAppSceneViewController.class]) continue;
+        // While the lock holds, only a guest that has never settled on an
+        // orientation is laid out. That is its first layout, which the lock was
+        // never meant to block — both scene controllers say so explicitly and gate
+        // their own guards on having something to hold. This one did not, so a phone
+        // lying on a desk while an app opened left that app with whatever geometry
+        // it was presented with: sized before the bar had taken its strip, or
+        // against a safe area that had not resolved yet, and cut off with no later
+        // pass to repair it.
+        if(locked && !decoratedVC.awaitingFirstLayout) continue;
+        [decoratedVC refreshMaximizedLayout];
     }
 }
 
