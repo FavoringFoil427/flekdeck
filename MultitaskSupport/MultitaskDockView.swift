@@ -2078,19 +2078,22 @@ class AppInfoProvider {
         }
     }
     
-    // MARK: - Home Grabber
+    // MARK: - Multitask swipe zone
 
-    /// Put LiveContainer's own home bar up along the bottom edge of `host`.
+    /// Whether the bottom swipe is the chosen control rather than the floating button.
     ///
-    /// Idempotent: any existing strip is taken down first, so this can run on every
-    /// `showNavAssist` — which is itself called repeatedly by the control self-heal
-    /// — without stacking strips on top of each other.
-    /// Whether the home bar is switched on. Defaults to on, so `bool(forKey:)` —
-    /// which reads a missing key as false — is not enough on its own.
+    /// Off by default, which a missing key already reads as: the swipe draws nothing,
+    /// so someone who has never opened the setting would have no way of knowing it was
+    /// there. `LCSettingsView` declares the same default for the picker.
     private var isSwipeZoneEnabled: Bool {
-        LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskHomeBar") as? Bool ?? true
+        LCUtils.appGroupUserDefault.bool(forKey: "LCMultitaskHomeBar")
     }
 
+    /// Put the swipe zone up along the bottom edge of `host`.
+    ///
+    /// Idempotent: any existing zone is taken down first, so this can run on every
+    /// `showNavAssist` — which is itself called repeatedly by the control self-heal —
+    /// without stacking zones on top of each other.
     private func installSwipeZone(in host: UIView, animated: Bool) {
         tearDownSwipeZone()
         guard isSwipeZoneEnabled else { return }
