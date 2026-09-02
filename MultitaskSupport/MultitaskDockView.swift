@@ -3549,8 +3549,11 @@ class AppInfoProvider {
         // without the customary pause. See -handTouchesStraightToScrollViews.
         handTouchesStraightToScrollViews(in: hc.view)
 
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
+        // No feedback for the arrival itself. Every way in — a bar or dock button,
+        // the floating button, the bottom swipe — has already tapped back for the
+        // press that asked for it, and a second tap as the overlay lands reads as
+        // the one control stuttering rather than as the screen answering.
+
         // Keep the existing bottom bar at full opacity underneath during the
         // entrance. Its black rounded region is identical to the overlay's own
         // bottom bar, so leaving it solid means the bar never cross-fades — only
@@ -4909,7 +4912,11 @@ struct AppSwitcherOverlay: View {
     /// it once the animation completes.
     private func exitToSpringboard() {
         guard !exiting else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // The chin's home button is one of the three ways in here, and it sits in a
+        // row whose other two buttons answer to the haptics setting — so this does
+        // too, rather than being the one control in the row that taps back when the
+        // setting is off.
+        MultitaskDockManager.buttonHaptic()
         withAnimation(.easeIn(duration: 0.3)) { exiting = true }
         dockManager.goToSpringboardFromSwitcher()
     }
@@ -5761,7 +5768,7 @@ struct AppSwitcherCard: View {
                 }
             )
             .onTapGesture {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 dockManager.dismissAppSwitcher()
                 // Out of the card rather than out of nowhere: it is already
                 // showing the app, at the size and place the user just pressed.
