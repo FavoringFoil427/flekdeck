@@ -21,6 +21,11 @@ import Intents
     /// until the window has turned knows whether it has anything to wait for.
     @discardableResult
     static func applyOrientationLock() -> Bool {
+        applyOrientationLock(retriesLeft: 2)
+    }
+
+    @discardableResult
+    private static func applyOrientationLock(retriesLeft: Int) -> Bool {
         guard #available(iOS 16.0, *) else { return false }
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive })
@@ -36,14 +41,56 @@ import Intents
 
         let current = mask(for: scene.interfaceOrientation)
         guard !current.isEmpty, !orientationLock.contains(current) else { return false }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientationLock))
+
+        // The member of the mask the device is actually pointing at, where the mask
+        // allows more than one. Handing UIKit the whole set lets it choose, and on a
+        // landscape pair it can settle on the turn the user is not holding — which
+        // also silently undoes a caller that asked for a specific one a moment
+        // earlier, as the way back from the switcher does.
+        var requested = orientationLock
+        if let facing = interfaceOrientation(matchingDevice: UIDevice.current.orientation) {
+            let facingMask = mask(for: facing)
+            if !facingMask.isEmpty, orientationLock.contains(facingMask) {
+                requested = facingMask
+            }
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: requested)) { _ in
+            // Refusals are not exceptional here, and silence is the worst outcome.
+            //
+            // The request is validated against the supported set UIKit currently
+            // believes in, and `setNeedsUpdateOfSupportedInterfaceOrientations` above
+            // only marks that set for re-resolution — it does not re-resolve it. So a
+            // request made in the same turn of the run loop as the mask that permits
+            // it can be refused, and with no handler it was refused silently: nothing
+            // turned, nothing asked again, and whatever was waiting for the turn ran
+            // out its patience and drew itself the wrong way round.
+            //
+            // The next turn of the run loop is after that re-resolution. Bounded, and
+            // re-entrant through the front door so it re-reads the lock rather than
+            // repeating a stale one — by then the destination may have changed.
+            guard retriesLeft > 0 else { return }
+            DispatchQueue.main.async { _ = applyOrientationLock(retriesLeft: retriesLeft - 1) }
+        }
         return true
+    }
+
+    /// The interface orientation a device reading corresponds to, or nil for face up,
+    /// face down and unknown, which describe the phone's relationship to the ground
+    /// rather than to the viewer and name no interface orientation at all.
+    static func interfaceOrientation(matchingDevice device: UIDeviceOrientation) -> UIInterfaceOrientation? {
+        switch device {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight   // device and interface axes are mirrored
+        case .landscapeRight: return .landscapeLeft
+        default: return nil
+        }
     }
 
     /// The single-orientation mask an interface orientation belongs to, so it can
     /// be tested against `orientationLock`. Empty for `.unknown`, which no mask
     /// contains and which nothing should be turned away from.
-    private static func mask(for orientation: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
+    static func mask(for orientation: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
         switch orientation {
         case .portrait: return .portrait
         case .portraitUpsideDown: return .portraitUpsideDown

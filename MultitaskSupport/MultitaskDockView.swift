@@ -977,6 +977,18 @@ class AppInfoProvider {
         return boundsAreLandscape ? .landscapeRight : .portrait
     }
 
+    /// True from the moment the switcher is asked for until its overlay is up.
+    ///
+    /// The overlay is portrait-only and the turn to portrait is requested before it
+    /// is built, so for the length of that turn the destination is known but nothing
+    /// on screen says so: `isAppSwitcherOpen` is still false and the app's controls
+    /// are still up. Anything recomputing the lock in that window read a pinned app
+    /// on stage and handed the window back to its orientation, reversing the turn —
+    /// after which the wait timed out, the overlay was built against landscape
+    /// bounds, and `refreshSwitcherScreenSize`'s later re-samples were left to undo
+    /// it in front of the user.
+    private var isOpeningAppSwitcher = false
+
     /// The edge `updateDockFrame` last actually drew the bar along. Everything that
     /// has to agree with where the bar *is* — rather than re-derive where it should
     /// be — reads this, so a device reading taken at a different moment cannot put
@@ -992,6 +1004,37 @@ class AppInfoProvider {
     /// own rotation, on its curve and over its duration, and land exactly as the
     /// screen finishes turning.
     private var isRotating = false
+
+    /// Guards the self-healing clear below, so an earlier turn's timer cannot end a
+    /// later turn that is still running.
+    private var rotationEndToken: UInt64 = 0
+
+    /// Marks a turn as started, and guarantees it will be marked finished.
+    ///
+    /// `isRotating` is what `whenWindowIsPortrait` waits on to know a turn is really
+    /// over rather than merely begun, so a flag left set is not cosmetic: every later
+    /// wait for an upright window runs to its cap instead of ending when the screen
+    /// does, and the switcher takes three quarters of a second to appear every time.
+    /// The coordinator's completion is the proper end of a turn and normally arrives,
+    /// but an interrupted or cancelled transition never delivers one — so the flag is
+    /// also cleared on a timer at rather more than a turn's length, which bounds how
+    /// long it can be wrong to that.
+    private func beginRotation() {
+        isRotating = true
+        rotationEndToken &+= 1
+        let token = rotationEndToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rotationDuration * 2) { [weak self] in
+            guard let self, self.rotationEndToken == token else { return }
+            self.isRotating = false
+        }
+    }
+
+    /// Marks a turn as finished, and retires its safety clear so it cannot fire into
+    /// a turn that starts later.
+    private func endRotation() {
+        rotationEndToken &+= 1
+        isRotating = false
+    }
 
     /// True while the bar is parked off-screen for a rotation.
     ///
@@ -1221,7 +1264,7 @@ class AppInfoProvider {
         // longer arc than either.
         root.onHostRotationBegan = { [weak self] in
             guard let self else { return }
-            self.isRotating = true
+            self.beginRotation()
             guard self.isVisible, self.isSwitcherBarVisible,
                   let host = self.hostingController else { return }
             self.isBarSlidOut = true
@@ -1232,7 +1275,7 @@ class AppInfoProvider {
         }
         root.onHostRotationEnded = { [weak self] in
             guard let self else { return }
-            self.isRotating = false
+            self.endRotation()
             guard self.isBarSlidOut else { return }
             self.isBarSlidOut = false
             guard let host = self.hostingController else { return }
@@ -1744,6 +1787,8 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             // Dismiss app switcher if open
             if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
+            // And cancel one that has asked for the screen but not yet taken it.
+            self.isOpeningAppSwitcher = false
             
             // Check if any windows are visible
             let hasVisibleWindow = self.windowHostingView.subviews.contains { view in
@@ -1760,7 +1805,11 @@ class AppInfoProvider {
                     // the shrink. So it leaves first, in the orientation it is
                     // pinned to, and the screen turns once its window has gone.
                     self.flyEverythingHome()
-                    self.whenWindowsAreAway { self.turnUpright() }
+                    // Recomputed rather than forced: by now we are on the springboard
+                    // and it resolves to portrait, but if the wait expired with a
+                    // window still up — or the user opened another app during it —
+                    // forcing portrait would turn that app's window out from under it.
+                    self.whenWindowsAreAway { self.refreshOrientationLock() }
                     return
                 }
                 // Upright first, then the flight. The window is aimed at one of the
@@ -1793,13 +1842,6 @@ class AppInfoProvider {
             return
         }
         whenWindowIsPortrait(window, body)
-    }
-
-    /// Locks the interface to portrait and turns the window there, with nothing to
-    /// wait for: by the time this runs the window it would have disturbed is gone.
-    private func turnUpright() {
-        AppDelegate.orientationLock = .portrait
-        AppDelegate.applyOrientationLock()
     }
 
     /// Runs `body` once no guest window is left on screen, or after a grace period
@@ -1928,7 +1970,8 @@ class AppInfoProvider {
             // The app switcher overlay is portrait-only. Otherwise: the foreground
             // app's own orientation lock if it has one, free rotation if it does
             // not, portrait-locked on the springboard.
-            let lockPortrait = self.isAppSwitcherOpen || !self.isAnyControlVisible
+            let openingOrOpen = self.isOpeningAppSwitcher || self.isAppSwitcherOpen
+            let lockPortrait = openingOrOpen || !self.isAnyControlVisible
             var mask: UIInterfaceOrientationMask = lockPortrait
                 ? .portrait
                 : (self.frontmostAppOrientations ?? .allButUpsideDown)
@@ -1936,10 +1979,20 @@ class AppInfoProvider {
             // its window is on screen — including the stretch after the controls
             // have gone, when we are already on the way home and `hideDock` calls
             // this while the flight is still running. Turning there is what makes a
-            // locked guest judder; see `goHome`. The switcher is exempt: it covers
-            // the guest with its own portrait overlay, having snapshotted it first.
-            if lockPortrait, !self.isAppSwitcherOpen, self.hasForegroundAppWindow(),
-               let pinned = self.frontmostAppOrientations {
+            // locked guest judder; see `goHome`.
+            //
+            // Only where the window is already in that orientation. This hold exists
+            // to stop a turn and must never cause one: leaving the switcher for the
+            // springboard, the window is portrait — the switcher put it there — while
+            // the guest's own windows are still a dispatch away from being hidden, so
+            // an unconditional hold asked for landscape and turned the springboard
+            // into it. Which of the two blocks ran first decided whether it happened,
+            // which is what made it intermittent.
+            let facing = self.keyWindow?.windowScene
+                .map { AppDelegate.mask(for: $0.interfaceOrientation) } ?? []
+            if lockPortrait, !openingOrOpen, self.hasForegroundAppWindow(),
+               let pinned = self.frontmostAppOrientations,
+               !facing.isEmpty, pinned.contains(facing) {
                 mask = pinned
             }
             AppDelegate.orientationLock = mask
@@ -3345,11 +3398,11 @@ class AppInfoProvider {
         // Lock now and synchronously — `refreshOrientationLock` defers to the next
         // runloop, which is already too late for the presentation below.
         orientationBeforeSwitcher = keyWindow.windowScene?.interfaceOrientation
+        // Raised before the turn is asked for, so nothing that recomputes the lock
+        // while it is in flight can hand the window back to the app being left.
+        isOpeningAppSwitcher = true
         AppDelegate.orientationLock = .portrait
-        keyWindow.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-
-        if let scene = keyWindow.windowScene, scene.interfaceOrientation.isLandscape {
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        if AppDelegate.applyOrientationLock() {
             whenWindowIsPortrait(keyWindow) { [weak self] in
                 self?.presentAppSwitcher(in: keyWindow)
             }
@@ -3378,10 +3431,15 @@ class AppInfoProvider {
     /// set by an interrupted transition costs half a second once.
     private func whenWindowIsPortrait(_ window: UIWindow, attempt: Int = 0, _ body: @escaping () -> Void) {
         let isPortrait = window.bounds.height >= window.bounds.width
-        guard !(isPortrait && !isRotating), attempt < 30 else {
+        guard !(isPortrait && !isRotating), attempt < 45 else {
             body()
             return
         }
+        // Asked again, periodically, while it still has not happened — belt to the
+        // retry in `applyOrientationLock`'s error handler, which depends on the
+        // refusal actually being reported. Costs nothing once the turn is underway:
+        // the scene reports portrait by then and the call asks for nothing.
+        if attempt > 0, attempt % 12 == 0 { AppDelegate.applyOrientationLock() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) { [weak self] in
             self?.whenWindowIsPortrait(window, attempt: attempt + 1, body)
         }
@@ -3409,6 +3467,13 @@ class AppInfoProvider {
     }
 
     private func presentAppSwitcher(in keyWindow: UIWindow) {
+        // A pending open can be overtaken. The bar is still on screen and live for the
+        // length of the turn this is waiting on, so its home button is reachable — and
+        // going home mid-wait would otherwise be followed by the switcher appearing
+        // over the springboard. Whatever takes the screen clears the flag; this is
+        // where that is honoured.
+        guard isOpeningAppSwitcher else { return }
+
         // Ensure the design is captured before the overlay's bottom toggle renders,
         // so it uses the real corner radius (not the uncaptured default) — otherwise,
         // if the switcher is opened in floating-button mode, the toggle draws an
@@ -3425,6 +3490,7 @@ class AppInfoProvider {
         // last changed here.
         setPrefersFloatingButton(!isSwitcherBarVisible)
         isAppSwitcherOpen = true
+        isOpeningAppSwitcher = false
         // The portrait lock was applied in `showAppSwitcher` before we waited for the
         // window to turn; this keeps the rest of the orientation state consistent.
         refreshOrientationLock()
@@ -3538,14 +3604,23 @@ class AppInfoProvider {
         }
     }
 
-    /// Puts the interface back where it was before the switcher forced portrait.
+    /// Puts the interface back where it was before the switcher forced portrait, as
+    /// far as the app being returned to allows.
     ///
-    /// Releasing the lock is not enough on its own: `.allButUpsideDown` still includes
+    /// Releasing the lock is not enough on its own: the widened mask still includes
     /// portrait, so UIKit has no reason to leave it, and no fresh device-orientation
     /// event arrives if the phone never physically moved. Without an explicit request
     /// the app returns upright even though it is being held sideways.
     private func restoreOrientationAfterSwitcher() {
         guard let scene = keyWindow?.windowScene else { return }
+
+        // What the app being returned to allows, which is not always everything. A
+        // guest pinned to its own orientation is exactly the case this cannot simply
+        // follow the device into: turn the phone upright while the switcher is open
+        // over a landscape-pinned app, and following the device would hand that app a
+        // portrait window it has been told it cannot be in — the judder, and then a
+        // fight, since the very next `refreshOrientationLock` asks for landscape back.
+        let allowed = frontmostAppOrientations ?? .allButUpsideDown
 
         // Follow the device where it can say — that way turning the phone while the
         // switcher was open wins over what we recorded — and fall back to the recorded
@@ -3558,17 +3633,26 @@ class AppInfoProvider {
         default: target = orientationBeforeSwitcher ?? scene.interfaceOrientation
         }
         orientationBeforeSwitcher = nil
-        guard target != scene.interfaceOrientation else { return }
 
-        let mask: UIInterfaceOrientationMask
-        switch target {
-        case .landscapeLeft: mask = .landscapeLeft
-        case .landscapeRight: mask = .landscapeRight
-        default: mask = .portrait
+        // Widened first, or the request below is refused against the supported set.
+        AppDelegate.orientationLock = allowed
+
+        let mask = AppDelegate.mask(for: target)
+        // Non-empty checked as well as allowed: `mask(for:)` answers [] for an unknown
+        // orientation, every mask contains the empty set, so the test below would pass
+        // and hand `requestGeometryUpdate` a mask permitting nothing at all.
+        guard !mask.isEmpty, allowed.contains(mask),
+              target != scene.interfaceOrientation else {
+            // Nowhere to restore to: either we are already there, or the destination
+            // does not allow where the device is pointing. Applying the lock is what
+            // puts the interface into what it does allow, and asks for nothing when
+            // it is there already.
+            AppDelegate.applyOrientationLock()
+            return
         }
-        // The lock still says portrait-only at this point; widen it first or the
-        // request is refused against the supported set.
-        AppDelegate.orientationLock = .allButUpsideDown
+        // The exact orientation rather than the whole mask: `applyOrientationLock`
+        // would hand UIKit a landscape pair and let it choose, which can settle on
+        // the turn the user is not holding.
         keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
     }
