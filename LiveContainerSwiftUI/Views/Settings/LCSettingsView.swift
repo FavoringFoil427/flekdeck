@@ -376,67 +376,72 @@ struct LCSettingsView: View {
                     }
                     .padding(.vertical, 6)
 
-                    // MARK: - Multitask identity
-                    // What reached the last app launched in parallel. A guest reads
-                    // the identifier from the host process' bundle, which is the
-                    // extension rather than the app, so this is the value the check
-                    // actually saw — not the one the app holds.
-                    HStack(spacing: 12) {
-                        Image(systemName: "square.on.square")
-                            .font(.system(size: 20))
-                            .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.indigo)
-                            .cornerRadius(8)
+                    // Developer-only. This is a diagnostic — it exists to compare what the
+                    // guest's identity check actually saw against what the app holds — and it
+                    // means nothing to anyone not chasing that particular mismatch.
+                    if sharedModel.developerMode {
+                        // MARK: - Multitask identity
+                        // What reached the last app launched in parallel. A guest reads
+                        // the identifier from the host process' bundle, which is the
+                        // extension rather than the app, so this is the value the check
+                        // actually saw — not the one the app holds.
+                        HStack(spacing: 12) {
+                            Image(systemName: "square.on.square")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.indigo)
+                                .cornerRadius(8)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Multitask UDID")
-                                .font(.body)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Multitask UDID")
+                                    .font(.body)
 
-                            Text("App: \(publishedEncryptedUdid.isEmpty ? "—" : publishedEncryptedUdid)")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.3)
+                                Text("App: \(publishedEncryptedUdid.isEmpty ? "—" : publishedEncryptedUdid)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.3)
 
-                            Text("Guest: \(multitaskIdentityValue.isEmpty ? "—" : multitaskIdentityValue)")
-                                .font(.subheadline)
-                                .foregroundColor(multitaskIdentityIsProblem ? .orange : .secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.3)
+                                Text("Guest: \(multitaskIdentityValue.isEmpty ? "—" : multitaskIdentityValue)")
+                                    .font(.subheadline)
+                                    .foregroundColor(multitaskIdentityIsProblem ? .orange : .secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.3)
 
-                            Text(multitaskIdentitySummary)
-                                .font(.caption)
-                                .foregroundColor(multitaskIdentityIsProblem ? .orange : .secondary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.8)
-                        }
-                        Spacer()
+                                Text(multitaskIdentitySummary)
+                                    .font(.caption)
+                                    .foregroundColor(multitaskIdentityIsProblem ? .orange : .secondary)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            Spacer()
 
-                        if !multitaskIdentityValue.isEmpty {
-                            Button(action: {
-                                UIPasteboard.general.string = multitaskIdentityValue
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            }) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(.blue)
+                            if !multitaskIdentityValue.isEmpty {
+                                Button(action: {
+                                    UIPasteboard.general.string = multitaskIdentityValue
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(.blue)
+                                }
                             }
                         }
-                    }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Copied as well as shown: the point of this row is usually to
-                        // send it to someone comparing another device.
-                        UIPasteboard.general.string = multitaskIdentityReport
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        showIdentityReport = true
-                    }
-                    .alert("Multitask UDID", isPresented: $showIdentityReport) {
-                        Button("OK", role: .cancel) {}
-                    } message: {
-                        Text("\(multitaskIdentityReport)\n\nCopied to clipboard.")
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            // Copied as well as shown: the point of this row is usually to
+                            // send it to someone comparing another device.
+                            UIPasteboard.general.string = multitaskIdentityReport
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            showIdentityReport = true
+                        }
+                        .alert("Multitask UDID", isPresented: $showIdentityReport) {
+                            Button("OK", role: .cancel) {}
+                        } message: {
+                            Text("\(multitaskIdentityReport)\n\nCopied to clipboard.")
+                        }
                     }
 
                     // MARK: - Subscription Status
