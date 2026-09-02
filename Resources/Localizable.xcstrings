@@ -16208,6 +16208,39 @@
         }
       }
     },
+    "lc.flek.multitaskControl" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multitask Control"
+          }
+        }
+      }
+    },
+    "lc.flek.multitaskControl.assistiveTouch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assistive Touch"
+          }
+        }
+      }
+    },
+    "lc.flek.multitaskControl.bottomSwipe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom Swipe"
+          }
+        }
+      }
+    },
     "lc.flek.noResults" : {
       "extractionState" : "manual",
       "localizations" : {

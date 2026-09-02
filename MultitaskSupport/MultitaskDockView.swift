@@ -15,6 +15,9 @@ extension NSNotification.Name {
     /// Posted when the rounded/flat bar design setting is toggled in Settings, so
     /// the visible bar can re-lay out live instead of waiting for the next layout.
     static let multitaskBarDesignChanged = NSNotification.Name("MultitaskBarDesignChanged")
+    /// Posted when the home bar is switched on or off in Settings, so it can appear
+    /// or go away without waiting for the app window to be reopened.
+    static let multitaskHomeBarSettingChanged = NSNotification.Name("MultitaskHomeBarSettingChanged")
     /// Posted by a guest window once its app is drawing its own content, which is
     /// the cue to drop the launch screen the window opened with. Object is the
     /// window's view. Name is duplicated as a literal in
@@ -360,6 +363,9 @@ class AppInfoProvider {
     private var navAssistButton: UIView?
     private var navAssistChevron: UIImageView?
     private var isNavAssistStashed: Bool = false
+    /// LiveContainer's own home bar, shown along the bottom edge whenever the
+    /// floating button is the control on screen. See `MultitaskSwipeZone`.
+    private var swipeZone: MultitaskSwipeZone?
 
     /// One of the four sides. Which frame it is named in depends on where it is
     /// used: the layout's own coordinates, or the viewer's — what the user sees
@@ -1076,6 +1082,27 @@ class AppInfoProvider {
             name: .lcWindowContentDidArrive,
             object: nil
         )
+        // Show or hide the home bar the moment its Settings toggle changes.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(swipeZoneSettingChanged),
+            name: .multitaskHomeBarSettingChanged,
+            object: nil
+        )
+    }
+
+    /// Swap between the floating button and the swipe zone when the setting changes.
+    ///
+    /// Only while one of them is actually up — this picks which of the two is shown,
+    /// not whether a control is shown at all, and `showNavAssist` is the single place
+    /// that decides. Asking whether either is on screen is a more direct test than
+    /// re-deriving the conditions it was called under.
+    @objc private func swipeZoneSettingChanged() {
+        DispatchQueue.main.async {
+            guard self.navAssistButton != nil || self.swipeZone != nil,
+                  let keyWindow = self.keyWindow else { return }
+            self.showNavAssist(in: keyWindow)
+        }
     }
 
     /// Live-apply the rounded/flat bar design when its Settings toggle changes.
@@ -1185,6 +1212,9 @@ class AppInfoProvider {
                     self.updateDockFrame(animated: false)
                 }
             }
+            // Ahead of the button's guard: the strip spans the bottom edge whatever
+            // the button is doing, and a return there would leave it on the old size.
+            self.placeSwipeZone(in: bounds)
             guard let button = self.navAssistButton, !self.isNavAssistDragging else { return }
             self.placeNavAssist(button, in: bounds, stashed: self.isNavAssistStashed, animated: false)
         }
@@ -1640,6 +1670,7 @@ class AppInfoProvider {
             // Also remove nav assist if visible
             self.navAssistButton?.removeFromSuperview()
             self.navAssistButton = nil
+            self.tearDownSwipeZone()
 
             // No control on screen anymore → back to portrait (springboard).
             self.refreshOrientationLock()
@@ -1811,7 +1842,7 @@ class AppInfoProvider {
         let barShown = isVisible
             && isSwitcherBarVisible
             && (hostingController?.view.isHidden == false)
-        let navShown = navAssistButton != nil
+        let navShown = navAssistButton != nil || swipeZone != nil
         return barShown || navShown
     }
 
@@ -1921,7 +1952,7 @@ class AppInfoProvider {
                 && self.isSwitcherBarVisible
                 && (self.hostingController?.view.isHidden == false)
                 && ((self.hostingController?.view.alpha ?? 0) > 0.1)
-            let navShown = self.navAssistButton?.window != nil
+            let navShown = self.navAssistButton?.window != nil || self.swipeZone?.window != nil
 
             guard !barShown && !navShown else { return }
 
@@ -1948,6 +1979,10 @@ class AppInfoProvider {
         DispatchQueue.main.async {
             guard self.isSwitcherBarVisible else { return }
             self.isSwitcherBarVisible = false
+            // Taking the bar down is choosing the floating button, and the choice has
+            // to outlive the controls: anything that puts them away — going home, an
+            // app closing — brings back whichever one this names.
+            self.setPrefersFloatingButton(true)
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
             
             // Bring the floating button in immediately, concurrent with the bar
@@ -2004,12 +2039,16 @@ class AppInfoProvider {
             UIView.animate(withDuration: 0.2, delay: 0, options: .allowUserInteraction, animations: {
                 self.navAssistButton?.alpha = 0
                 self.navAssistButton?.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+                self.swipeZone?.alpha = 0
             }) { _ in
                 self.navAssistButton?.removeFromSuperview()
                 self.navAssistButton = nil
+                self.tearDownSwipeZone()
             }
             
             self.isSwitcherBarVisible = true
+            // The other half of the same choice — see `hideSwitcherBar`.
+            self.setPrefersFloatingButton(false)
             self.refreshOrientationLock()
             self.updateDockFrame(animated: false)
             NotificationCenter.default.post(name: .multitaskBarVisibilityChanged, object: nil)
@@ -2039,6 +2078,70 @@ class AppInfoProvider {
         }
     }
     
+    // MARK: - Home Grabber
+
+    /// Put LiveContainer's own home bar up along the bottom edge of `host`.
+    ///
+    /// Idempotent: any existing strip is taken down first, so this can run on every
+    /// `showNavAssist` — which is itself called repeatedly by the control self-heal
+    /// — without stacking strips on top of each other.
+    /// Whether the home bar is switched on. Defaults to on, so `bool(forKey:)` —
+    /// which reads a missing key as false — is not enough on its own.
+    private var isSwipeZoneEnabled: Bool {
+        LCUtils.appGroupUserDefault.object(forKey: "LCMultitaskHomeBar") as? Bool ?? true
+    }
+
+    private func installSwipeZone(in host: UIView, animated: Bool) {
+        tearDownSwipeZone()
+        guard isSwipeZoneEnabled else { return }
+        let bar = MultitaskSwipeZone()
+        bar.onActivate = { [weak self] in
+            self?.showAppSwitcher()
+        }
+        host.addSubview(bar)
+        swipeZone = bar
+        placeSwipeZone(in: host.bounds)
+
+        guard animated else { return }
+        bar.alpha = 0
+        UIView.animate(withDuration: Constants.standardAnimationDuration,
+                       delay: 0.03,
+                       options: [.curveEaseOut, .allowUserInteraction]) {
+            bar.alpha = 1
+        }
+    }
+
+    private func tearDownSwipeZone() {
+        swipeZone?.removeFromSuperview()
+        swipeZone = nil
+    }
+
+
+    /// Centres the bar along the bottom of `bounds`, clear of the safe-area inset
+    /// rather than inside it — the whole point of the shape this control ended up in.
+    ///
+    /// `bounds` is passed in during a rotation, where it describes the size being
+    /// turned into and the host has not resized yet. The host's own layout pass
+    /// repeats the call afterwards with the real geometry, which is also what
+    /// resolves a safe area that was still zero on a cold start.
+    private func placeSwipeZone(in bounds: CGRect? = nil) {
+        guard let bar = swipeZone, let host = bar.superview else { return }
+        let area = bounds ?? host.bounds
+        guard area.width > 0, area.height > 0 else { return }
+        let inset = max(host.safeAreaInsets.bottom, safeAreaInsets.bottom)
+        let screen = UIScreen.main.bounds
+        let size = MultitaskSwipeZone.preferredSize(forShortSide: min(screen.width, screen.height))
+        // Down from the top of the safe-area band by `bandIntrusion`, which is as far
+        // towards the real indicator as the touches still arrive over a guest.
+        // Never further down than the band is deep: on a device with no bottom inset
+        // an unclamped intrusion would carry the target clean off the screen.
+        let intrusion = min(MultitaskSwipeZone.bandIntrusion, inset)
+        bar.frame = CGRect(x: ((area.width - size.width) / 2).rounded(),
+                           y: area.height - inset + intrusion - size.height,
+                           width: size.width,
+                           height: size.height)
+    }
+
     // MARK: - Navigation Assist Button
     
     private func showNavAssist(in window: UIWindow, animated: Bool = true) {
@@ -2049,12 +2152,21 @@ class AppInfoProvider {
         isNavAssistStashed = false
         navAssistChevron = nil
 
-        let button = createNavAssistButton()
-
         // The overlay window, alongside the bar and for the same reason: when this
-        // button is the control on screen it is the only way out of the app, so a
-        // sheet presented over it must not be able to take it away.
+        // control is the one on screen it is the only way out of the app, so a sheet
+        // presented over it must not be able to take it away.
         let host = self.overlayHostView() ?? window
+
+        // The swipe zone replaces the floating button rather than accompanying it —
+        // they are two ways to reach the same switcher, and the setting picks one.
+        guard !self.isSwipeZoneEnabled else {
+            self.installSwipeZone(in: host, animated: animated)
+            self.refreshOrientationLock()
+            return
+        }
+        self.tearDownSwipeZone()
+
+        let button = createNavAssistButton()
         host.addSubview(button)
         self.navAssistButton = button
         // A fresh button starts halfway down the right of the user's view, whichever
@@ -3463,6 +3575,7 @@ class AppInfoProvider {
             // Switcher bar mode: remove the floating button, show the bar now.
             navAssistButton?.removeFromSuperview()
             navAssistButton = nil
+            tearDownSwipeZone()
             isNavAssistStashed = false
             navAssistChevron = nil
             isSwitcherBarVisible = true
@@ -3769,6 +3882,114 @@ final class OverlayPassthroughView: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
         return hit === self ? nil : hit
+    }
+}
+
+/// A gesture zone along the bottom of the screen. Swiping up in it opens the
+/// multitask switcher — the same thing tapping the floating button beside it does.
+///
+/// It draws nothing at all. There is no bar and no pill: the system's own home
+/// indicator is the only thing down there, and this is the gesture, not an
+/// affordance. That is what makes `invisibleButHitTestable` load-bearing rather than
+/// decorative, and it is the whole story of why earlier versions of this did not
+/// work over a guest app.
+///
+/// One deliberate cost: a touch that lands in the zone is consumed and cannot be
+/// handed on to the guest, whose scene is hosted out of process. At the current
+/// `bandIntrusion` the zone sits entirely inside the bottom safe-area band, below
+/// where a maximized guest's content stops, so there is nothing of the guest's under
+/// it to lose. Reaching further up would start taking its taps.
+final class MultitaskSwipeZone: UIView {
+    /// Run when a swipe up clears the activation threshold.
+    var onActivate: (() -> Void)?
+
+    // MARK: Geometry
+
+    /// Nothing is drawn in the zone, so it is sized for a finger rather than for the
+    /// eye: as wide as the system's home indicator plus room either side, and tall
+    /// enough that a swipe starting anywhere in the band is caught.
+    private static let zoneHeight: CGFloat = 28
+    private static let zonePadding: CGFloat = 20
+
+    /// How far the zone's bottom edge reaches down into the bottom safe-area band.
+    ///
+    /// The knob for where the gesture lives. At 30 with a 34pt inset the zone sits
+    /// wholly inside the band, which is where it should be: that is the strip the
+    /// system reserves for its own indicator, so nothing of the guest's is under it.
+    static let bandIntrusion: CGFloat = 30
+
+    /// Length of the system's home indicator on a device whose short side is `side`,
+    /// which the zone is sized around so the gesture starts where the eye expects.
+    ///
+    /// The short side, because the indicator keeps the one length however the screen
+    /// is turned. Measured values, not public API.
+    private static func indicatorWidth(forShortSide side: CGFloat) -> CGFloat {
+        // iPad draws a single fixed length at every size, rather than scaling it with
+        // the device the way iPhone does.
+        if UIDevice.current.userInterfaceIdiom == .pad { return 320 }
+        return (side / 3).rounded() + 9
+    }
+
+    static func preferredSize(forShortSide side: CGFloat) -> CGSize {
+        CGSize(width: indicatorWidth(forShortSide: side) + zonePadding * 2, height: zoneHeight)
+    }
+
+    // MARK: Behaviour
+
+    /// Very nearly, but deliberately not, transparent — do not "clean this up" to
+    /// `.clear`.
+    ///
+    /// A view that draws nothing at all receives no touches over a guest app. The
+    /// guest's content is an out-of-process hosted scene, and the system works out
+    /// which parts of this process's windows are in front of it and should be handed
+    /// the touch; a layer with no content is not among them, and the touch goes
+    /// straight through to the guest. `hitTestableAlpha` is the smallest share of it
+    /// that has been seen to work.
+    ///
+    /// Black rather than white, because black is the one that disappears here: the
+    /// band this sits in shows LiveContainer's own black backdrop behind a guest —
+    /// the guest's content stops above the safe area — and 2% black over black is no
+    /// change at all. White would lift it.
+    ///
+    /// This is what every earlier attempt was really running into. The versions that
+    /// worked all drew something — a blurred capsule, a visible pill. The ones that
+    /// did not all drew nothing: a clear strip in the band, a clear target with the
+    /// pill drawn outside its bounds, and this zone before the background was added.
+    /// It is also why switching the diagnostic tint on made it start working, which
+    /// is how the cause was finally found.
+    ///
+    /// There is no documented floor for this, so it is a knob rather than a fact. If
+    /// the tint is ever perceptible, walk it down — 0.01, then 1/255, which is the
+    /// smallest step an 8-bit channel can even represent — and re-test over a guest
+    /// at each step. It stops working somewhere, and where is not written down.
+    private static let hitTestableAlpha: CGFloat = 0.02
+    private static let invisibleButHitTestable = UIColor.black.withAlphaComponent(hitTestableAlpha)
+
+    private static let activationDistance: CGFloat = 16
+    private static let activationVelocity: CGFloat = 300
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = Self.invisibleButHitTestable
+
+        // Pan only. There is nothing to see here, and a tap target this size sitting
+        // invisibly against the bezel would fire on any stray touch near it.
+        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:))))
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let translation = gesture.translation(in: self).y
+        let velocity = gesture.velocity(in: self).y
+        // Either a deliberate pull or a flick, matching how the system reads its own
+        // edge gesture — a short fast swipe is the common way to reach for this.
+        let activated = -translation >= Self.activationDistance
+            || velocity <= -Self.activationVelocity
+        guard activated else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onActivate?()
     }
 }
 

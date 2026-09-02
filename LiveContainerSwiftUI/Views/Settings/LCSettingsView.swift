@@ -77,6 +77,7 @@ struct LCSettingsView: View {
     @AppStorage("LCMaxOneAppOnStage", store: LCUtils.appGroupUserDefault) var onlyOneAppOnStage = false
     @AppStorage("LCRedirectURLToHost", store: LCUtils.appGroupUserDefault) var redirectURLToHost = false
     @AppStorage("LCShowRotationPanel", store: LCUtils.appGroupUserDefault) var showRotationPanel = false
+    @AppStorage("LCMultitaskHomeBar", store: LCUtils.appGroupUserDefault) var usesBottomSwipe = true
     
     @AppStorage("LCSideJITServerAddress", store: LCUtils.appGroupUserDefault) var sideJITServerAddress : String = ""
     @AppStorage("LCDeviceUDID", store: LCUtils.appGroupUserDefault) var deviceUDID: String = ""
@@ -888,6 +889,17 @@ struct LCSettingsView: View {
                             }
                             Toggle(isOn: $multitaskButtonHaptics) {
                                 Text("lc.flek.switcherHaptics".loc)
+                            }
+                            Picker(selection: $usesBottomSwipe) {
+                                Text("lc.flek.multitaskControl.assistiveTouch".loc).tag(false)
+                                Text("lc.flek.multitaskControl.bottomSwipe".loc).tag(true)
+                            } label: {
+                                Text("lc.flek.multitaskControl".loc)
+                            }
+                            .onChange(of: usesBottomSwipe) { _ in
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("MultitaskHomeBarSettingChanged"),
+                                    object: nil)
                             }
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
