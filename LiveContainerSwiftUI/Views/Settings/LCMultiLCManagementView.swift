@@ -21,9 +21,9 @@ private struct LaunchPriorityLC: Identifiable, Hashable {
 }
 
 private let knownLiveContainers = [
-    LaunchPriorityLC(scheme: "livecontainer", displayName: "FlekDeck"),
-    LaunchPriorityLC(scheme: "livecontainer2", displayName: "LiveContainer2"),
-    LaunchPriorityLC(scheme: "livecontainer3", displayName: "LiveContainer3")
+    LaunchPriorityLC(scheme: "flekdeck", displayName: "FlekDeck"),
+    LaunchPriorityLC(scheme: "flekdeck2", displayName: "FlekDeck2"),
+    LaunchPriorityLC(scheme: "flekdeck3", displayName: "FlekDeck3")
 ]
 
 struct InstallAnotherLCButton : View {
@@ -82,8 +82,8 @@ struct LCMultiLCManagementView : View, InstallAnotherLCButtonDelegate {
     var body: some View {
         Form {
             Section {
-                InstallAnotherLCButton(lcName: "LiveContainer2", delegate: self)
-                InstallAnotherLCButton(lcName: "LiveContainer3", delegate: self)
+                InstallAnotherLCButton(lcName: "FlekDeck2", delegate: self)
+                InstallAnotherLCButton(lcName: "FlekDeck3", delegate: self)
             } header: {
                 Text("lc.settings.multiLCInstall".loc)
             }
@@ -147,7 +147,7 @@ struct LCMultiLCManagementView : View, InstallAnotherLCButtonDelegate {
     }
     
     private func isInstalled(scheme: String) -> Bool {
-        if scheme == "livecontainer" {
+        if scheme == "flekdeck" {
             return true
         }
         guard let url = URL(string: "\(scheme)://") else {

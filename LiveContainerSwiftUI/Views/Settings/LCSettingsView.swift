@@ -1318,7 +1318,7 @@ struct LCSettingsView: View {
             storeScheme = "sidestore"
         }
         
-        guard let url = URL(string: "\(storeScheme.lowercased())://certificate?callback_template=livecontainer%3A%2F%2Fcertificate%3Fcert%3D%24%28BASE64_CERT%29%26password%3D%24%28PASSWORD%29") else {
+        guard let url = URL(string: "\(storeScheme.lowercased())://certificate?callback_template=flekdeck%3A%2F%2Fcertificate%3Fcert%3D%24%28BASE64_CERT%29%26password%3D%24%28PASSWORD%29") else {
             errorInfo = "Failed to initialize certificate import URL."
             errorShow = true
             return

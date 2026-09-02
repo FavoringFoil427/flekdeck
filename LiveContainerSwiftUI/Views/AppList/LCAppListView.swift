@@ -1578,9 +1578,9 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
     func homeCopyLaunchUrl(_ app: LCAppModel) {
         guard let path = app.appInfo.relativeBundlePath else { return }
         if let fn = app.uiSelectedContainer?.folderName {
-            UIPasteboard.general.string = "livecontainer://livecontainer-launch?bundle-name=\(path)&container-folder-name=\(fn)"
+            UIPasteboard.general.string = "flekdeck://livecontainer-launch?bundle-name=\(path)&container-folder-name=\(fn)"
         } else {
-            UIPasteboard.general.string = "livecontainer://livecontainer-launch?bundle-name=\(path)"
+            UIPasteboard.general.string = "flekdeck://livecontainer-launch?bundle-name=\(path)"
         }
     }
 
@@ -1907,7 +1907,7 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         if fm.fileExists(atPath: outputFolder.path) || sameBundleIdApp.count > 0 {
             // Sanitised like the first-install name above: this becomes the app's
             // relativeBundlePath, which is interpolated straight into
-            // livecontainer://livecontainer-launch?bundle-name=… URLs, so a
+            // flekdeck://livecontainer-launch?bundle-name=… URLs, so a
             // non-ASCII bundle id here would produce a launch URL that no longer
             // parses — breaking Add to Home Screen and the relaunch handoff.
             appRelativePath = "\(newAppInfo.bundleIdentifier()!.sanitizeNonACSII())_\(Int(CFAbsoluteTimeGetCurrent())).app"
