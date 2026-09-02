@@ -16,7 +16,7 @@ private struct LaunchAppExtensionError: LocalizedError {
 
 struct LaunchAppExtension: AppIntent {
     static var title: LocalizedStringResource { "Launch App" }
-    static var description: IntentDescription { "This action directly launches an app in normal mode in LiveContainer. To get the launch URL, open LiveContainer, hold the app, tap \"Add to Home Screen\" -> \"Copy Launch URL\"" }
+    static var description: IntentDescription { "This action directly launches an app in normal mode in FlekDeck. To get the launch URL, open FlekDeck, hold the app, tap \"Add to Home Screen\" -> \"Copy Launch URL\"" }
     @Parameter(title: "Launch URL")
     var launchURL: URL
     
@@ -69,7 +69,7 @@ struct LaunchAppExtension: AppIntent {
                 LaunchAppExtension.ext = ext
             } catch {
                 NSLog("Failed to start extension \(error)")
-                throw LaunchAppExtensionError("Failed to start extension \(error). To use the Launch App shortcut, reinstall LiveContainer with LaunchAppExtension and ShareExtension installed. If you use SideStore, choose \"Keep App Extensions (Use Main Profile)\". If you use Impactor, choose \"Only Register Main Bundle\". For other sideloaders, select keep all extensions, i.e. DO NOT Remove any extension.")
+                throw LaunchAppExtensionError("Failed to start extension \(error). To use the Launch App shortcut, reinstall FlekDeck with LaunchAppExtension and ShareExtension installed. If you use SideStore, choose \"Keep App Extensions (Use Main Profile)\". If you use Impactor, choose \"Only Register Main Bundle\". For other sideloaders, select keep all extensions, i.e. DO NOT Remove any extension.")
             }
             
         }
@@ -96,7 +96,7 @@ struct LaunchAppExtension: AppIntent {
             let appGroupId = LCSharedUtils.appGroupID(),
             let lcSharedDefaults = UserDefaults(suiteName: appGroupId)
         else {
-            throw LaunchAppExtensionError("lcSharedDefaults failed to initialize, because no app group was found. Did you sign LiveContainer correctly?")
+            throw LaunchAppExtensionError("lcSharedDefaults failed to initialize, because no app group was found. Did you sign FlekDeck correctly?")
         }
         
         if normalizedLaunchScheme == "sidestore" {
