@@ -185,6 +185,27 @@ class SceneDelegate: NSObject, UIWindowSceneDelegate, ObservableObject { // Make
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         self.window = (scene as? UIWindowScene)?.keyWindow
+        take(connectionOptions.urlContexts)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        take(URLContexts)
+    }
+
+    /// Takes a URL UIKit hands the scene and parks it on the model for whichever
+    /// window is in a state to act on it.
+    ///
+    /// A document opened from the Files app arrives here, and with a scene
+    /// delegate of our own in place SwiftUI's onOpenURL does not reliably see
+    /// it — an IPA opened with the button under a file's preview reached
+    /// nothing at all, no install and no error. Reading it off the delegate
+    /// covers both moments it can arrive: a scene connected for the document,
+    /// and one already on screen.
+    private func take(_ urlContexts: Set<UIOpenURLContext>) {
+        guard let url = urlContexts.first?.url else {
+            return
+        }
+        DataManager.shared.model.pendingOpenURL = url
     }
     
 }

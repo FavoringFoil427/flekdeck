@@ -2238,6 +2238,14 @@ struct LCAppListView : View, LCAppBannerDelegate, LCAppModelDelegate {
         guard fm.isReadableFile(atPath: resolved.path) else { return nil }
 
         let dest = fm.temporaryDirectory.appendingPathComponent(resolved.lastPathComponent)
+        // The same file can be handed over twice — the scene delegate parks
+        // every URL UIKit gives it, and SwiftUI may deliver that same URL on
+        // its own. The queue drops the second install, but only after this has
+        // run, and re-copying over a file the first install is reading would
+        // pull the ground out from under it.
+        if installQueue.item(for: dest.absoluteString) != nil {
+            return dest
+        }
         try? fm.removeItem(at: dest)
         do {
             try fm.copyItem(at: resolved, to: dest)
