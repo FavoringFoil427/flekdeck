@@ -3816,9 +3816,31 @@ final class MultitaskOverlayWindow: UIWindow {
     override var canBecomeKey: Bool { false }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let hit = super.hitTest(point, with: event)
-        if hit === self || hit === rootViewController?.view { return nil }
-        return hit
+        guard let hit = super.hitTest(point, with: event) else { return nil }
+        // A miss is the bare overlay itself: the window, the root view, and every
+        // view UIKit inserts between the two. Everything else is something really
+        // on screen here and takes the touch.
+        //
+        // Naming the two we expected — the window and its root view — was not
+        // enough, because how many views sit between them depends on the device.
+        // Both platforms interpose `UITransitionView` → `UIDropShadowView`, and
+        // both of those decline a hit of their own, so `super.hitTest` answered nil
+        // for bare overlay and the old test was never reached. iPad adds one more:
+        // an untyped `UIView`, part of the decoration a resizable app's window
+        // carries. That one is an ordinary view and claims the point the way any
+        // opaque view does, so it came back as a hit — and every touch outside the
+        // bar was swallowed by a window sitting above the whole app. Hence iPad
+        // only, verified on both.
+        //
+        // Asking whether the *root* descends from the hit names that whole chain at
+        // once, however long UIKit makes it — it is true for the root view and for
+        // each of its ancestors, and false for anything else. Testing the other way
+        // round is what it must not do: a sheet or alert presented into this window
+        // is a sibling of the root view's transition view rather than anything
+        // underneath it, so "descends from the root" would call the switcher's own
+        // Close All confirmation a miss and leave its buttons dead.
+        guard let root = rootViewController?.view else { return hit === self ? nil : hit }
+        return root.isDescendant(of: hit) ? nil : hit
     }
 }
 
