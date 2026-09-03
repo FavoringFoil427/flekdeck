@@ -445,6 +445,16 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         super.prepareForReuse()
         stopJiggle()
         iconImageView.image = nil
+        // Undoes the delete animation in `LCSpringboardPageCell.safeReloadItems`,
+        // which shrinks the icon to nothing and fades the name before the row
+        // closes up. It restores all three in its batch-update completion, but a
+        // completion that never fires -- a reload landing on top of the update,
+        // the page recycled mid-flight -- used to leave the shrunk icon and the
+        // faded name on the cell. Only `contentView.alpha` was reset here, so
+        // the next app to be handed that cell drew its name over no icon at all,
+        // and kept doing so: nothing else ever put the transform back.
+        iconImageView.transform = .identity
+        nameLabel.alpha = 1
         setName(nil, shared: false)
         deleteButton.isHidden = true
         deleteButton.alpha = 0
