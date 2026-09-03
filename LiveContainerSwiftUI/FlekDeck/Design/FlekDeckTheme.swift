@@ -115,6 +115,12 @@ enum FlekTheme {
     /// edge itself rather than to the safe area, so on a device with a home
     /// indicator the bar reaches back down past it.
     static let bottomBarScreenMargin: CGFloat = 28
+
+    /// A navigation control: the circle a back or close button occupies, at the
+    /// size the system gives the same buttons in a navigation bar. Fixed rather
+    /// than a share of the width — a back button is the size it is on every
+    /// device, which is what makes one on a page read as the system's own.
+    static let navControlSize: CGFloat = 44
 }
 
 /// Frosted "liquid glass" surface used by cards, pills and popups.

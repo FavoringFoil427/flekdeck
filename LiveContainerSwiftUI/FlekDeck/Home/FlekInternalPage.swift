@@ -21,7 +21,7 @@ struct FlekInternalPage<Content: View>: View {
     var body: some View {
         content()
             .overlay(alignment: .bottom) {
-                FlekGlassCircleButton(systemImage: "chevron.down", size: 44, iconScale: 0.42) {
+                FlekGlassCircleButton(systemImage: "chevron.down", size: FlekTheme.navControlSize, iconScale: 0.42) {
                     minimize()
                 }
                 .padding(.bottom, 6)

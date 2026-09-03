@@ -156,6 +156,12 @@ struct FlekAppDetailSheet: View {
     @State private var showDone = false
     /// The screenshot gallery opened full screen, if any.
     @State private var viewer: ViewerTarget?
+    /// The shot the open viewer is on. Followed as the user pages, so the zoom
+    /// transition returns to the thumbnail they are actually looking at rather
+    /// than the one they came in from.
+    @State private var viewerIndex = 0
+    /// Ties each thumbnail to the viewer it opens, for the zoom transition.
+    @Namespace private var screenshotZoom
 
     /// Which shot was tapped, and the set to page through from there.
     private struct ViewerTarget: Identifiable {
@@ -245,8 +251,9 @@ struct FlekAppDetailSheet: View {
             await model.loadGalleryAspect(photos: model.detail?.photos ?? [])
         }
         .fullScreenCover(item: $viewer) { target in
-            FlekScreenshotViewer(photos: target.photos, index: target.index,
+            FlekScreenshotViewer(photos: target.photos, index: $viewerIndex,
                                  aspect: model.galleryAspect ?? FlekAppDetailModel.fallbackAspect)
+                .screenshotZoomTransition(id: viewerIndex, in: screenshotZoom)
         }
         .onChange(of: isCompleted) { completed in
             guard completed else { return }
@@ -572,6 +579,7 @@ struct FlekAppDetailSheet: View {
                     HStack(spacing: Self.gallerySpacing) {
                         ForEach(Array(photos.enumerated()), id: \.offset) { position, photo in
                             Button {
+                                viewerIndex = position
                                 viewer = ViewerTarget(photos: photos, index: position)
                             } label: {
                                 FlekScreenshotThumb(photo: photo,
@@ -579,6 +587,7 @@ struct FlekAppDetailSheet: View {
                                                     height: height)
                             }
                             .buttonStyle(FlekScreenshotPressStyle())
+                            .screenshotZoomSource(id: position, in: screenshotZoom)
                         }
                     }
                     .padding(.horizontal, Self.hPadding)
@@ -783,6 +792,29 @@ private extension View {
     // installer's own availability helpers document.
     func interpolatesContentIfAvailable() -> AnyView {
         if #available(iOS 16.0, *) { return AnyView(self.contentTransition(.interpolate)) }
+        return AnyView(self)
+    }
+
+    /// Marks a gallery thumbnail as the place the viewer grows out of, and
+    /// shrinks back into. Nothing to do below iOS 18, which has no such thing.
+    // Erased to AnyView for the same reason as above: the iOS 18-only type this
+    // modifier produces would otherwise be baked into the caller's static type,
+    // which the runtime resolves before the availability check runs.
+    func screenshotZoomSource(id: Int, in namespace: Namespace.ID) -> AnyView {
+        if #available(iOS 18.0, *) {
+            return AnyView(self.matchedTransitionSource(id: id, in: namespace))
+        }
+        return AnyView(self)
+    }
+
+    /// Presents with the system's zoom transition: the shot grows out of its
+    /// thumbnail, and the drag that dismisses it — the system's own, from
+    /// anywhere on the shot — rubber-bands it back into the row it came from.
+    /// Erased to AnyView, as above.
+    func screenshotZoomTransition(id: Int, in namespace: Namespace.ID) -> AnyView {
+        if #available(iOS 18.0, *) {
+            return AnyView(self.navigationTransition(.zoom(sourceID: id, in: namespace)))
+        }
         return AnyView(self)
     }
 }
