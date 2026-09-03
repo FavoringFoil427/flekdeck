@@ -3,7 +3,8 @@
 //  LiveContainerSwiftUI
 //
 //  The "List" home screen layout (Personalization → Home Screen Layout → List).
-//  Shows the same items as the springboard as glass rows with a RUN button.
+//  Shows the same items as the springboard as glass rows; tapping a row
+//  launches it.
 //  Uses Dragula for smooth drag-and-drop reordering in edit mode.
 //
 
@@ -20,7 +21,7 @@ struct FlekHomeListView<Menu: View>: View {
     var onDropCompleted: () -> Void = {}
     var onCancelInstall: (InstallItem) -> Void = { _ in }
     /// Whether to show the single-mode launch badge (app.dashed) for an app,
-    /// matching the grid's per-cell indicator.
+    /// matching the grid's per-cell indicator. Shown in the row's trailing slot.
     var showsSingleBadge: (LCAppModel) -> Bool = { _ in false }
     @ViewBuilder var contextMenu: (FlekHomeItem) -> Menu
 
@@ -103,8 +104,8 @@ struct FlekHomeListView<Menu: View>: View {
     /// so toggling edit mode animates its own layout organically — the delete
     /// button slides in from the left and pushes the icon/title to the right,
     /// reversing on exit. In edit mode a Dragula drag layer is overlaid on top
-    /// (only after the enter animation) for reordering; in normal mode the row
-    /// stays tappable with a context menu.
+    /// (only after the enter animation) for reordering; in normal mode a tap
+    /// anywhere on the row launches it, and it keeps its context menu.
     @ViewBuilder
     private func listRow(for item: FlekHomeItem) -> some View {
         FlekAppRow(
@@ -114,12 +115,11 @@ struct FlekHomeListView<Menu: View>: View {
             showsSingleBadge: singleBadge(for: item),
             isEditing: isEditing,
             editBadge: item.editBadge,
-            onRun: { onTap(item) },
             onDelete: { onDelete(item) },
             icon: { iconView(for: item) }
         )
         // Animate this row's own layout on the edit toggle (delete button in,
-        // content shifting, Run/handle swap). Scoped to the row so the drag
+        // content shifting, badge/handle swap). Scoped to the row so the drag
         // overlay's show/hide below is not swept into the same animation.
         .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isEditing)
         // Hide the native row when the drag overlay is covering it (or while
@@ -151,6 +151,12 @@ struct FlekHomeListView<Menu: View>: View {
                 .animation(nil, value: isEditing)
             }
         }
+        // The row itself is the launch control now that the Run pill is gone;
+        // the drag overlay above owns the touches while editing.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isEditing { onTap(item) }
+        }
         .contextMenu {
             if !isEditing {
                 contextMenu(item)
@@ -167,7 +173,6 @@ struct FlekHomeListView<Menu: View>: View {
             showsSingleBadge: singleBadge(for: item),
             isEditing: true,
             editBadge: item.editBadge,
-            onRun: {},
             onDelete: { onDelete(item) },
             icon: { iconView(for: item) }
         )
@@ -237,7 +242,6 @@ struct FlekAppRow<Icon: View>: View {
     var showsSingleBadge: Bool = false
     var isEditing: Bool = false
     var editBadge: FlekEditBadge = .remove
-    var onRun: () -> Void
     var onDelete: () -> Void
     @ViewBuilder var icon: () -> Icon
 
@@ -264,19 +268,13 @@ struct FlekAppRow<Icon: View>: View {
                         Circle().fill(Color.blue).frame(width: 8, height: 8)
                     }
                     Text(title)
-                        .font(.system(size: 19))
+                        .font(.system(size: 17))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    if showsSingleBadge {
-                        // Same indicator as the grid cell: app launches in single mode.
-                        Image(systemName: "app.dashed")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 14, weight: .regular))
+                        .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -289,22 +287,13 @@ struct FlekAppRow<Icon: View>: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .transition(.opacity)
-            } else {
-                Button(action: onRun) {
-                    Text("lc.appBanner.run".loc)
-                        .font(.system(size: 16))
-                        // Always black — the Run pill is light in both light and dark mode.
-                        .foregroundStyle(Color.black.opacity(0.85))
-                        .padding(.horizontal, 12)
-                        .frame(height: 28)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.72))
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.4), lineWidth: 0.5))
-                        )
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
+            } else if showsSingleBadge {
+                // Same indicator as the grid cell (app launches in single mode),
+                // sitting where the Run pill used to.
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
         .padding(.leading, 8)
@@ -375,7 +364,7 @@ struct FlekInstallRow: View {
             FlekInstallIcon(state: state, size: 68, corner: 15)
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.name ?? "lc.flek.installing".loc)
-                    .font(.system(size: 19))
+                    .font(.system(size: 17))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 // Progress is shown on the app icon itself (percentage while
