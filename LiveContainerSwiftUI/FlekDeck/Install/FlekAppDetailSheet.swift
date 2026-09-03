@@ -175,13 +175,18 @@ struct FlekAppDetailSheet: View {
     /// it; at 116 the button was pushed ~6pt below the icon whenever the name
     /// wrapped.
     private static let iconSize: CGFloat = 130
+    /// Width of the glass ring around the icon, on the systems that get one.
+    private static let iconGlassRimWidth: CGFloat = 2
     /// Tallest the screenshot row is allowed to get. Portrait shots reach it;
     /// landscape ones are limited by width instead.
     private static let maxScreenshotHeight: CGFloat = 380
     /// Gap between shots, shared with the skeleton row so the two are laid out
     /// alike and the swap from one to the other moves nothing.
     private static let gallerySpacing: CGFloat = 10
-    private static let hPadding: CGFloat = 20
+    private static let hPadding: CGFloat = 16
+    /// The install capsule's width. Fixed, so the label is what gives way in a
+    /// language that needs more room, not the button.
+    private static let installButtonWidth: CGFloat = 80
     /// Height of the pinned dismiss strip the content scrolls beneath.
     private static let headerStripHeight: CGFloat = 44
 
@@ -310,10 +315,12 @@ struct FlekAppDetailSheet: View {
             }
             .frame(width: Self.iconSize, height: Self.iconSize)
             .animation(.easeInOut(duration: 0.2), value: installItem == nil)
+            .iconGlassRim(size: Self.iconSize + 2 * Self.iconGlassRimWidth,
+                          cornerRadius: 29 + Self.iconGlassRimWidth)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.app_name)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
@@ -321,7 +328,7 @@ struct FlekAppDetailSheet: View {
 
                 if let developer {
                     Text(String(format: "lc.flek.detail.by %@".loc, developer))
-                        .font(.system(size: 16))
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .transition(.opacity)
@@ -331,7 +338,10 @@ struct FlekAppDetailSheet: View {
                 // and the button must still land on the icon's bottom edge.
                 Spacer(minLength: 0)
 
-                HStack(spacing: 10) {
+                // Half a control's width between them, rather than the tight
+                // pairing 10 gave: the gear reads as its own control instead of
+                // an appendix to the install button.
+                HStack(spacing: 16) {
                     installButton
                     advancedButton
                 }
@@ -359,8 +369,8 @@ struct FlekAppDetailSheet: View {
             // labels ("Downloading…") are longer than "Install", so a minimum
             // width keeps the idle button from looking cramped without letting
             // it stretch the full width of the header.
-            .padding(.horizontal, 5)
-            .frame(minWidth: 110, minHeight: 38, maxHeight: 38)
+            .padding(.horizontal, 3)
+            .frame(width: Self.installButtonWidth, height: 38)
             .background(Capsule().fill(installButtonFill))
             .clipShape(Capsule())
             .contentShape(Capsule())
@@ -394,10 +404,10 @@ struct FlekAppDetailSheet: View {
     }
 
     private func installButtonContent(_ state: InstallButtonState) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 3) {
             if state == .done {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     // Arrives with the green rather than after it.
                     .transition(reduceMotion ? .opacity
                                              : .scale.combined(with: .opacity))
@@ -406,8 +416,13 @@ struct FlekAppDetailSheet: View {
                 // Uppercased through `textCase` rather than in the string,
                 // so each language is raised by its own rules.
                 .textCase(.uppercase)
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
+                // The capsule is a fixed 80 wide, and the labels are not: a
+                // German "Installieren" is half again an English "Install".
+                // Rather than let one language be clipped, the word gives way
+                // and shrinks into the room there is.
+                .minimumScaleFactor(0.6)
                 .interpolatesContentIfAvailable()
         }
     }
@@ -422,7 +437,7 @@ struct FlekAppDetailSheet: View {
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.primary)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(Color(.secondarySystemGroupedBackground)))
+                .detailSurface(Circle(), interactive: true)
                 .overlay(alignment: .topTrailing) {
                     if hasCustomisation {
                         Circle()
@@ -537,18 +552,17 @@ struct FlekAppDetailSheet: View {
                 ForEach(stats) { stat in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(stat.value)
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.system(size: 22, weight: .bold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Text(stat.label)
-                            .font(.system(size: 15))
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color(.secondarySystemGroupedBackground)))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 15)
+                    .detailSurface(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
             }
             .padding(.horizontal, Self.hPadding)
@@ -793,6 +807,44 @@ private extension View {
     func interpolatesContentIfAvailable() -> AnyView {
         if #available(iOS 16.0, *) { return AnyView(self.contentTransition(.interpolate)) }
         return AnyView(self)
+    }
+
+    /// A translucent ring around the app icon: the icon is opaque artwork, so
+    /// putting glass *behind* it at the icon's own size would show nothing —
+    /// this gives the background an explicit size larger than the icon it sits
+    /// behind, so the glass shape overflows past its edges as a ring.
+    ///
+    /// `.background` never grows the *layout* size of the view it's attached
+    /// to, no matter how large a frame the background asks for — only what it
+    /// draws — so the icon still measures exactly `iconSize` to whatever laid
+    /// it out (the name column beside it stays aligned to the icon's actual
+    /// top edge, not the ring's). Explicit width/height rather than padding
+    /// the icon itself, which was tried first and grew that layout size,
+    /// pushing the icon down out of alignment with the title next to it.
+    ///
+    /// No-op below iOS 26 (the icon keeps its plain edge).
+    func iconGlassRim(size: CGFloat, cornerRadius: CGFloat) -> AnyView {
+        guard #available(iOS 26, *) else { return AnyView(self) }
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return AnyView(
+            self.background(
+                Color.clear
+                    .glassEffect(.regular, in: shape)
+                    .frame(width: size, height: size)
+            )
+        )
+    }
+
+    /// The page's control and tile surface: real Liquid Glass where the system
+    /// has it, and the grouped-background fill it had before everywhere else.
+    /// `interactive` is for the ones that are buttons, whose glass then responds
+    /// to a press the way every other system control does.
+    /// Erased to AnyView, as above.
+    func detailSurface<S: Shape>(_ shape: S, interactive: Bool = false) -> AnyView {
+        if #available(iOS 26, *) {
+            return AnyView(self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape))
+        }
+        return AnyView(self.background(shape.fill(Color(.secondarySystemGroupedBackground))))
     }
 
     /// Marks a gallery thumbnail as the place the viewer grows out of, and
