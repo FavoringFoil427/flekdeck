@@ -52,6 +52,11 @@ enum FlekSymbol {
         if #available(iOS 26.0, *) { return "arrow.down.circle.badge.xmark" }
         return "xmark.circle"
     }
+
+    /// Marks an app kept in the shared folder rather than privately. The same
+    /// arrow the app list's banner badge uses, in its circled form so it reads
+    /// as a mark beside a name rather than as a stray glyph.
+    static let shared = "arrowshape.turn.up.left.circle.fill"
 }
 
 enum FlekTheme {

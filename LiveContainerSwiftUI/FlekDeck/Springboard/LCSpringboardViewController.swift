@@ -25,6 +25,11 @@ final class LCSpringboardViewController: UIViewController {
     /// Used to catch up when the view reappears after being behind a cover.
     var pendingItems: [FlekHomeItem]?
 
+    /// What the tiles on screen were last drawn from, so the Representable can
+    /// tell a change that only alters a tile's contents from one that adds or
+    /// removes tiles. See `FlekHomeItem.displaySignature`.
+    var displaySignature: String?
+
     /// Paginated items (computed from flatItems).
     var pages: [[FlekHomeItem]] = [[]]
 
@@ -105,6 +110,11 @@ final class LCSpringboardViewController: UIViewController {
             }
             pendingItems = nil
         }
+
+        // Something that changed behind the cover without adding or removing a
+        // tile — an app converted to shared — could not be drawn while the
+        // cells were off-screen. Now they are back.
+        refreshVisibleItems()
     }
 
     override func viewDidLayoutSubviews() {
@@ -533,6 +543,24 @@ final class LCSpringboardViewController: UIViewController {
                 ic.updateInstallState()
             }
         }
+    }
+
+    /// Redraws what is on screen without touching pagination — for a change to
+    /// the apps themselves rather than to which apps there are. Skipped mid-drag,
+    /// where the cells are the drag's to arrange.
+    ///
+    /// Returns whether it reached any cells: behind a fullScreenCover there are
+    /// none to reach, and the caller must not record the change as drawn.
+    @discardableResult
+    func refreshVisibleItems() -> Bool {
+        guard !dragManager.isDragging else { return false }
+        var refreshed = false
+        for cell in outerCollectionView.visibleCells {
+            guard let pageCell = cell as? LCSpringboardPageCell else { continue }
+            pageCell.refreshVisibleCells()
+            refreshed = true
+        }
+        return refreshed
     }
 
     // MARK: - Scroll to page

@@ -43,12 +43,28 @@ struct LCSpringboardRepresentable: UIViewControllerRepresentable {
         // Only call updateItems when the SET of items changes
         // (app added/removed), not when order changes (reorder).
         // Compare as sets so reorder doesn't trigger re-pagination.
+        var repaginated = false
         if !vc.dragManager.isDragging {
             let currentSet = Set(vc.flatItems.map(\.id))
             let newSet = Set(items.map(\.id))
             if currentSet != newSet {
                 vc.updateItems(items)
                 vc.pendingItems = nil
+                repaginated = true
+            }
+        }
+
+        // A tile can change without the set of tiles changing: an app converted
+        // to shared, or renamed. The comparison above only catches apps arriving
+        // and leaving, so a cell configured once would otherwise go on showing
+        // what was true when it was dequeued -- which is also how a cell that
+        // read its icon at a bad moment stays blank.
+        let signature = items.map(\.displaySignature).joined(separator: "\u{1}")
+        if vc.displaySignature != signature {
+            // Recorded as drawn only once it has been: behind a cover there are
+            // no cells to reach, and `viewWillAppear` picks it up instead.
+            if repaginated || vc.refreshVisibleItems() {
+                vc.displaySignature = signature
             }
         }
 

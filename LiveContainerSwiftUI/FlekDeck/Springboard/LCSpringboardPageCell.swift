@@ -295,6 +295,19 @@ final class LCSpringboardPageCell: UICollectionViewCell {
         }
     }
 
+    /// Redraws the icons already on screen from the items this page is holding.
+    /// An item carries a reference to its app, so one that changed underneath
+    /// the grid is picked up without re-paginating or reloading anything — and
+    /// without the flash a `reloadData` costs.
+    func refreshVisibleCells() {
+        for cell in collectionView.visibleCells {
+            guard let iconCell = cell as? LCSpringboardIconCell,
+                  let idx = collectionView.indexPath(for: iconCell)?.item,
+                  idx < items.count else { continue }
+            iconCell.configure(with: items[idx], darkMode: darkModeIcon)
+        }
+    }
+
     // MARK: - Edit mode
 
     func enterEditingMode() {

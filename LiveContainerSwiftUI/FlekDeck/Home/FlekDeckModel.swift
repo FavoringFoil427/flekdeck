@@ -86,6 +86,21 @@ enum FlekHomeItem: Identifiable, DragulaItem {
         "app.\(appInfo.relativeBundlePath ?? appInfo.bundlePath() ?? "unknown")"
     }
 
+    /// What a tile draws, beyond which tile it is. Two items with the same
+    /// `id` but different signatures are one tile showing something new — an
+    /// app converted to shared, or renamed — which the springboard has to be
+    /// told about: its cells are configured once and then left alone, so a
+    /// change that adds and removes nothing never reaches them otherwise.
+    /// Install progress is deliberately absent; the queue drives that itself.
+    var displaySignature: String {
+        switch self {
+        case .installed(let app):
+            return "\(id)|\(app.uiIsShared ? "s" : "p")|\(app.appInfo.displayName() ?? "")"
+        default:
+            return id
+        }
+    }
+
     /// Only real app items can be dragged.
     var isDraggable: Bool {
         switch self {

@@ -403,6 +403,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         super.traitCollectionDidChange(previousTraitCollection)
         if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
             updateDeleteButtonColors()
+            if currentNameIsShared { setName(currentName, shared: true) }
         }
     }
 
@@ -444,7 +445,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
         super.prepareForReuse()
         stopJiggle()
         iconImageView.image = nil
-        nameLabel.text = nil
+        setName(nil, shared: false)
         deleteButton.isHidden = true
         deleteButton.alpha = 0
         singleBadge.isHidden = true
@@ -474,6 +475,13 @@ final class LCSpringboardIconCell: UICollectionViewCell {
     /// Current install fraction for progress fill layout.
     private var currentFraction: Double = 0
 
+    /// The title currently shown and whether it carries the shared mark. Kept
+    /// so a colour appearance change can redraw it: the mark is an image baked
+    /// into the label, and an image does not resolve a dynamic colour the way
+    /// the label's own text does.
+    private var currentName: String?
+    private var currentNameIsShared = false
+
     func configure(with item: FlekHomeItem, darkMode: Bool) {
         configuredItem = item
         switch item {
@@ -482,15 +490,15 @@ final class LCSpringboardIconCell: UICollectionViewCell {
                                                     size: Self.iconSize,
                                                     radius: Self.iconCornerRadius,
                                                     cacheKey: "builtin:\(kind.iconAssetName)")
-            nameLabel.text = kind.title
+            setName(kind.title, shared: false)
             isPlaceholderCell = false
 
         case .installed(let app):
             iconImageView.image = Self.roundedImage(app.appInfo.iconIsDarkIcon(darkMode),
                                                     size: Self.iconSize,
                                                     radius: Self.iconCornerRadius,
-                                                    cacheKey: (app.appInfo.relativeBundlePath).map { "app:\($0):\(darkMode)" })
-            nameLabel.text = app.appInfo.displayName()
+                                                    cacheKey: (app.appInfo.relativeBundlePath).map { "app:\($0):\(app.uiIsShared):\(darkMode)" })
+            setName(app.appInfo.displayName(), shared: app.uiIsShared)
             singleBadge.isHidden = !FlekLaunchModeStore.shared.showsSingleBadge(for: app)
             isPlaceholderCell = false
 
@@ -500,12 +508,49 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
         case .placeholder:
             iconImageView.image = nil
-            nameLabel.text = nil
+            setName(nil, shared: false)
             contentView.alpha = 0
             glassBackgroundView?.isHidden = true
             isUserInteractionEnabled = false
             isPlaceholderCell = true
         }
+    }
+
+    /// Sets the title, prefixed with the shared mark when the app's data lives
+    /// in the shared folder rather than privately. The mark is drawn inside the
+    /// label as an attachment rather than as a view of its own: the label is
+    /// centred under the icon and truncates its own tail, and both keep working
+    /// when the mark is part of the same line.
+    private func setName(_ name: String?, shared: Bool) {
+        currentName = name
+        currentNameIsShared = shared
+        // Cleared explicitly: the label may be carrying a marked title from
+        // the cell this one is being reused from.
+        nameLabel.attributedText = nil
+        guard let name else {
+            nameLabel.text = nil
+            return
+        }
+        guard shared else {
+            nameLabel.text = name
+            return
+        }
+        let font = Self.labelFont
+        let attachment = NSTextAttachment()
+        // A font-based configuration sizes the symbol to the title and sits it
+        // on the same baseline.
+        attachment.image = UIImage(
+            systemName: FlekSymbol.shared,
+            withConfiguration: UIImage.SymbolConfiguration(font: font)
+        )?.withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+        let line = NSMutableAttributedString(attachment: attachment)
+        // A thin space: the mark belongs to the name, not next to it.
+        line.append(NSAttributedString(string: "\u{2009}" + name))
+        line.addAttributes(
+            [.font: font, .foregroundColor: UIColor.label],
+            range: NSRange(location: 0, length: line.length)
+        )
+        nameLabel.attributedText = line
     }
 
     /// Update just the single-mode badge visibility without full reconfigure.
@@ -522,7 +567,7 @@ final class LCSpringboardIconCell: UICollectionViewCell {
 
     private func configureInstallState(_ state: FlekInstallState) {
         // Name
-        nameLabel.text = state.name ?? "Installing..."
+        setName(state.name ?? "Installing...", shared: false)
 
         // Icon from URL — only start a new load when the URL changes.
         // configureInstallState is called on every progress tick, so

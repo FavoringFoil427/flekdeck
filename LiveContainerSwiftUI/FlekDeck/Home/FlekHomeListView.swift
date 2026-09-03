@@ -112,6 +112,7 @@ struct FlekHomeListView<Menu: View>: View {
             title: title(for: item),
             subtitle: subtitle(for: item),
             isNew: newDot(for: item),
+            isShared: sharedMark(for: item),
             showsSingleBadge: singleBadge(for: item),
             isEditing: isEditing,
             editBadge: item.editBadge,
@@ -170,6 +171,7 @@ struct FlekHomeListView<Menu: View>: View {
             title: title(for: item),
             subtitle: subtitle(for: item),
             isNew: newDot(for: item),
+            isShared: sharedMark(for: item),
             showsSingleBadge: singleBadge(for: item),
             isEditing: true,
             editBadge: item.editBadge,
@@ -188,6 +190,11 @@ struct FlekHomeListView<Menu: View>: View {
     }
 
     // MARK: - Helpers
+
+    private func sharedMark(for item: FlekHomeItem) -> Bool {
+        if case .installed(let app) = item { return app.uiIsShared }
+        return false
+    }
 
     private func singleBadge(for item: FlekHomeItem) -> Bool {
         if case .installed(let app) = item { return showsSingleBadge(app) }
@@ -239,6 +246,7 @@ struct FlekAppRow<Icon: View>: View {
     let title: String
     var subtitle: String?
     var isNew: Bool = false
+    var isShared: Bool = false
     var showsSingleBadge: Bool = false
     var isEditing: Bool = false
     var editBadge: FlekEditBadge = .remove
@@ -266,6 +274,14 @@ struct FlekAppRow<Icon: View>: View {
                 HStack(spacing: 6) {
                     if isNew {
                         Circle().fill(Color.blue).frame(width: 8, height: 8)
+                    }
+                    if isShared {
+                        // The app's data is kept in the shared folder rather
+                        // than privately — the same mark the grid puts in front
+                        // of the icon's title.
+                        Image(systemName: FlekSymbol.shared)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
                     }
                     Text(title)
                         .font(.system(size: 17))
