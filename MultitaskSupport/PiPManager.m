@@ -9,12 +9,19 @@
 #include "DecoratedAppSceneViewController.h"
 #include "../LiveContainer/utils.h"
 
+static void *kPiPBoundsObservationContext = &kPiPBoundsObservationContext;
+
 API_AVAILABLE(ios(16.0))
 @interface PiPManager()
 @property(nonatomic, strong) UIView *pipVideoCallContentView;
 @property(nonatomic, strong) AVPictureInPictureVideoCallViewController *pipVideoCallViewController;
 @property(nonatomic, strong) AVPictureInPictureController *pipController;
 @property(nonatomic) AppSceneViewController* displayingVC;
+/// The PiP window's layer, for as long as its bounds are being watched. Held
+/// strongly on purpose: an observed object must not go away while the
+/// observation stands, and the view controller that owns this layer is let go
+/// of in more than one place.
+@property(nonatomic, strong) CALayer *observedLayer;
 @end
 
 
@@ -104,10 +111,7 @@ static PiPManager* sharedInstance = nil;
         self.displayingVC.contentView.frame = CGRectMake(0, 0, self.displayingVC.view.bounds.size.width, self.displayingVC.view.bounds.size.height);
     }
     [self.pipVideoCallViewController.view addSubview:self.pipVideoCallContentView];
-    [self.pipVideoCallViewController.view.layer addObserver:self
-                                forKeyPath:@"bounds"
-                                   options:NSKeyValueObservingOptionNew
-                                   context:NULL];
+    [self observeBoundsOfLayer:self.pipVideoCallViewController.view.layer];
     self.pipVideoCallViewController.preferredContentSize = self.displayingVC.view.bounds.size;
     [self.displayingVC setBackgroundNotificationEnabled:false];
     self.displayingVC.shouldIgnoreSceneUpdates = YES;
@@ -125,12 +129,21 @@ static PiPManager* sharedInstance = nil;
 }
 
 - (void)pictureInPictureControllerDidStopPictureInPicture:(AVPictureInPictureController *)pictureInPictureController {
+    // A controller already replaced — PiP handed from one window to another
+    // before its stop came back — has nothing here that is still its own: the
+    // window, the content view and the layer under observation all belong to
+    // its successor now.
+    if(pictureInPictureController != self.pipController) return;
     [self.displayingVC.view insertSubview:self.displayingVC.contentView atIndex:0];
     [self.displayingVC setBackgroundNotificationEnabled:true];
     // resize if needed (eg orientation differs)
     [self.displayingDecoratedVC updateVerticalConstraints];
     
     self.pipVideoCallContentView.transform = CGAffineTransformIdentity;
+    // Before the view controller can be released below with the observation
+    // still registered on its layer, which is a crash — and just the same when
+    // it is kept: the next start watches a fresh layer, and this one is done.
+    [self observeBoundsOfLayer:nil];
     if([NSUserDefaults.lcSharedDefaults boolForKey:@"LCAutoEndPiP"]) {
         self.pipController = nil;
         self.pipVideoCallViewController = nil;
@@ -160,7 +173,24 @@ static PiPManager* sharedInstance = nil;
     NSLog(@"%@", error.description);
 }
 
+/// Watches `layer`'s bounds, and stops watching whichever layer was being
+/// watched before — nil to only stop. Every start and stop goes through here,
+/// so the observation is registered exactly once per layer however the AVKit
+/// callbacks arrive: -willStart can run without a -didStop (a start that
+/// fails), and -didStop can run twice for one stop (once called directly when
+/// PiP is handed from one window to another, once from AVKit).
+- (void)observeBoundsOfLayer:(CALayer *)layer {
+    if(self.observedLayer == layer) return;
+    [self.observedLayer removeObserver:self forKeyPath:@"bounds" context:kPiPBoundsObservationContext];
+    self.observedLayer = layer;
+    [layer addObserver:self forKeyPath:@"bounds" options:NSKeyValueObservingOptionNew context:kPiPBoundsObservationContext];
+}
+
 - (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(NSObject*)object change:(NSDictionary<NSString *,id> *) change context:(void *) context {
+    if(context != kPiPBoundsObservationContext) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
     CGRect rect = [change[@"new"] CGRectValue];
     CGFloat scale = self.displayingVC.usesHostingControllerAPI ? self.displayingVC.scaleRatio : 1;
     CGAffineTransform transform1 = CGAffineTransformScale(CGAffineTransformIdentity, rect.size.width / self.displayingVC.contentView.bounds.size.width/scale,rect.size.height /self.displayingVC.contentView.bounds.size.height/scale);

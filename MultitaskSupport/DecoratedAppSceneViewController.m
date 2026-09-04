@@ -301,12 +301,17 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         UIPasteboard.generalPasteboard.string = @(weakSelf.appSceneVC.pid).stringValue;
     }];
 
-    BOOL isPiPActive = [PiPManager.shared isPiPWithVC:self.appSceneVC];
+    // Asked through hasShared first, as the dock does. Constructing the PiP
+    // manager claims the audio session — playback, not mixable, and active —
+    // and this menu is built for a look at a card, long before PiP is anywhere
+    // near being chosen: whatever else was playing stopped the moment the menu
+    // opened. If there is no manager there is no PiP, and the answer is known.
+    BOOL isPiPActive = PiPManager.hasShared && [PiPManager.shared isPiPWithVC:self.appSceneVC];
     UIAction *togglePiP = [UIAction actionWithTitle:isPiPActive ? @"lc.multitask.disablePip".loc : @"lc.multitask.enablePip".loc
                                               image:[UIImage systemImageNamed:isPiPActive ? @"pip.exit" : @"pip.enter"]
                                          identifier:nil
                                             handler:^(UIAction *action) {
-        if([PiPManager.shared isPiPWithVC:weakSelf.appSceneVC]) {
+        if(PiPManager.hasShared && [PiPManager.shared isPiPWithVC:weakSelf.appSceneVC]) {
             [PiPManager.shared stopPiP];
         } else {
             [PiPManager.shared startPiPWithVC:weakSelf.appSceneVC];
@@ -521,6 +526,16 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
         label.text = NSLocalizedString(@"lc.multitaskAppWindow.appTerminated", @"");
         label.textAlignment = NSTextAlignmentCenter;
         [self.view insertSubview:label atIndex:0];
+    }
+
+    // A guest that was floating leaves its PiP window behind, showing a scene
+    // nobody draws into any more, until the user finds the window's buttons.
+    // It goes with the guest. Last, once the window has been dealt with above:
+    // stopping brings the window back through the same path the restore button
+    // uses, and that path has to find a window already closed, or one showing
+    // the notice — not one on its way out.
+    if(PiPManager.hasShared && [PiPManager.shared isPiPWithVC:vc]) {
+        [PiPManager.shared stopPiP];
     }
 }
 

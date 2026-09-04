@@ -2059,10 +2059,17 @@ class AppInfoProvider {
                 return
             }
 
+            // In a window, and not merely unhidden. The bar's container is parented
+            // by `showDock` and by nothing else, so a bar whose flags and alpha both
+            // say "shown" can still be in no window at all — and this guard, the
+            // last thing between the user and an app with no way out, would take
+            // the flags' word for it and stand down.
+            let barInWindow = self.hostingController?.view.window != nil
             let barShown = self.isVisible
                 && self.isSwitcherBarVisible
                 && (self.hostingController?.view.isHidden == false)
                 && ((self.hostingController?.view.alpha ?? 0) > 0.1)
+                && barInWindow
             let navShown = self.navAssistButton?.window != nil || self.swipeZone?.window != nil
 
             guard !barShown && !navShown else { return }
@@ -2075,9 +2082,13 @@ class AppInfoProvider {
                 self.hostingController?.view.isHidden = true
                 self.hostingController?.view.alpha = 0
                 self.showNavAssist(in: keyWindow)
-            } else if self.isVisible {
+            } else if self.isVisible, barInWindow {
                 self.showSwitcherBar()
             } else {
+                // Off screen for want of a host, not merely slid away — and
+                // `showSwitcherBar` animates the bar where it stands. Only the way
+                // it first arrives puts it somewhere.
+                self.isVisible = false
                 self.showDock()
             }
         }
