@@ -162,6 +162,19 @@ struct FlekAppDetailSheet: View {
     @State private var viewerIndex = 0
     /// Ties each thumbnail to the viewer it opens, for the zoom transition.
     @Namespace private var screenshotZoom
+    /// Which thumbnail the zoom transition grows out of and shrinks back into.
+    ///
+    /// Separate from `viewerIndex`, which the pager writes to directly: a
+    /// `TabView(.page)` opened on a non-zero page briefly reports page 0 through
+    /// its selection binding while it lays out, and read live that stray write
+    /// reached the transition mid-flight — tapping the third shot could visibly
+    /// start the animation from the first. This is set from the tap and left
+    /// alone until the opening animation is over, after which it follows the
+    /// pager so dismissing still returns to the shot actually on screen.
+    @State private var zoomSourceID = 0
+    /// False until the opening transition has finished, while `zoomSourceID`
+    /// stays pinned to the thumbnail that was tapped.
+    @State private var zoomSourceFollowsPager = false
 
     /// Which shot was tapped, and the set to page through from there.
     private struct ViewerTarget: Identifiable {
@@ -175,8 +188,6 @@ struct FlekAppDetailSheet: View {
     /// it; at 116 the button was pushed ~6pt below the icon whenever the name
     /// wrapped.
     private static let iconSize: CGFloat = 130
-    /// Width of the glass ring around the icon, on the systems that get one.
-    private static let iconGlassRimWidth: CGFloat = 2
     /// Tallest the screenshot row is allowed to get. Portrait shots reach it;
     /// landscape ones are limited by width instead.
     private static let maxScreenshotHeight: CGFloat = 380
@@ -258,7 +269,20 @@ struct FlekAppDetailSheet: View {
         .fullScreenCover(item: $viewer) { target in
             FlekScreenshotViewer(photos: target.photos, index: $viewerIndex,
                                  aspect: model.galleryAspect ?? FlekAppDetailModel.fallbackAspect)
-                .screenshotZoomTransition(id: viewerIndex, in: screenshotZoom)
+                .screenshotZoomTransition(id: zoomSourceID, in: screenshotZoom)
+                .onAppear {
+                    // Long enough for the zoom to finish, which is the only
+                    // window the pager's settling write can land in. Nobody
+                    // pages a screenshot while it is still growing.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        zoomSourceFollowsPager = true
+                    }
+                }
+                .onDisappear { zoomSourceFollowsPager = false }
+        }
+        .onChange(of: viewerIndex) { newValue in
+            guard zoomSourceFollowsPager else { return }
+            zoomSourceID = newValue
         }
         .onChange(of: isCompleted) { completed in
             guard completed else { return }
@@ -315,8 +339,6 @@ struct FlekAppDetailSheet: View {
             }
             .frame(width: Self.iconSize, height: Self.iconSize)
             .animation(.easeInOut(duration: 0.2), value: installItem == nil)
-            .iconGlassRim(size: Self.iconSize + 2 * Self.iconGlassRimWidth,
-                          cornerRadius: 29 + Self.iconGlassRimWidth)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.app_name)
@@ -434,7 +456,7 @@ struct FlekAppDetailSheet: View {
             showAdvanced = true
         } label: {
             Image(systemName: "gear")
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(size: 21, weight: .medium))
                 .foregroundStyle(.primary)
                 .frame(width: 38, height: 38)
                 .detailSurface(Circle(), interactive: true)
@@ -594,6 +616,8 @@ struct FlekAppDetailSheet: View {
                         ForEach(Array(photos.enumerated()), id: \.offset) { position, photo in
                             Button {
                                 viewerIndex = position
+                                zoomSourceID = position
+                                zoomSourceFollowsPager = false
                                 viewer = ViewerTarget(photos: photos, index: position)
                             } label: {
                                 FlekScreenshotThumb(photo: photo,
@@ -809,42 +833,9 @@ private extension View {
         return AnyView(self)
     }
 
-    /// A translucent ring around the app icon: the icon is opaque artwork, so
-    /// putting glass *behind* it at the icon's own size would show nothing —
-    /// this gives the background an explicit size larger than the icon it sits
-    /// behind, so the glass shape overflows past its edges as a ring.
-    ///
-    /// `.background` never grows the *layout* size of the view it's attached
-    /// to, no matter how large a frame the background asks for — only what it
-    /// draws — so the icon still measures exactly `iconSize` to whatever laid
-    /// it out (the name column beside it stays aligned to the icon's actual
-    /// top edge, not the ring's). Explicit width/height rather than padding
-    /// the icon itself, which was tried first and grew that layout size,
-    /// pushing the icon down out of alignment with the title next to it.
-    ///
-    /// No-op below iOS 26 (the icon keeps its plain edge).
-    func iconGlassRim(size: CGFloat, cornerRadius: CGFloat) -> AnyView {
-        guard #available(iOS 26, *) else { return AnyView(self) }
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        return AnyView(
-            self.background(
-                Color.clear
-                    .glassEffect(.regular, in: shape)
-                    .frame(width: size, height: size)
-            )
-        )
-    }
-
-    /// The page's control and tile surface: real Liquid Glass where the system
-    /// has it, and the grouped-background fill it had before everywhere else.
-    /// `interactive` is for the ones that are buttons, whose glass then responds
-    /// to a press the way every other system control does.
-    /// Erased to AnyView, as above.
-    func detailSurface<S: Shape>(_ shape: S, interactive: Bool = false) -> AnyView {
-        if #available(iOS 26, *) {
-            return AnyView(self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape))
-        }
-        return AnyView(self.background(shape.fill(Color(.secondarySystemGroupedBackground))))
+    /// See `DetailSurface`.
+    func detailSurface<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+        modifier(DetailSurface(shape: shape, interactive: interactive))
     }
 
     /// Marks a gallery thumbnail as the place the viewer grows out of, and
@@ -868,6 +859,33 @@ private extension View {
             return AnyView(self.navigationTransition(.zoom(sourceID: id, in: namespace)))
         }
         return AnyView(self)
+    }
+}
+
+/// The page's control and tile surface: Liquid Glass in dark mode on the systems
+/// that have it, and the grouped-background fill everywhere else.
+///
+/// A modifier rather than a plain `View` extension so it can read the
+/// appearance itself — the surfaces then follow a switch between light and dark
+/// without the page having to thread the colour scheme down to each of them.
+///
+/// `interactive` is for the ones that are buttons, whose glass then responds to
+/// a press the way every other system control does.
+private struct DetailSurface<S: Shape>: ViewModifier {
+    let shape: S
+    var interactive: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Returns AnyView rather than an opaque type, so the iOS 26-only type
+    // `glassEffect` produces stays out of this modifier's static type — the
+    // runtime resolves that before the availability check runs, and traps on
+    // older systems where the type is absent.
+    func body(content: Content) -> AnyView {
+        if #available(iOS 26, *), colorScheme == .dark {
+            return AnyView(content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape))
+        }
+        return AnyView(content.background(shape.fill(Color(.secondarySystemGroupedBackground))))
     }
 }
 
