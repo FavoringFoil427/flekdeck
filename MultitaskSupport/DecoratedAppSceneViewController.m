@@ -452,18 +452,39 @@ static UIInterfaceOrientation LCWindowOrientation(UIView *view, UIMutableApplica
 }
 
 - (void)minimizeWindowPiP {
+    // Told to the dock the way `minimizeWindow`'s callers tell it: a window is
+    // leaving the stage, and what the dock shows next depends on what that
+    // leaves behind. Before the fade rather than after it, so the bar goes down
+    // with the window as it does on the way home — the dock reads visibility
+    // from the alpha, which the animation block sets at once.
+    [MultitaskDockManager.shared windowDidEnterPiP:self.dataUUID];
     [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
         self.view.alpha = 0;
     } completion:^(BOOL finished) {
+        // Cut short means brought back mid-fade — PiP stopped within a third of
+        // a second of starting — and hiding the window now would undo that.
+        if (!finished) return;
         self.view.hidden = YES;
     }];
 }
 
 - (void)unminimizeWindowPiP {
+    [self unminimizeWindowPiPWithCompletion:nil];
+}
+
+- (void)unminimizeWindowPiPWithCompletion:(void (^)(void))completion {
     [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
         self.view.hidden = NO;
         self.view.alpha = 1;
-    } completion:nil];
+    } completion:^(BOOL finished) {
+        // Whether or not the fade ran its course: AVKit is waiting on this
+        // before it finishes taking the PiP window down.
+        if (completion) completion();
+    }];
+    // The other half of the note in `minimizeWindowPiP`. After the values above
+    // are set, which the animation block does at once, so the dock finds a
+    // window on stage when it looks.
+    [MultitaskDockManager.shared windowDidExitPiP:self.dataUUID];
 }
 
 - (void)maximizeWindow {

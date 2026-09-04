@@ -138,6 +138,24 @@ static PiPManager* sharedInstance = nil;
     // FIXME: HostingController path causes a tiny flicker during transition to and from PiP.
 }
 
+- (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController restoreUserInterfaceForPictureInPictureStopWithCompletionHandler:(void (^)(BOOL))completionHandler {
+    // The PiP window's own restore button, and the system's cue to put the
+    // interface back for the content that was floating — with LiveContainer
+    // brought to the foreground for it if it was in the background. AVKit waits
+    // on the answer before it finishes the PiP window's exit, so the answer
+    // waits on the window's fade: there is then something on stage where the
+    // PiP window is headed. -willStop brings the window back as well, and both
+    // run for a press of this button; the return is harmless to repeat.
+    DecoratedAppSceneViewController *decoratedVC = self.displayingDecoratedVC;
+    if(!decoratedVC) {
+        completionHandler(YES);
+        return;
+    }
+    [decoratedVC unminimizeWindowPiPWithCompletion:^{
+        completionHandler(YES);
+    }];
+}
+
 - (void)pictureInPictureController:(AVPictureInPictureController *)pictureInPictureController failedToStartPictureInPictureWithError:(NSError *)error {
     NSLog(@"%@", error.description);
 }

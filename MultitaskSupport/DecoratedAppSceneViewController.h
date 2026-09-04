@@ -21,6 +21,9 @@ API_AVAILABLE(ios(16.0))
 - (void)finishMinimizeWindow;
 - (void)minimizeWindowPiP;
 - (void)unminimizeWindowPiP;
+/// `unminimizeWindowPiP` with word once the window's fade back has run — what
+/// AVKit waits for before it finishes taking the PiP window down.
+- (void)unminimizeWindowPiPWithCompletion:(void (^)(void))completion;
 - (void)updateVerticalConstraints;
 /// Re-frames a maximized window to the host's current size and resizes the
 /// guest's drawable to match. Call after anything that changes the space the

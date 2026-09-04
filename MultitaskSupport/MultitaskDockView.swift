@@ -2770,25 +2770,37 @@ class AppInfoProvider {
                 // fade in over.
                 animateViewAppearance(targetView, from: source, fadesIn: fromRect == nil,
                                       in: window)
-                let wasHomeState = self.isHomeState
-                self.isHomeState = false
-                self.frontmostAppUUID = uuid
-                // Move app to end so it's most recent (for home screen icon ordering)
-                if let idx = self.apps.firstIndex(where: { $0.appUUID == uuid }) {
-                    let app = self.apps.remove(at: idx)
-                    self.apps.append(app)
-                }
-                if wasHomeState {
-                    self.showDock()
-                } else {
-                    self.updateDockFrame()
-                }
-                self.ensureControlAccessible()
+                windowTookStage(uuid: uuid)
                 return true
             }
         }
         
         return false
+    }
+
+    /// Everything the dock has to know once a window is in front, whichever way it
+    /// got there — out of a switcher card or a dock icon, at launch, or back from
+    /// the system's PiP window. The entrance is each caller's own; this is the
+    /// record of it.
+    ///
+    /// Leaving home state is what brings the bar in, alongside the window. From
+    /// anywhere else the bar is already up and only re-measures itself against
+    /// the app now in front.
+    private func windowTookStage(uuid: String) {
+        let wasHomeState = isHomeState
+        isHomeState = false
+        frontmostAppUUID = uuid
+        // Move app to end so it's most recent (for home screen icon ordering)
+        if let idx = apps.firstIndex(where: { $0.appUUID == uuid }) {
+            let app = apps.remove(at: idx)
+            apps.append(app)
+        }
+        if wasHomeState {
+            showDock()
+        } else {
+            updateDockFrame()
+        }
+        ensureControlAccessible()
     }
 
     private func passURLSchemeToView(_ view: UIView) {
@@ -2867,6 +2879,73 @@ class AppInfoProvider {
         }
     }
     
+    // MARK: - Picture in Picture
+
+    /// A guest window has left for the system's PiP window.
+    ///
+    /// It hides itself for this the way `minimizeWindow` does, and until now that
+    /// was all it did: nothing here watches a window's visibility, so the dock went
+    /// on believing the window was in front — `frontmostAppUUID` naming an app
+    /// nobody could see, the bar up over the springboard, and every self-heal
+    /// declining to act because there was no window on screen to act for. What is
+    /// left behind decides what happens instead, exactly as it does when a window
+    /// closes: another window, and that one is in front now; none, and this is the
+    /// springboard.
+    ///
+    /// The switcher, if it is open, comes down with the same distinction. PiP is
+    /// started from a card's Customize menu, and an overlay left standing over a
+    /// window that has just gone was where the way back got lost: dismissed later,
+    /// the control logic found no window to put a control up for, and nothing told
+    /// it when the window returned.
+    @objc public func windowDidEnterPiP(_ appUUID: String) {
+        guard isDockEnabled() else { return }
+        DispatchQueue.main.async {
+            self.updateFrontmostApp()
+            if self.hasForegroundAppWindow() {
+                // Whatever was underneath is the app on stage now, and it may be
+                // pinned where the one that just left was not.
+                if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
+                self.refreshOrientationLock()
+                return
+            }
+            // Nothing left on stage: the springboard, recorded as such so the
+            // controls read it that way. The switcher's own way home already does
+            // all of this, and takes the overlay down over the top of it.
+            if self.isAppSwitcherOpen {
+                self.goToSpringboardFromSwitcher()
+            } else {
+                self.isHomeState = true
+                self.hideDock()
+            }
+        }
+    }
+
+    /// A guest window is back from the system's PiP window and on stage again.
+    ///
+    /// The mirror of `windowDidEnterPiP`, and the return the dock never used to
+    /// see: the PiP window's own restore button brings a window back without
+    /// passing through anything here — no icon tapped, no card pressed — so nothing
+    /// put a control up over it. This is the record `bringMultitaskViewToFront`
+    /// makes, minus the entrance: the window fades itself back in.
+    @objc public func windowDidExitPiP(_ appUUID: String) {
+        guard isDockEnabled() else { return }
+        DispatchQueue.main.async {
+            guard let view = self.apps.first(where: { $0.appUUID == appUUID })?.view else { return }
+            // Ahead of the record below, the way a card tap orders it: the overlay
+            // fades to reveal the window with its control already in place, and
+            // when this is the way back from the springboard the bar comes in with
+            // the window.
+            if self.isAppSwitcherOpen { self.dismissAppSwitcher() }
+            // The window being returned to takes the stage from whatever was
+            // there, modals included — see `bringMultitaskViewToFront`.
+            for other in self.apps where other.appUUID != appUUID {
+                self.dismissPresentation(forAppUUID: other.appUUID)
+            }
+            view.superview?.bringSubviewToFront(view)
+            self.windowTookStage(uuid: appUUID)
+        }
+    }
+
     // Recursively find multitask view
     private func findMultitaskView(in view: UIView, withUUID uuid: String) -> UIView? {
         apps.first { $0.appUUID == uuid }?.view
