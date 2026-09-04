@@ -1156,42 +1156,78 @@ private extension View {
         return AnyView(self)
     }
 
-    /// The source pill surface: native Liquid Glass on iOS 26+, and a frosted
-    /// white material capsule (matching the FlekSign design) on older versions.
-    // Erased to AnyView: an opaque return type would bake the iOS 26-only type
-    // `glassEffect` produces into this function's static type, which the runtime
-    // resolves ahead of the availability check and cannot find on iOS 17.x.
-    func repoPillGlass() -> AnyView {
+    /// See `RepoPillSurface`.
+    func repoPillGlass() -> some View { modifier(RepoPillSurface()) }
+
+    /// See `RepoChipSurface`.
+    func repoChipSelection(_ selected: Bool) -> some View { modifier(RepoChipSurface(selected: selected)) }
+}
+
+/// The source pill's surface: native Liquid Glass on iOS 26+, and a frosted
+/// capsule built by hand on older versions — which means picking its own tint
+/// per theme. Light theme keeps the FlekSign white wash; dark theme darkens the
+/// material instead, because that white wash over a dark backdrop turned the
+/// pill into a pale slab that its own `Color.primary` labels vanished into.
+/// The dark build matches the search view's pre-26 glass, so the two floating
+/// bars read as the same material.
+private struct RepoPillSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Returns AnyView rather than an opaque type, so the iOS 26-only type
+    // `glassEffect` produces stays out of this modifier's static type — the
+    // runtime resolves that before the availability check runs, and traps on
+    // older systems where the type is absent.
+    func body(content: Content) -> AnyView {
         if #available(iOS 26, *) {
-            return AnyView(
-                self
-                    .clipShape(Capsule())
-                    .glassEffect(.regular, in: Capsule())
-            )
+            return AnyView(content.clipShape(Capsule()).glassEffect(.regular, in: Capsule()))
         }
+        let isDark = colorScheme == .dark
         return AnyView(
-            self
+            content
                 .background(
-                    Capsule()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Capsule().fill(Color.white.opacity(0.5)))
+                    ZStack {
+                        Capsule().fill(.ultraThinMaterial)
+                        Capsule().fill(isDark ? Color.black.opacity(0.35) : Color.white.opacity(0.5))
+                        // Hairline rim: the dark pill has no bright wash to give
+                        // it an edge, so it needs one to separate from the blur.
+                        if isDark {
+                            Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                        }
+                    }
                 )
                 .clipShape(Capsule())
         )
     }
+}
 
-    /// The selected repo chip: a native Liquid Glass thumb on iOS 26+, and the
-    /// FlekSign #EDEDED capsule on older versions. Unselected repos are clear.
-    /// Erased to AnyView — see `repoPillGlass` for why.
-    func repoChipSelection(_ selected: Bool) -> AnyView {
+/// The selected repo chip inside the source pill: a native Liquid Glass thumb on
+/// iOS 26+, and a plain capsule on older versions — FlekSign's #EDEDED over the
+/// light pill, and a soft white lift over the dark one, where #EDEDED left white
+/// labels sitting on near-white. Unselected chips stay clear (rather than drop
+/// the background) so selection cross-fades instead of popping in.
+/// AnyView for the same reason as `RepoPillSurface`.
+private struct RepoChipSurface: ViewModifier {
+    let selected: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> AnyView {
         if #available(iOS 26, *) {
-            guard selected else { return AnyView(self) }
+            guard selected else { return AnyView(content) }
             // Subtle grey tint so the selected thumb reads against the glass pill.
-            return AnyView(self.glassEffect(.regular.tint(Color.gray.opacity(0.3)), in: Capsule()))
+            return AnyView(content.glassEffect(.regular.tint(Color.gray.opacity(0.3)), in: Capsule()))
         }
-        return AnyView(self.background(
-            Capsule().fill(selected ? Color(red: 0.929, green: 0.929, blue: 0.929) : Color.clear)
-        ))
+        let isDark = colorScheme == .dark
+        let fill: Color = selected
+            ? (isDark ? Color.white.opacity(0.18) : Color(red: 0.929, green: 0.929, blue: 0.929))
+            : .clear
+        let rim: Color = selected && isDark ? Color.white.opacity(0.22) : .clear
+        return AnyView(
+            content.background(
+                Capsule()
+                    .fill(fill)
+                    .overlay(Capsule().strokeBorder(rim, lineWidth: 0.5))
+            )
+        )
     }
 }
 
