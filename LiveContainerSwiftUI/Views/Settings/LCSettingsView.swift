@@ -544,7 +544,7 @@ struct LCSettingsView: View {
                     }
                 }
                 Section {
-                    linkRow("FleksignIcon", "FlekSign.com", action: openFleksign)
+                    linkRow("FlekIconFlekStore", "FlekSt0re.com", action: openFlekstore)
                     linkRow("GitHub", "GitHub - LiveContainer", action: openGitHub)
                     linkRow("Twitter", "khanhduytran0", action: openTwitter)
                     linkRow("GitHub", "GitHub - Huge_Black", action: openGitHub2)
