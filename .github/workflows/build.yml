@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -53,5 +55,3 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           files: build/LiveContainer.ipa
-
-    
