@@ -1,211 +1,102 @@
 <div align="center">
-   <img width="217" height="217" src="./screenshots/livecontainer_icon.png" alt="Logo">
+  <img width="217" height="217" src="https://flekstore.com/img-storage/apps/1565/flekdeck.png" alt="FlekDeck icon">
 </div>
-   
 
 <div align="center">
-  <h1><b>LiveContainer</b></h1>
-  <p><i>An app launcher that runs iOS apps without actually installing them! </i></p>
+  <h1>FlekDeck</h1>
+  <p><strong>Your apps. Your space. A whole new way to use iOS.</strong></p>
+  <p>Developed by <a href="https://flekstore.com">FlekStore</a></p>
 </div>
-<h6 align="center">
 
-Crowdin Project: [![Crowdin](https://badges.crowdin.net/livecontainer/localized.svg)](https://crowdin.com/project/livecontainer) &nbsp;| &nbsp; Documentation:[liveconainer.github.io](https://livecontainer.github.io/docs/intro)
+FlekDeck is a powerful app environment designed to feel like a second operating system inside iOS.
 
-# LiveContainer
+It brings together a familiar Home Screen, built-in multitasking, fast app switching, a dedicated Installer, and extensive customization in one seamless experience. Discover and install apps from your repositories, run multiple apps at the same time, personalize your workspace, and switch between apps just like you are used to on iOS.
 
-- LiveContainer is an app launcher (not emulator or hypervisor) that allows you to run iOS apps inside it.
-- Allows you to install unlimited apps (3 app/10 app id free developer account limit does not apply here) with only one app & app id. You can also have multiple versions of an app installed with multiple data containers.
-- (Below iOS 26) When JIT is available, codesign is entirely bypassed, no need to sign your apps before installing. Otherwise, your app will be signed with the same certificate used by LiveContainer.
+Built on [LiveContainer](https://github.com/LiveContainer/LiveContainer) and reimagined from the ground up, FlekDeck also includes dozens of compatibility and stability improvements for hundreds of apps.
 
-> [!CAUTION]
-> **Important Notice Regarding Third-Party Builds of LiveContainer**
->
-> We have recently noticed the appearance of certain closed-source third-party builds of LiveContainer. Please be aware that all your apps are installed within LiveContainer, which means these third-party builds **have full access to your data, including sensitive information such as keychain items and login credentials**. 
-> 
-> Furthermore, please note that we do not provide any support for issues of these third-party builds.
+> [!NOTE]
+> FlekDeck runs apps inside its own environment. It is an app launcher, not an emulator or a virtual machine.
 
+## Highlights
 
-# Installation
-**LiveContainer comes with a standalone version and a version with built-in SideStore. [Please read the install guide here](https://livecontainer.github.io/docs/installation)**
+### A brand-new Home Screen
 
-If you encounter any issue please [read our FAQ here](https://livecontainer.github.io/docs/faq)
+Your apps live on a familiar paged Home Screen with free icon placement and a multitasking dock. Arrange everything around the way you work and play.
 
-### Standalone 
-<table>
-<tr>
-<td>
-Stable
-</td>
-<td>
-<a href="https://stikstore.app/altdirect/?url=https://github.com/LiveContainer/LiveContainer/releases/download/1.0/apps.json&exclude=livecontainer" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/AltSource_Blue.png" alt="Add AltSource" width="200"/>
-</a>
-</td>
-<td>
-<a href="https://github.com/LiveContainer/LiveContainer/releases/latest/download/LiveContainer.ipa" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/Download_Blue.png" alt="Download .ipa" width="200"/>
-</a>
-</td>
-</tr>
-<tr>
-<td>
-Nightly
-</td>
-<td>
-<a href="https://stikstore.app/altdirect/?url=https://github.com/LiveContainer/LiveContainer/releases/download/nightly/apps_nightly.json&exclude=livecontainer" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/AltSource_Blue.png" alt="Add AltSource" width="200"/>
-</a>
-</td>
-<td>
-<a href="https://github.com/LiveContainer/LiveContainer/releases/download/nightly/LiveContainer.ipa" target="_blank">
-   <img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/Download_Blue.png" alt="Download .ipa" width="200"/>
-</a>
-</td>
-</tr>
-</table>
+### Edit mode and reordering
 
-### LiveContainer+SideStore
-|Stable|Nightly|
-|:-:|:-:|
-|<a href="https://github.com/LiveContainer/LiveContainer/releases/latest/download/LiveContainer+SideStore.ipa" target="_blank"><img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/Download_Blue.png" alt="Download .ipa" width="200" /></a>|<a href="https://github.com/LiveContainer/LiveContainer/releases/download/nightly/LiveContainer+SideStore.ipa" target="_blank"><img src="https://raw.githubusercontent.com/StikStore/altdirect/refs/heads/main/assets/png/Download_Blue.png" alt="Download .ipa" width="200" /></a>|
+Long-press an icon to enter edit mode. Rearrange apps, move them between pages, or remove them from the grid with simple, familiar gestures.
 
+### Reworked multitasking
 
-## Requirements
+See everything that is running as live app cards, swipe between apps, and jump back in instantly. Close apps one by one or clear them all at once.
 
-- iOS/iPadOS 15+
-   + Multitasking requires iOS/iPadOS 16.0+
-- AltStore 2.0+ / SideStore 0.6.0+
+### Per-app audio control
 
+Adjust the volume or mute any running app independently, without interrupting audio from the others.
 
-# Features & Guides
+### Improved compatibility
 
-### Installing Apps
-- Open LiveContainer, tap the plus icon in the upper right hand corner and select IPA files to install.
-- Choose the app you want to open in the next launch.
-- You can long-press the app to manage it.
+Compatibility and stability improvements allow many apps and games that previously failed to launch—or became stuck during startup—to run properly in FlekDeck.
 
-### [Add Apps to Home Screen](https://livecontainer.github.io/docs/guides/add-to-home-screen)
+### Universal Search
 
-### [Multiple LiveContainers](https://livecontainer.github.io/docs/guides/multiple-livecontainers)
-Using multiple LiveContainers allows you to run multiples different apps simultaneously, with *almost* seamless data transfer between the LiveContainers.
+Spotlight gives you one place to search across both your installed apps and every connected repository.
 
-### [Multitasking](https://livecontainer.github.io/docs/guides/multitask)
-You can now launch multiple apps simultaneously in in-app virtual windows. These windows can be resized, scaled, and even displayed using the native Picture-in-Picture (PiP) feature. On iPads, apps can run in native window mode, displaying each app in a separate system window. And if you wish, you can choose to run apps in multitasking mode by default in settings.
+### A redesigned Installer
 
-To use multitasking, hold its banner and tap **"Multitask"**. You can also make Multitask the default launch mode in settings.
+Explore detailed app pages with screenshots, descriptions, and useful information before you install.
 
->[!Note]
->1. To use multitasking, ensure you select **"Keep App Extensions"** when installing via SideStore/AltStore.  
->2. If you want to enable JIT for multitasked apps, you’ll need a JIT enabler that supports attaching by PID. (StikDebug)
+### Parallel downloads
 
-### [JIT Support](https://livecontainer.github.io/docs/guides/jit-support)
-### [Installing external tweaks](https://livecontainer.github.io/docs/guides/tweaks)
-### [Multiple Containers/External Containers](https://livecontainer.github.io/docs/guides/containers-and-external-data)
-### [Hiding Apps](https://livecontainer.github.io/docs/guides/lock-app)
+Download several apps at the same time. Each app displays its own progress directly on its icon and can be cancelled individually.
 
-### Fix File Picker & Local Notification
-Some apps may experience issues with their file pickers or not be able to apply for notification permission in LiveContainer. To resolve this, enable "Fix File Picker" & "Fix Local Notifications" accordingly in the app-specific settings.
+### Personalization
 
-### "Open In App" Support
-- You can simply share a URL or a file to app simply by using iOS's native share sheet. In share sheet, select LiveContainer, and LiveContainer will ask you which app you'd like to open that URL/file in.
-- What's more, you also can tap the link icon in the top-right corner of the "Apps" tab and input the URL. LiveContainer will detect the appropriate app and ask if you want to launch it.
+Make FlekDeck yours with custom wallpapers, glass styles, bar shapes, Home Screen layouts, and haptic feedback options.
+
+### Reworked Settings
+
+Settings are organized into clear categories, making every option easier to find and understand.
+
+### Automatic game detection
+
+FlekDeck automatically recognizes games and displays the appropriate compatibility warnings and rotation prompts.
+
+### Offline access
+
+Once installed, your apps can open and run without a network connection.
+
+### iOS 27 support
+
+FlekDeck supports the latest iOS experience, including Liquid Glass materials and Dark Mode.
+
+### Built for iPad
+
+A dedicated iPad Home Screen and multitasking layout make better use of the larger display.
+
+## What you can do with FlekDeck
+
+- Keep your apps together on a customizable Home Screen.
+- Run multiple supported apps and switch between them quickly.
+- Browse connected repositories and install apps without leaving FlekDeck.
+- Track and manage multiple downloads independently.
+- Give each running app its own audio level.
+- Use installed apps even when you are offline.
+- Create a workspace that feels at home on both iPhone and iPad.
 
 ## Compatibility
-Unfortunately, not all apps work in LiveContainer, so we have a [compatibility list](https://github.com/LiveContainer/LiveContainer/labels/compatibility) to tell if there is apps that have issues. If they aren't on this list, then it's likely going run. However, if it doesn't work, please make an [issue](https://github.com/LiveContainer/LiveContainer/issues/new/choose) about it.
 
-## Building
-Open Xcode, edit `DEVELOPMENT_TEAM[config=Debug]` in `xcconfigs/Global.xcconfig` to your team id and compile.
+FlekDeck contains extensive fixes for apps and games that do not run correctly in the original LiveContainer. Because apps differ in their frameworks, entitlements, extensions, and system-service requirements, compatibility cannot be guaranteed for every app.
 
-## Project structure
-### Main executable
-- Core of LiveContainer
-- Contains the logic of setting up guest environment and loading guest app.
-- If no app is selected, it loads LiveContainerSwiftUI.
+## Privacy and security
 
-### LiveContainerSwiftUI
-- SwiftUI rewrite of LiveContainerUI (by @hugeBlack)
-- Language file `Localizable.xcstrings` is in here for multilingual support. To help us translate LiveContainer, please visit [our crowdin project](https://crowdin.com/project/livecontainer)
-
-### MultitaskSupport
-- Contains the implementation of multitasking feature.
-- Based on [FrontBoardAppLauncher](https://github.com/khanhduytran0/FrontBoardAppLauncher)
-
-### SideStore
-- Supporting code for SideStore's app refreshing integration
-
-### TweakLoader
-- A simple tweak injector, which loads CydiaSubstrate and loads tweaks.
-- Injected to every app you install in LiveContainer.
-
-### ZSign
-- The app signer shipped with LiveContainer.
-- Originally made by [zhlynn](https://github.com/zhlynn/zsign).
-- LiveContainer uses [Feather's](https://github.com/khcrysalis/Feather) version of ZSign modified by khcrysalis.
-- Changes are made to meet LiveContainer's needs.
-
-## How does it work?
-
-### Patching guest executable
-- Patch `__PAGEZERO` segment:
-  + Change `vmaddr` to `0xFFFFC000` (`0x100000000 - 0x4000`)
-  + Change `vmsize` to `0x4000`
-- Change `MH_EXECUTE` to `MH_DYLIB`.
-- Inject a load command to load `TweakLoader.dylib`
-
-### Patching `@executable_path`
-- Hook `dyld4::APIs::_NSGetExecutablePath`
-- Call `_NSGetExecutablePath`
-- Replace `config.process.mainExecutablePath`
-  - Calculate address of `config.process.mainExecutablePath` using `dyld4::APIs` instance (passed as first parameter)
-  - Use `builtin_vm_protect` or TPRO unlock to make it writable
-  - Replace the address with one we have control of
-- Put the original `dyld4::APIs::_NSGetExecutablePath` back
-
-> Old Method
->- Call `_NSGetExecutablePath` with an invalid buffer pointer input -> SIGSEGV
->- Do some [magic stuff](https://github.com/khanhduytran0/LiveContainer/blob/5ef1e6a/main.m#L74-L115) to overwrite the contents of executable_path.
-
-### Patching `NSBundle.mainBundle`
-- This property is overwritten with the guest app's bundle.
-
-### Bypassing Library Validation
-- JIT is optional to bypass codesigning. In JIT-less mode, all executables are signed so this does not apply.
-- Derived from [Restoring Dyld Memory Loading](https://blog.xpnsec.com/restoring-dyld-memory-loading)
-
-### dlopening the executable
-- Call `dlopen` with the guest app's executable
-- TweakLoader loads all tweaks in the selected folder
-- Find the entry point
-- Jump to the entry point
-- The guest app's entry point calls `UIApplicationMain` and start up like any other iOS apps.
-
-### Multi-Account support & Keychain Semi-Separation
-[128 keychain access groups](./entitlements.xml) are created and LiveContainer allocates them randomly to each container of the same app. So you can create 128 container with different keychain access groups.
-
-## Limitations
-- Entitlements from the guest app are not applied to the host app. This isn't a big deal since sideloaded apps requires only basic entitlements.
-- App Permissions are globally applied.
-- Guest app containers are not sandboxed. This means one guest app can access other guest apps' data.
-- App extensions aren't supported. they cannot be registered because: LiveContainer is sandboxed, SpringBoard doesn't know what apps are installed in LiveContainer, and they take up App ID.
-- Multitasking can be achieved by using multiple LiveContainer and the multitasking feature. However, while we were able to fix physical keyboard input issue on iPadOS (https://github.com/LiveContainer/LiveContainer/issues/524), iPhone Mirroring uses different checks which still broke it (https://github.com/LiveContainer/LiveContainer/issues/793).
-- Remote push notification will not work
-- Querying custom URL schemes might not work(?)
-
-## TODO
-- Use ChOma instead of custom MachO parser
-
-## License
-[GNU Affero General Public License v3.0](https://github.com/LiveContainer/LiveContainer/blob/main/LICENSE)
+Apps running inside a container may not be isolated from one another in the same way as separately installed iOS apps. Only install software from developers and repositories you trust, and avoid using unknown builds with sensitive accounts or data.
 
 ## Credits
-- [xpn's blogpost: Restoring Dyld Memory Loading](https://blog.xpnsec.com/restoring-dyld-memory-loading)
-- [LinusHenze's CFastFind](https://github.com/pinauten/PatchfinderUtils/blob/master/Sources/CFastFind/CFastFind.c): [MIT license](https://github.com/pinauten/PatchfinderUtils/blob/master/LICENSE)
-- [litehook](https://github.com/opa334/litehook): [MIT license](https://github.com/opa334/litehook/blob/main/LICENSE)
-- @haxi0 & @m1337v for icon
-- @Vishram1123 for the initial shortcut implementation.
-- @hugeBlack for SwiftUI contribution
-- @Staubgeborener for automatic AltStore/SideStore source updater
-- @fkunn1326 for improved app hiding
-- @slds1 for dynamic color feature
-- @Vishram1123 for iOS 26+ JIT Script Support
-- @StephenDev0 for AltStore source support
+
+FlekDeck is developed and maintained by [FlekStore](https://flekstore.com).
+
+FlekDeck is based on the open-source [LiveContainer project](https://github.com/LiveContainer/LiveContainer). We are grateful to the LiveContainer maintainers and contributors whose work made FlekDeck possible.
+
+FlekDeck is distributed under the same license as the original LiveContainer: the [GNU Affero General Public License v3.0](https://github.com/LiveContainer/LiveContainer/blob/main/LICENSE).
